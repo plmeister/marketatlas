@@ -1,0 +1,6 @@
+id = "4fb29e16-a896-4de3-bbc9-3f560c056427"
+repository = "marketatlas"
+start_time = "2026-07-21T17:15:21.844589190Z"
+end_time = "2026-07-21T17:15:21.852044264Z"
+duration_ms = 7
+exit_status = "error: Policy validation failed: 2 failure(s)"
