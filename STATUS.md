@@ -6,7 +6,7 @@
 - [x] 006 — Fact type system
 - [x] 003 — Parquet data loading
 - [x] 004 — MarketStore
-- [ ] 005 — MarketView
+- [x] 005 — MarketView
 - [ ] 007 — Analyzer interface + graph
 - [ ] 008 — EMA analyzer
 - [ ] 009 — ATR analyzer
