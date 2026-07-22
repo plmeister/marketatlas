@@ -5,7 +5,7 @@
 - [x] 001 — Project scaffolding
 - [x] 006 — Fact type system
 - [x] 003 — Parquet data loading
-- [ ] 004 — MarketStore
+- [x] 004 — MarketStore
 - [ ] 005 — MarketView
 - [ ] 007 — Analyzer interface + graph
 - [ ] 008 — EMA analyzer
