@@ -9,7 +9,7 @@
 - [x] 005 — MarketView
 - [x] 007 — Analyzer interface + graph
 - [x] 008 — EMA analyzer
-- [ ] 009 — ATR analyzer
+- [x] 009 — ATR analyzer
 - [ ] 010 — Trend analyzer
 - [ ] 011 — Pullback detector
 - [ ] 012 — Analysis frame storage
