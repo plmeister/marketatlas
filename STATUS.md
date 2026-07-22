@@ -12,7 +12,7 @@
 - [x] 009 — ATR analyzer
 - [x] 010 — Trend analyzer
 - [x] 011 — Pullback detector
-- [ ] 012 — Analysis frame storage
+- [x] 012 — Analysis frame storage
 - [ ] 013 — Evidence model
 - [ ] 014 — Backtesting replay loop
 - [ ] 015 — HTML visualization
