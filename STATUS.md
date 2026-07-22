@@ -8,7 +8,7 @@
 - [x] 004 — MarketStore
 - [x] 005 — MarketView
 - [x] 007 — Analyzer interface + graph
-- [ ] 008 — EMA analyzer
+- [x] 008 — EMA analyzer
 - [ ] 009 — ATR analyzer
 - [ ] 010 — Trend analyzer
 - [ ] 011 — Pullback detector
