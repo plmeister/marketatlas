@@ -11,3 +11,4 @@
 - **008** — EMA analyzer: EMAAnalyzer computes EMA over close prices from MarketView. SMA-seeded, configurable period, bullish/bearish signal evidence. 12 tests.
 - **009** — ATR analyzer: ATRAnalyzer computes True Range and ATR from candle data. SMA-seeded with Wilder smoothing, configurable period, pct-of-price evidence. 12 tests.
 - **010** — Trend analyzer: TrendAnalyzer computes fast/slow EMA comparison for direction (BULLISH/BEARISH/NEUTRAL) and strength (spread normalized by ATR or price). 15 tests.
+- **011** — Pullback detector: PullbackDetector consumes TrendFact + ATRFact to detect retracement within trend. Swing detection with fallback to extremes, ATR-denominated retracement depth, DETECTED/INVALIDATED status. 17 tests.
