@@ -10,7 +10,7 @@
 - [x] 007 — Analyzer interface + graph
 - [x] 008 — EMA analyzer
 - [x] 009 — ATR analyzer
-- [ ] 010 — Trend analyzer
+- [x] 010 — Trend analyzer
 - [ ] 011 — Pullback detector
 - [ ] 012 — Analysis frame storage
 - [ ] 013 — Evidence model

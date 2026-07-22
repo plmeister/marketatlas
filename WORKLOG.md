@@ -10,3 +10,4 @@
 - **007** — Analyzer interface + graph: Analyzer base class with requires()/produces()/analyze(). AnalysisGraph with topological sort, cyclic dependency detection, unsatisfied dependency detection. 16 tests.
 - **008** — EMA analyzer: EMAAnalyzer computes EMA over close prices from MarketView. SMA-seeded, configurable period, bullish/bearish signal evidence. 12 tests.
 - **009** — ATR analyzer: ATRAnalyzer computes True Range and ATR from candle data. SMA-seeded with Wilder smoothing, configurable period, pct-of-price evidence. 12 tests.
+- **010** — Trend analyzer: TrendAnalyzer computes fast/slow EMA comparison for direction (BULLISH/BEARISH/NEUTRAL) and strength (spread normalized by ATR or price). 15 tests.
