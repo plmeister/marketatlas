@@ -7,7 +7,7 @@
 - [x] 003 — Parquet data loading
 - [x] 004 — MarketStore
 - [x] 005 — MarketView
-- [ ] 007 — Analyzer interface + graph
+- [x] 007 — Analyzer interface + graph
 - [ ] 008 — EMA analyzer
 - [ ] 009 — ATR analyzer
 - [ ] 010 — Trend analyzer

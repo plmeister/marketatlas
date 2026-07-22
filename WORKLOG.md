@@ -7,3 +7,4 @@
 - **003** — Parquet data loading: MarketRepository loads OHLCV from Parquet files into MarketData. Symbol listing, column validation, clear errors. 8 tests.
 - **004** — MarketStore: immutable candle collection with O(1) indexed access, slicing, timestamps, symbol/timeframe metadata. 10 tests.
 - **005** — MarketView: cursor-based window into MarketStore. Current candle, history window, price/volume/high/low/timestamp series, validity checks. 15 tests.
+- **007** — Analyzer interface + graph: Analyzer base class with requires()/produces()/analyze(). AnalysisGraph with topological sort, cyclic dependency detection, unsatisfied dependency detection. 16 tests.

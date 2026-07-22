@@ -22,7 +22,8 @@ def store() -> MarketStore:
         )
         for i in range(100)
     )
-    return MarketStore(MarketData(symbol=Symbol("BTCUSDT"), timeframe=Timeframe.D1, candles=candles))
+    data = MarketData(symbol=Symbol("BTCUSDT"), timeframe=Timeframe.D1, candles=candles)
+    return MarketStore(data)
 
 
 class TestMarketViewCurrent:
