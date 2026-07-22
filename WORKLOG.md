@@ -4,3 +4,4 @@
 
 - **001** — Project scaffolding and data model foundation
 - **006** — Fact type system: base Fact, primitive facts (EMA/SMA/ATR/RSI/Volume), structural facts (Trend), pattern facts (Pullback). 19 tests passing.
+- **003** — Parquet data loading: MarketRepository loads OHLCV from Parquet files into MarketData. Symbol listing, column validation, clear errors. 8 tests.

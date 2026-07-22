@@ -4,7 +4,7 @@
 
 - [x] 001 — Project scaffolding
 - [x] 006 — Fact type system
-- [ ] 003 — Parquet data loading
+- [x] 003 — Parquet data loading
 - [ ] 004 — MarketStore
 - [ ] 005 — MarketView
 - [ ] 007 — Analyzer interface + graph
