@@ -14,3 +14,4 @@
 - **011** — Pullback detector: PullbackDetector consumes TrendFact + ATRFact to detect retracement within trend. Swing detection with fallback to extremes, ATR-denominated retracement depth, DETECTED/INVALIDATED status. 17 tests.
 - **012** — Analysis frame storage: AnalysisFrame (frozen dataclass capturing timestamp, candle, facts, evidence, annotations, diagnostics) and FrameStore (in-memory collection with append/getitem/slice/by_timestamp, Parquet round-trip serialization). 10 tests.
 - **013** — Evidence model: EvidenceEntry (text, level, source, annotation_hint), EvidenceLevel enum (INFO/SIGNAL/WARNING), EvidenceCollector (add, entries, by_level, summary). Structured evidence throughout analyzers, facts, and frames. 155 total tests.
+- **014** — Backtesting replay loop: Backtester iterates MarketStore, creates MarketView per step, runs AnalysisGraph, stores AnalysisFrame. Progress callback, edge cases (exact window, zero frames). 13 tests. 168 total.

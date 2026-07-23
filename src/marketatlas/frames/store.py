@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,9 @@ class FrameStore:
 
     def __getitem__(self, index: int) -> AnalysisFrame:
         return self._frames[index]
+
+    def __iter__(self) -> Iterator[AnalysisFrame]:
+        return iter(self._frames)
 
     def slice(self, start: int, end: int) -> list[AnalysisFrame]:
         return self._frames[start:end]

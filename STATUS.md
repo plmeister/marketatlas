@@ -14,6 +14,6 @@
 - [x] 011 — Pullback detector
 - [x] 012 — Analysis frame storage
 - [x] 013 — Evidence model
-- [ ] 014 — Backtesting replay loop
+- [x] 014 — Backtesting replay loop
 - [ ] 015 — HTML visualization
 - [ ] 002 — External data fetcher
