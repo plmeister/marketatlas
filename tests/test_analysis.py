@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 
 import pytest
-
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.graph import (
     AnalysisGraph,
@@ -43,13 +42,15 @@ def view(store: MarketStore) -> MarketView:
 
 
 class ProduceXAnalyzer(Analyzer):
-    def requires(self) -> tuple[type[Fact], ...]:
+    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
         return ()
 
-    def produces(self) -> tuple[type[Fact], ...]:
-        return (EMAFact,)
+    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+        return ((EMAFact, "ema_20"),)
 
-    def analyze(self, view: MarketView, facts: dict[type[Fact], Fact]) -> AnalysisResult:
+    def analyze(
+        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+    ) -> AnalysisResult:
         return AnalysisResult(
             facts=(
                 EMAFact(
@@ -76,14 +77,16 @@ class ProduceXAnalyzer(Analyzer):
 
 
 class RequireXProduceYAnalyzer(Analyzer):
-    def requires(self) -> tuple[type[Fact], ...]:
-        return (EMAFact,)
+    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+        return ((EMAFact, "ema_20"),)
 
-    def produces(self) -> tuple[type[Fact], ...]:
-        return (TrendFact,)
+    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+        return ((TrendFact, "trend"),)
 
-    def analyze(self, view: MarketView, facts: dict[type[Fact], Fact]) -> AnalysisResult:
-        _ema = facts[EMAFact]
+    def analyze(
+        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+    ) -> AnalysisResult:
+        _ema = facts[EMAFact, "ema_20"]
         return AnalysisResult(
             facts=(
                 TrendFact(
@@ -110,13 +113,15 @@ class RequireXProduceYAnalyzer(Analyzer):
 
 
 class RequireBothAnalyzer(Analyzer):
-    def requires(self) -> tuple[type[Fact], ...]:
-        return (EMAFact, TrendFact)
+    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+        return ((EMAFact, "ema_20"), (TrendFact, "trend"))
 
-    def produces(self) -> tuple[type[Fact], ...]:
-        return (ATRFact,)
+    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+        return ((ATRFact, "atr_14"),)
 
-    def analyze(self, view: MarketView, facts: dict[type[Fact], Fact]) -> AnalysisResult:
+    def analyze(
+        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+    ) -> AnalysisResult:
         return AnalysisResult(
             facts=(
                 ATRFact(
@@ -149,7 +154,7 @@ class TestAnalyzerBase:
 
     def test_produces_returns_tuple_of_fact_types(self) -> None:
         analyzer = ProduceXAnalyzer()
-        assert analyzer.produces() == (EMAFact,)
+        assert analyzer.produces() == ((EMAFact, "ema_20"),)
 
     def test_analyze_returns_analysis_result(self, view: MarketView) -> None:
         analyzer = ProduceXAnalyzer()
@@ -207,26 +212,26 @@ class TestAnalysisGraphExecutionOrder:
 class TestAnalysisGraphErrors:
     def test_cyclic_dependency(self) -> None:
         class CyclicA(Analyzer):
-            def requires(self) -> tuple[type[Fact], ...]:
-                return (TrendFact,)
+            def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ((TrendFact, "trend"),)
 
-            def produces(self) -> tuple[type[Fact], ...]:
-                return (EMAFact,)
+            def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ((EMAFact, "ema_20"),)
 
             def analyze(
-                self, view: MarketView, facts: dict[type[Fact], Fact]
+                self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
             ) -> AnalysisResult:
                 return AnalysisResult(facts=(), evidence=())
 
         class CyclicB(Analyzer):
-            def requires(self) -> tuple[type[Fact], ...]:
-                return (EMAFact,)
+            def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ((EMAFact, "ema_20"),)
 
-            def produces(self) -> tuple[type[Fact], ...]:
-                return (TrendFact,)
+            def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ((TrendFact, "trend"),)
 
             def analyze(
-                self, view: MarketView, facts: dict[type[Fact], Fact]
+                self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
             ) -> AnalysisResult:
                 return AnalysisResult(facts=(), evidence=())
 
@@ -235,14 +240,14 @@ class TestAnalysisGraphErrors:
 
     def test_unsatisfied_dependency(self) -> None:
         class RequireMissing(Analyzer):
-            def requires(self) -> tuple[type[Fact], ...]:
-                return (ATRFact,)
+            def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ((ATRFact, "atr_14"),)
 
-            def produces(self) -> tuple[type[Fact], ...]:
-                return (TrendFact,)
+            def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ((TrendFact, "trend"),)
 
             def analyze(
-                self, view: MarketView, facts: dict[type[Fact], Fact]
+                self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
             ) -> AnalysisResult:
                 return AnalysisResult(facts=(), evidence=())
 
@@ -254,13 +259,13 @@ class TestAnalysisGraphRun:
     def test_run_returns_all_produced_facts(self, view: MarketView) -> None:
         graph = AnalysisGraph([ProduceXAnalyzer(), RequireXProduceYAnalyzer()])
         facts = graph.run(view)
-        assert EMAFact in facts
-        assert TrendFact in facts
+        assert (EMAFact, "ema_20") in facts
+        assert (TrendFact, "trend") in facts
 
     def test_run_passes_facts_to_dependents(self, view: MarketView) -> None:
         graph = AnalysisGraph([ProduceXAnalyzer(), RequireXProduceYAnalyzer()])
         facts = graph.run(view)
-        trend = facts[TrendFact]
+        trend = facts[TrendFact, "trend"]
         assert isinstance(trend, TrendFact)
         assert trend.direction == TrendDirection.BULLISH
 
@@ -272,7 +277,7 @@ class TestAnalysisGraphRun:
         ])
         facts = graph.run(view)
         assert len(facts) == 3
-        assert ATRFact in facts
+        assert (ATRFact, "atr_14") in facts
 
     def test_run_empty_graph(self, view: MarketView) -> None:
         graph = AnalysisGraph([])
@@ -281,14 +286,14 @@ class TestAnalysisGraphRun:
 
     def test_run_independent_analyzers(self, view: MarketView) -> None:
         class IndependentAnalyzer(Analyzer):
-            def requires(self) -> tuple[type[Fact], ...]:
+            def requires(self) -> tuple[tuple[type[Fact], str], ...]:
                 return ()
 
-            def produces(self) -> tuple[type[Fact], ...]:
-                return (ATRFact,)
+            def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ((ATRFact, "atr_14"),)
 
             def analyze(
-                self, view: MarketView, facts: dict[type[Fact], Fact]
+                self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
             ) -> AnalysisResult:
                 return AnalysisResult(
                     facts=(
@@ -305,8 +310,8 @@ class TestAnalysisGraphRun:
         graph = AnalysisGraph([ProduceXAnalyzer(), IndependentAnalyzer()])
         facts = graph.run(view)
         assert len(facts) == 2
-        ema = facts[EMAFact]
-        atr = facts[ATRFact]
+        ema = facts[EMAFact, "ema_20"]
+        atr = facts[ATRFact, "atr_14"]
         assert isinstance(ema, EMAFact)
         assert isinstance(atr, ATRFact)
         assert ema.value == 103.0

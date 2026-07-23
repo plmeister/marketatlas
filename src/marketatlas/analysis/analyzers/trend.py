@@ -3,29 +3,43 @@ from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
-from marketatlas.facts.primitive import ATRFact
+from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
 
 
 class TrendAnalyzer(Analyzer):
     def __init__(
         self,
-        fast_period: int = 20,
-        slow_period: int = 50,
+        fast_key: str = "ema_20",
+        slow_key: str = "ema_50",
+        atr_key: str = "atr_14",
     ) -> None:
-        self._fast_period = fast_period
-        self._slow_period = slow_period
+        self._fast_key = fast_key
+        self._slow_key = slow_key
+        self._atr_key = atr_key
 
-    def requires(self) -> tuple[type[Fact], ...]:
-        return ()
+    @property
+    def instance_key(self) -> str:
+        return "trend"
 
-    def produces(self) -> tuple[type[Fact], ...]:
-        return (TrendFact,)
+    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+        return (
+            (EMAFact, self._fast_key),
+            (EMAFact, self._slow_key),
+        )
 
-    def analyze(self, view: MarketView, facts: dict[type[Fact], Fact]) -> AnalysisResult:
-        prices = view.prices
-        fast_ema = self._compute_ema(prices, self._fast_period)
-        slow_ema = self._compute_ema(prices, self._slow_period)
+    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+        return ((TrendFact, self.instance_key),)
+
+    def analyze(
+        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+    ) -> AnalysisResult:
+        fast_ema_fact = facts[EMAFact, self._fast_key]
+        slow_ema_fact = facts[EMAFact, self._slow_key]
+        assert isinstance(fast_ema_fact, EMAFact)
+        assert isinstance(slow_ema_fact, EMAFact)
+        fast_ema = fast_ema_fact.value
+        slow_ema = slow_ema_fact.value
 
         if fast_ema > slow_ema:
             direction = TrendDirection.BULLISH
@@ -35,7 +49,7 @@ class TrendAnalyzer(Analyzer):
             direction = TrendDirection.NEUTRAL
 
         atr_value = 0.0
-        atr_fact = facts.get(ATRFact)
+        atr_fact = facts.get((ATRFact, self._atr_key))
         if atr_fact is not None and isinstance(atr_fact, ATRFact):
             atr_value = atr_fact.value
 
@@ -55,8 +69,8 @@ class TrendAnalyzer(Analyzer):
             EvidenceEntry(
                 text=(
                     f"Trend: {direction.value.title()} — "
-                    f"EMA{self._fast_period} ({fast_ema:.2f}) {cmp} "
-                    f"EMA{self._slow_period} ({slow_ema:.2f})"
+                    f"Fast EMA ({fast_ema:.2f}) {cmp} "
+                    f"Slow EMA ({slow_ema:.2f})"
                 ),
                 level=EvidenceLevel.INFO,
                 source="TrendAnalyzer",
@@ -97,16 +111,3 @@ class TrendAnalyzer(Analyzer):
             ),
             evidence=evidence,
         )
-
-    @staticmethod
-    def _compute_ema(prices: tuple[float, ...], period: int) -> float:
-        if not prices:
-            return 0.0
-        period = min(period, len(prices))
-        if period < 2:
-            return prices[-1]
-        k = 2.0 / (period + 1)
-        ema = sum(prices[:period]) / period
-        for price in prices[period:]:
-            ema = price * k + ema * (1 - k)
-        return ema

@@ -6,8 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import pyarrow as pa
-import pyarrow.parquet as pq
+import pyarrow as pa  # type: ignore[import-untyped]
+import pyarrow.parquet as pq  # type: ignore[import-untyped]
 
 from marketatlas.data.types import Candle
 from marketatlas.evidence.model import EvidenceEntry
@@ -72,8 +72,8 @@ class FrameStore:
         rows: list[dict[str, Any]] = []
         for f in self._frames:
             facts_dict: dict[str, Any] = {}
-            for fact_type, fact in f.facts.items():
-                raw: dict[str, Any] = {"type": fact_type.__name__}
+            for (fact_cls, key), fact in f.facts.items():
+                raw: dict[str, Any] = {"type": fact_cls.__name__, "key": key}
                 for k, v in fact.__dict__.items():
                     if isinstance(v, datetime):
                         raw[k] = v.isoformat()
@@ -81,7 +81,7 @@ class FrameStore:
                         raw[k] = _serialize_evidence(v)
                     else:
                         raw[k] = v
-                facts_dict[fact_type.__name__] = raw
+                facts_dict[f"{fact_cls.__name__}_{key}"] = raw
             rows.append(
                 {
                     "timestamp": f.timestamp.isoformat(),
@@ -97,11 +97,11 @@ class FrameStore:
                 }
             )
         table = pa.Table.from_pylist(rows)
-        pq.write_table(table, path)  # type: ignore[no-untyped-call]
+        pq.write_table(table, path)
 
     @classmethod
     def from_parquet(cls, path: Path) -> FrameStore:
-        table = pq.read_table(path)  # type: ignore[no-untyped-call]
+        table = pq.read_table(path)
         rows = table.to_pydict()
         store = cls()
         n = len(rows["timestamp"])

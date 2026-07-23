@@ -26,8 +26,8 @@ def fetch_command(args: argparse.Namespace) -> None:
         print(f"Error fetching data: {e}", file=sys.stderr)
         sys.exit(1)
 
-    import pyarrow as pa
-    import pyarrow.parquet as pq
+    import pyarrow as pa  # type: ignore[import-untyped]
+    import pyarrow.parquet as pq  # type: ignore[import-untyped]
 
     table = pa.table(
         {

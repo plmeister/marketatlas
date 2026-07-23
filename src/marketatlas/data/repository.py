@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pyarrow.parquet as pq
+import pyarrow.parquet as pq  # type: ignore[import-untyped]
 
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
@@ -23,7 +23,7 @@ class MarketRepository:
         if not path.exists():
             raise FileNotFoundError(f"No data file for {symbol.name} {timeframe.value}: {path}")
 
-        table = pq.read_table(path)  # type: ignore[no-untyped-call]
+        table = pq.read_table(path)
         required = {"timestamp", "open", "high", "low", "close", "volume"}
         if not required.issubset(set(table.column_names)):
             missing = required - set(table.column_names)

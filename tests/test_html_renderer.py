@@ -55,7 +55,11 @@ def _make_frame(offset: int = 0) -> AnalysisFrame:
     return AnalysisFrame(
         timestamp=candle.timestamp,
         candle=candle,
-        facts={EMAFact: ema, ATRFact: atr, TrendFact: trend},
+        facts={
+            (EMAFact, "ema_20"): ema,
+            (ATRFact, "atr_14"): atr,
+            (TrendFact, "trend"): trend,
+        },
         evidence=(
             EvidenceEntry(
                 text=f"price above EMA at {offset}",
@@ -78,7 +82,7 @@ def _make_pullback_frame(offset: int) -> AnalysisFrame:
     return AnalysisFrame(
         timestamp=candle.timestamp,
         candle=candle,
-        facts={PullbackFact: pullback},
+        facts={(PullbackFact, "pullback"): pullback},
         evidence=(),
     )
 
@@ -116,11 +120,11 @@ class TestExtractEMA:
         ema50 = EMAFact(timestamp=candle.timestamp, evidence=(), value=99.0, period=50)
         frame = AnalysisFrame(
             timestamp=candle.timestamp, candle=candle,
-            facts={EMAFact: ema20}, evidence=(),
+            facts={(EMAFact, "ema_20"): ema20}, evidence=(),
         )
         frame2 = AnalysisFrame(
             timestamp=candle.timestamp, candle=candle,
-            facts={EMAFact: ema50}, evidence=(),
+            facts={(EMAFact, "ema_50"): ema50}, evidence=(),
         )
         result = _extract_ema_lines([frame, frame2])
         assert "EMA20" in result
@@ -170,7 +174,7 @@ class TestExtractPullbacks:
         )
         frame = AnalysisFrame(
             timestamp=candle.timestamp, candle=candle,
-            facts={PullbackFact: pb}, evidence=(),
+            facts={(PullbackFact, "pullback"): pb}, evidence=(),
         )
         assert _extract_pullbacks([frame]) == []
 

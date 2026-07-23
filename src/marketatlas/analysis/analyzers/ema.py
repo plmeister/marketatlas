@@ -1,4 +1,5 @@
 from marketatlas.analysis.base import Analyzer
+from marketatlas.analysis.math import compute_ema
 from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
@@ -10,24 +11,20 @@ class EMAAnalyzer(Analyzer):
     def __init__(self, period: int = 20) -> None:
         self._period = period
 
-    def requires(self) -> tuple[type[Fact], ...]:
+    @property
+    def instance_key(self) -> str:
+        return f"ema_{self._period}"
+
+    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
         return ()
 
-    def produces(self) -> tuple[type[Fact], ...]:
-        return (EMAFact,)
+    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+        return ((EMAFact, self.instance_key),)
 
-    def analyze(self, view: MarketView, facts: dict[type[Fact], Fact]) -> AnalysisResult:
-        prices = view.prices
-        period = min(self._period, len(prices))
-
-        if period < 2:
-            ema_value = prices[-1] if prices else 0.0
-        else:
-            k = 2.0 / (period + 1)
-            sma = sum(prices[:period]) / period
-            ema_value = sma
-            for price in prices[period:]:
-                ema_value = price * k + ema_value * (1 - k)
+    def analyze(
+        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+    ) -> AnalysisResult:
+        ema_value = compute_ema(view.prices, self._period)
 
         evidence_entries: list[EvidenceEntry] = [
             EvidenceEntry(

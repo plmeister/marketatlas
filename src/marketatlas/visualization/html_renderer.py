@@ -31,7 +31,7 @@ def _extract_ema_lines(
     series: dict[str, list[dict[str, Any]]] = {}
     for frame in frames:
         for fact_type, fact in frame.facts.items():
-            if isinstance(fact, EMAFact) and fact_type is EMAFact:
+            if isinstance(fact, EMAFact) and fact_type[0] is EMAFact:
                 key = f"EMA{fact.period}"
                 if key not in series:
                     series[key] = []

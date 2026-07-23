@@ -6,7 +6,9 @@ from marketatlas.analysis.result import AnalysisResult
 from marketatlas.backtesting.backtester import Backtester
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
+from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
+from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import EMAFact
 
 
@@ -30,13 +32,15 @@ def _make_candles(n: int, start: datetime | None = None) -> tuple[Candle, ...]:
 
 
 class StubAnalyzer(Analyzer):
-    def requires(self) -> tuple[type, ...]:
+    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
         return ()
 
-    def produces(self) -> tuple[type, ...]:
-        return (EMAFact,)
+    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+        return ((EMAFact, "stub_ema"),)
 
-    def analyze(self, view, facts: dict) -> AnalysisResult:
+    def analyze(
+        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+    ) -> AnalysisResult:
         candle = view.current
         ema = EMAFact(
             timestamp=candle.timestamp,
@@ -120,7 +124,7 @@ class TestBacktesterBasic:
         bt = Backtester(store, _make_graph(), window_size=50)
         result = bt.run()
         for frame in result:
-            assert EMAFact in frame.facts
+            assert (EMAFact, "stub_ema") in frame.facts
 
     def test_frame_evidence_populated(self) -> None:
         store = _make_store(100)

@@ -15,21 +15,34 @@ class PullbackDetector(Analyzer):
         min_retracement_atr: float = 0.5,
         max_retracement_atr: float = 2.0,
         swing_lookback: int = 20,
+        trend_key: str = "trend",
+        atr_key: str = "atr_14",
     ) -> None:
         self._min_retracement_atr = min_retracement_atr
         self._max_retracement_atr = max_retracement_atr
         self._swing_lookback = swing_lookback
+        self._trend_key = trend_key
+        self._atr_key = atr_key
 
-    def requires(self) -> tuple[type[Fact], ...]:
-        return (TrendFact, ATRFact)
+    @property
+    def instance_key(self) -> str:
+        return "pullback"
 
-    def produces(self) -> tuple[type[Fact], ...]:
-        return (PullbackFact,)
+    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+        return (
+            (TrendFact, self._trend_key),
+            (ATRFact, self._atr_key),
+        )
 
-    def analyze(self, view: MarketView, facts: dict[type[Fact], Fact]) -> AnalysisResult:
-        trend = facts[TrendFact]
+    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+        return ((PullbackFact, self.instance_key),)
+
+    def analyze(
+        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+    ) -> AnalysisResult:
+        trend = facts[TrendFact, self._trend_key]
         assert isinstance(trend, TrendFact)
-        atr_fact = facts[ATRFact]
+        atr_fact = facts[ATRFact, self._atr_key]
         assert isinstance(atr_fact, ATRFact)
 
         if trend.direction == TrendDirection.NEUTRAL or atr_fact.value <= 0:

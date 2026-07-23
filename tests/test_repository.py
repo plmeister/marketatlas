@@ -6,7 +6,6 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-
 from marketatlas.data.repository import MarketRepository
 from marketatlas.data.types import MarketData, Symbol, Timeframe
 

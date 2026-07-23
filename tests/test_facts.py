@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 
 import pytest
-
 from marketatlas.facts import (
     ATRFact,
     EMAFact,

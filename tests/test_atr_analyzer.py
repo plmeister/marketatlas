@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 
 import pytest
-
 from marketatlas.analysis.analyzers.atr import ATRAnalyzer
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
@@ -42,7 +41,7 @@ class TestATRAnalyzer:
         assert ATRAnalyzer(14).requires() == ()
 
     def test_produces_atr_fact(self) -> None:
-        assert ATRAnalyzer(14).produces() == (ATRFact,)
+        assert ATRAnalyzer(14).produces() == ((ATRFact, "atr_14"),)
 
     def test_single_candle(self) -> None:
         store = _make_store([105.0], [95.0], [100.0])

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from time import sleep
 
-import yfinance as yf
+import yfinance as yf  # type: ignore[import-untyped]
 
 from marketatlas.data.providers.base import DataProvider, RateLimitError, SymbolNotFoundError
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe

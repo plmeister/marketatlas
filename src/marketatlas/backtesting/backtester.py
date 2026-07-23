@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from marketatlas.analysis.graph import AnalysisGraph
+from marketatlas.analysis.graph import AnalysisGraph, FactKey
 from marketatlas.data.store import MarketStore
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.collector import EvidenceCollector
@@ -54,7 +54,7 @@ class Backtester:
         return frame_store
 
     @staticmethod
-    def _collect_evidence(facts: dict[type[Fact], Fact]) -> tuple[EvidenceEntry, ...]:
+    def _collect_evidence(facts: dict[FactKey, Fact]) -> tuple[EvidenceEntry, ...]:
         collector = EvidenceCollector()
         for fact in facts.values():
             for entry in fact.evidence:

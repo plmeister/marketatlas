@@ -5,6 +5,7 @@ from datetime import datetime
 from marketatlas.data.providers.base import (
     DataProvider,
     NoDataAvailableError,
+    RateLimitError,
     SymbolNotFoundError,
 )
 from marketatlas.data.types import MarketData, Symbol, Timeframe
@@ -25,7 +26,7 @@ class ProviderChain(DataProvider):
         for provider in self._providers:
             try:
                 return provider.fetch(symbol, timeframe, start, end)
-            except (SymbolNotFoundError, Exception) as e:
+            except (SymbolNotFoundError, RateLimitError) as e:
                 last_error = e
                 continue
 

@@ -10,13 +10,19 @@ class ATRAnalyzer(Analyzer):
     def __init__(self, period: int = 14) -> None:
         self._period = period
 
-    def requires(self) -> tuple[type[Fact], ...]:
+    @property
+    def instance_key(self) -> str:
+        return f"atr_{self._period}"
+
+    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
         return ()
 
-    def produces(self) -> tuple[type[Fact], ...]:
-        return (ATRFact,)
+    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+        return ((ATRFact, self.instance_key),)
 
-    def analyze(self, view: MarketView, facts: dict[type[Fact], Fact]) -> AnalysisResult:
+    def analyze(
+        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+    ) -> AnalysisResult:
         highs = view.highs
         lows = view.lows
         closes = view.prices

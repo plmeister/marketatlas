@@ -73,6 +73,15 @@ def _atr_fact(value: float = 2.0) -> ATRFact:
     )
 
 
+def _keyed_facts(
+    trend: TrendFact, atr: ATRFact
+) -> dict[tuple[type, str], object]:
+    return {
+        (TrendFact, "trend"): trend,
+        (ATRFact, "atr_14"): atr,
+    }
+
+
 def _rising_then_retracing_candles() -> list[tuple[float, float, float, float]]:
     """Bullish trend: rise from 100 to 110, retrace to 107 (1.5 ATR with ATR=2)."""
     return [
@@ -149,11 +158,11 @@ def _deep_retrace_candles() -> list[tuple[float, float, float, float]]:
 class TestPullbackDetector:
     def test_requires_trend_and_atr(self) -> None:
         detector = PullbackDetector()
-        assert detector.requires() == (TrendFact, ATRFact)
+        assert detector.requires() == ((TrendFact, "trend"), (ATRFact, "atr_14"))
 
     def test_produces_pullback_fact(self) -> None:
         detector = PullbackDetector()
-        assert detector.produces() == (PullbackFact,)
+        assert detector.produces() == ((PullbackFact, "pullback"),)
 
     def test_bullish_trend_detected_pullback(self) -> None:
         candles = _rising_then_retracing_candles()
@@ -162,7 +171,7 @@ class TestPullbackDetector:
         detector = PullbackDetector(min_retracement_atr=0.5, max_retracement_atr=2.0)
         result = detector.analyze(
             view,
-            {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
+            _keyed_facts(_bullish_trend_fact(), _atr_fact(2.0)),
         )
         fact = result.facts[0]
         assert isinstance(fact, PullbackFact)
@@ -177,7 +186,7 @@ class TestPullbackDetector:
         detector = PullbackDetector(min_retracement_atr=0.5, max_retracement_atr=2.0)
         result = detector.analyze(
             view,
-            {TrendFact: _bearish_trend_fact(), ATRFact: _atr_fact(2.0)},
+            _keyed_facts(_bearish_trend_fact(), _atr_fact(2.0)),
         )
         fact = result.facts[0]
         assert isinstance(fact, PullbackFact)
@@ -192,7 +201,7 @@ class TestPullbackDetector:
         detector = PullbackDetector(min_retracement_atr=0.5, max_retracement_atr=2.0)
         result = detector.analyze(
             view,
-            {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
+            _keyed_facts(_bullish_trend_fact(), _atr_fact(2.0)),
         )
         fact = result.facts[0]
         assert isinstance(fact, PullbackFact)
@@ -205,7 +214,7 @@ class TestPullbackDetector:
         detector = PullbackDetector(min_retracement_atr=0.5, max_retracement_atr=2.0)
         result = detector.analyze(
             view,
-            {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
+            _keyed_facts(_bullish_trend_fact(), _atr_fact(2.0)),
         )
         fact = result.facts[0]
         assert isinstance(fact, PullbackFact)
@@ -224,7 +233,7 @@ class TestPullbackDetector:
         )
         result = detector.analyze(
             view,
-            {TrendFact: neutral_trend, ATRFact: _atr_fact(2.0)},
+            _keyed_facts(neutral_trend, _atr_fact(2.0)),
         )
         fact = result.facts[0]
         assert isinstance(fact, PullbackFact)
@@ -238,7 +247,7 @@ class TestPullbackDetector:
         detector = PullbackDetector()
         result = detector.analyze(
             view,
-            {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(0.0)},
+            _keyed_facts(_bullish_trend_fact(), _atr_fact(0.0)),
         )
         fact = result.facts[0]
         assert isinstance(fact, PullbackFact)
@@ -251,7 +260,7 @@ class TestPullbackDetector:
         detector = PullbackDetector(min_retracement_atr=0.5, max_retracement_atr=2.0)
         result = detector.analyze(
             view,
-            {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
+            _keyed_facts(_bullish_trend_fact(), _atr_fact(2.0)),
         )
         assert any("detected" in e.text.lower() for e in result.evidence)
 
@@ -262,7 +271,7 @@ class TestPullbackDetector:
         detector = PullbackDetector(min_retracement_atr=0.5, max_retracement_atr=2.0)
         result = detector.analyze(
             view,
-            {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
+            _keyed_facts(_bullish_trend_fact(), _atr_fact(2.0)),
         )
         assert any("atr" in e.text.lower() for e in result.evidence)
 
@@ -273,7 +282,7 @@ class TestPullbackDetector:
         detector = PullbackDetector(min_retracement_atr=0.5, max_retracement_atr=2.0)
         result = detector.analyze(
             view,
-            {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
+            _keyed_facts(_bullish_trend_fact(), _atr_fact(2.0)),
         )
         assert any("current price" in e.text.lower() for e in result.evidence)
 
@@ -284,7 +293,7 @@ class TestPullbackDetector:
         detector = PullbackDetector(min_retracement_atr=0.5, max_retracement_atr=2.0)
         result = detector.analyze(
             view,
-            {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
+            _keyed_facts(_bullish_trend_fact(), _atr_fact(2.0)),
         )
         assert result.facts[0].timestamp == BASE
 
@@ -295,7 +304,7 @@ class TestPullbackDetector:
         detector = PullbackDetector(min_retracement_atr=0.1, max_retracement_atr=2.0)
         result = detector.analyze(
             view,
-            {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
+            _keyed_facts(_bullish_trend_fact(), _atr_fact(2.0)),
         )
         fact = result.facts[0]
         assert isinstance(fact, PullbackFact)
@@ -308,7 +317,7 @@ class TestPullbackDetector:
         detector = PullbackDetector(min_retracement_atr=0.5, max_retracement_atr=2.0)
         result = detector.analyze(
             view,
-            {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
+            _keyed_facts(_bullish_trend_fact(), _atr_fact(2.0)),
         )
         fact = result.facts[0]
         assert isinstance(fact, PullbackFact)
@@ -321,7 +330,7 @@ class TestPullbackDetector:
         detector = PullbackDetector()
         result = detector.analyze(
             view,
-            {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
+            _keyed_facts(_bullish_trend_fact(), _atr_fact(2.0)),
         )
         fact = result.facts[0]
         assert isinstance(fact, PullbackFact)
@@ -334,7 +343,7 @@ class TestPullbackDetector:
         detector = PullbackDetector(min_retracement_atr=0.5, max_retracement_atr=2.0)
         result = detector.analyze(
             view,
-            {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
+            _keyed_facts(_bullish_trend_fact(), _atr_fact(2.0)),
         )
         assert result.evidence == result.facts[0].evidence
 
@@ -345,6 +354,6 @@ class TestPullbackDetector:
         detector = PullbackDetector()
         result = detector.analyze(
             view,
-            {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
+            _keyed_facts(_bullish_trend_fact(), _atr_fact(2.0)),
         )
         assert isinstance(result.facts[0], PullbackFact)

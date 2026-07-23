@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 
 import pytest
-
 from marketatlas.data.types import Candle
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.primitive import EMAFact
@@ -34,7 +33,7 @@ def _make_frame(offset: int = 0) -> AnalysisFrame:
     return AnalysisFrame(
         timestamp=candle.timestamp,
         candle=candle,
-        facts={EMAFact: ema},
+        facts={(EMAFact, "ema_20"): ema},
         evidence=(
             EvidenceEntry(
                 text="price above EMA",
@@ -61,7 +60,7 @@ class TestAnalysisFrame:
         frame = AnalysisFrame(
             timestamp=candle.timestamp,
             candle=candle,
-            facts={EMAFact: ema},
+            facts={(EMAFact, "ema_20"): ema},
             evidence=(),
         )
         assert frame.annotations == ()
