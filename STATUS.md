@@ -17,3 +17,15 @@
 - [x] 014 — Backtesting replay loop
 - [x] 015 — HTML visualization
 - [x] 002 — External data fetcher
+
+## Strategy Layer
+
+- [ ] 016 — Strategy config loader (YAML)
+- [ ] 017 — Swing structure analyzer
+- [ ] 018 — Four-swing pullback detector
+- [ ] 019 — Support/resistance analyzer
+- [ ] 020 — Signal system
+- [ ] 021 — Risk layer & trade sizing
+- [ ] 022 — Strategy-aware backtester
+- [ ] 023 — No-read-ahead audit
+- [ ] 024 — Interactive strategy visualization
