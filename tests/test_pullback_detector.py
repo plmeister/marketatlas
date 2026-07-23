@@ -4,6 +4,7 @@ from marketatlas.analysis.patterns.pullback import PullbackDetector
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
+from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
@@ -30,7 +31,13 @@ def _make_store(candles_data: list[tuple[float, float, float, float]]) -> Market
 def _bullish_trend_fact() -> TrendFact:
     return TrendFact(
         timestamp=BASE,
-        evidence=("Trend: Bullish",),
+        evidence=(
+            EvidenceEntry(
+                text="Trend: Bullish",
+                level=EvidenceLevel.INFO,
+                source="TrendAnalyzer",
+            ),
+        ),
         direction=TrendDirection.BULLISH,
         strength=0.7,
     )
@@ -39,7 +46,13 @@ def _bullish_trend_fact() -> TrendFact:
 def _bearish_trend_fact() -> TrendFact:
     return TrendFact(
         timestamp=BASE,
-        evidence=("Trend: Bearish",),
+        evidence=(
+            EvidenceEntry(
+                text="Trend: Bearish",
+                level=EvidenceLevel.INFO,
+                source="TrendAnalyzer",
+            ),
+        ),
         direction=TrendDirection.BEARISH,
         strength=0.7,
     )
@@ -48,7 +61,13 @@ def _bearish_trend_fact() -> TrendFact:
 def _atr_fact(value: float = 2.0) -> ATRFact:
     return ATRFact(
         timestamp=BASE,
-        evidence=(f"ATR14 = {value:.2f}",),
+        evidence=(
+            EvidenceEntry(
+                text=f"ATR14 = {value:.2f}",
+                level=EvidenceLevel.INFO,
+                source="ATRAnalyzer",
+            ),
+        ),
         value=value,
         period=14,
     )
@@ -234,7 +253,7 @@ class TestPullbackDetector:
             view,
             {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
         )
-        assert any("detected" in e.lower() for e in result.evidence)
+        assert any("detected" in e.text.lower() for e in result.evidence)
 
     def test_evidence_contains_retracement_atr(self) -> None:
         candles = _rising_then_retracing_candles()
@@ -245,7 +264,7 @@ class TestPullbackDetector:
             view,
             {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
         )
-        assert any("atr" in e.lower() for e in result.evidence)
+        assert any("atr" in e.text.lower() for e in result.evidence)
 
     def test_evidence_contains_price_info(self) -> None:
         candles = _rising_then_retracing_candles()
@@ -256,7 +275,7 @@ class TestPullbackDetector:
             view,
             {TrendFact: _bullish_trend_fact(), ATRFact: _atr_fact(2.0)},
         )
-        assert any("current price" in e.lower() for e in result.evidence)
+        assert any("current price" in e.text.lower() for e in result.evidence)
 
     def test_fact_has_correct_timestamp(self) -> None:
         candles = _rising_then_retracing_candles()

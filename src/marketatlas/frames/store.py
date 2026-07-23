@@ -9,8 +9,37 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from marketatlas.data.types import Candle
+from marketatlas.evidence.model import EvidenceEntry
 
 from .frame import AnalysisFrame
+
+
+def _serialize_evidence(entries: tuple[EvidenceEntry, ...]) -> str:
+    items = [
+        {
+            "text": e.text,
+            "level": e.level.value,
+            "source": e.source,
+            "annotation_hint": e.annotation_hint,
+        }
+        for e in entries
+    ]
+    return json.dumps(items)
+
+
+def _deserialize_evidence(raw: str) -> tuple[EvidenceEntry, ...]:
+    from marketatlas.evidence.model import EvidenceLevel
+
+    items = json.loads(raw)
+    return tuple(
+        EvidenceEntry(
+            text=item["text"],
+            level=EvidenceLevel(item["level"]),
+            source=item.get("source", ""),
+            annotation_hint=item.get("annotation_hint", ""),
+        )
+        for item in items
+    )
 
 
 class FrameStore:
@@ -42,7 +71,12 @@ class FrameStore:
             for fact_type, fact in f.facts.items():
                 raw: dict[str, Any] = {"type": fact_type.__name__}
                 for k, v in fact.__dict__.items():
-                    raw[k] = v.isoformat() if isinstance(v, datetime) else v
+                    if isinstance(v, datetime):
+                        raw[k] = v.isoformat()
+                    elif isinstance(v, tuple) and v and isinstance(v[0], EvidenceEntry):
+                        raw[k] = _serialize_evidence(v)
+                    else:
+                        raw[k] = v
                 facts_dict[fact_type.__name__] = raw
             rows.append(
                 {
@@ -53,7 +87,7 @@ class FrameStore:
                     "close": f.candle.close,
                     "volume": f.candle.volume,
                     "facts": json.dumps(facts_dict),
-                    "evidence": json.dumps(f.evidence),
+                    "evidence": _serialize_evidence(f.evidence),
                     "annotations": json.dumps(f.annotations),
                     "diagnostics": json.dumps(f.diagnostics),
                 }
@@ -82,7 +116,7 @@ class FrameStore:
                         volume=rows["volume"][i],
                     ),
                     facts=facts_raw,  # type: ignore[arg-type]
-                    evidence=tuple(json.loads(rows["evidence"][i])),
+                    evidence=_deserialize_evidence(rows["evidence"][i]),
                     annotations=tuple(json.loads(rows["annotations"][i])),
                     diagnostics=tuple(json.loads(rows["diagnostics"][i])),
                 )

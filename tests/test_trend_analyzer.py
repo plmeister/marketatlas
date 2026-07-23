@@ -7,6 +7,7 @@ from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
+from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
 
@@ -105,7 +106,13 @@ class TestTrendAnalyzer:
         facts_with_atr: dict = {
             ATRFact: ATRFact(
                 timestamp=BASE,
-                evidence=("ATR14 = 2.0",),
+                evidence=(
+                    EvidenceEntry(
+                        text="ATR14 = 2.0",
+                        level=EvidenceLevel.INFO,
+                        source="ATRAnalyzer",
+                    ),
+                ),
                 value=2.0,
                 period=14,
             ),
@@ -119,21 +126,21 @@ class TestTrendAnalyzer:
         store = _make_store(closes)
         view = MarketView(store, cursor=59, window_size=59)
         result = TrendAnalyzer(fast_period=20, slow_period=50).analyze(view, {})
-        assert any("bullish" in e.lower() for e in result.evidence)
+        assert any("bullish" in e.text.lower() for e in result.evidence)
 
     def test_evidence_contains_strength(self) -> None:
         closes = _rising_closes(60)
         store = _make_store(closes)
         view = MarketView(store, cursor=59, window_size=59)
         result = TrendAnalyzer(fast_period=20, slow_period=50).analyze(view, {})
-        assert any("strength" in e.lower() for e in result.evidence)
+        assert any("strength" in e.text.lower() for e in result.evidence)
 
     def test_evidence_confirms_price_position(self) -> None:
         closes = _rising_closes(60)
         store = _make_store(closes)
         view = MarketView(store, cursor=59, window_size=59)
         result = TrendAnalyzer(fast_period=20, slow_period=50).analyze(view, {})
-        assert any("price above both emas" in e.lower() for e in result.evidence)
+        assert any("price above both emas" in e.text.lower() for e in result.evidence)
 
     def test_fact_has_correct_timestamp(self) -> None:
         closes = _rising_closes(60)

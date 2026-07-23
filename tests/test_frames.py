@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from marketatlas.data.types import Candle
+from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.primitive import EMAFact
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.frames.store import FrameStore
@@ -20,14 +21,27 @@ def _make_candle(offset: int = 0) -> Candle:
 def _make_frame(offset: int = 0) -> AnalysisFrame:
     candle = _make_candle(offset)
     ema = EMAFact(
-        timestamp=candle.timestamp, evidence=("EMA signal bullish",),
+        timestamp=candle.timestamp,
+        evidence=(
+            EvidenceEntry(
+                text="EMA signal bullish",
+                level=EvidenceLevel.SIGNAL,
+                source="EMAAnalyzer",
+            ),
+        ),
         value=102.0, period=20,
     )
     return AnalysisFrame(
         timestamp=candle.timestamp,
         candle=candle,
         facts={EMAFact: ema},
-        evidence=("price above EMA",),
+        evidence=(
+            EvidenceEntry(
+                text="price above EMA",
+                level=EvidenceLevel.INFO,
+                source="EMAAnalyzer",
+            ),
+        ),
         annotations=("mark_ema_cross",),
         diagnostics=("debug info",),
     )
@@ -41,7 +55,9 @@ class TestAnalysisFrame:
 
     def test_default_annotations(self) -> None:
         candle = _make_candle()
-        ema = EMAFact(timestamp=candle.timestamp, evidence=(), value=100.0, period=20)
+        ema = EMAFact(
+            timestamp=candle.timestamp, evidence=(), value=100.0, period=20,
+        )
         frame = AnalysisFrame(
             timestamp=candle.timestamp,
             candle=candle,
@@ -113,6 +129,8 @@ class TestFrameStoreParquet:
         store.to_parquet(path)  # type: ignore[arg-type]
 
         loaded = FrameStore.from_parquet(path)  # type: ignore[arg-type]
-        assert loaded[0].evidence == ("price above EMA",)
+        assert len(loaded[0].evidence) == 1
+        assert loaded[0].evidence[0].text == "price above EMA"
+        assert loaded[0].evidence[0].level == EvidenceLevel.INFO
         assert loaded[0].annotations == ("mark_ema_cross",)
         assert loaded[0].diagnostics == ("debug info",)

@@ -1,6 +1,7 @@
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.view import MarketView
+from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import ATRFact
 
@@ -39,9 +40,17 @@ class ATRAnalyzer(Analyzer):
                     atr_value = (atr_value * (period - 1) + tr) / period
 
         pct_of_price = (atr_value / view.current.close * 100) if view.current.close else 0.0
-        evidence: tuple[str, ...] = (
-            f"ATR{self._period} = {atr_value:.2f}",
-            f"ATR represents {pct_of_price:.2f}% of price",
+        evidence: tuple[EvidenceEntry, ...] = (
+            EvidenceEntry(
+                text=f"ATR{self._period} = {atr_value:.2f}",
+                level=EvidenceLevel.INFO,
+                source="ATRAnalyzer",
+            ),
+            EvidenceEntry(
+                text=f"ATR represents {pct_of_price:.2f}% of price",
+                level=EvidenceLevel.INFO,
+                source="ATRAnalyzer",
+            ),
         )
 
         return AnalysisResult(

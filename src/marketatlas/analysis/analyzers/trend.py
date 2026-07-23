@@ -1,6 +1,7 @@
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.view import MarketView
+from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
@@ -50,18 +51,40 @@ class TrendAnalyzer(Analyzer):
         below_both = price < fast_ema and price < slow_ema
 
         cmp = ">" if fast_ema > slow_ema else "<"
-        evidence_parts: list[str] = [
-            f"Trend: {direction.value.title()} — "
-            f"EMA{self._fast_period} ({fast_ema:.2f}) {cmp} "
-            f"EMA{self._slow_period} ({slow_ema:.2f})",
-            f"Strength: {strength:.2f} — spread {spread:.2f}",
+        evidence_entries: list[EvidenceEntry] = [
+            EvidenceEntry(
+                text=(
+                    f"Trend: {direction.value.title()} — "
+                    f"EMA{self._fast_period} ({fast_ema:.2f}) {cmp} "
+                    f"EMA{self._slow_period} ({slow_ema:.2f})"
+                ),
+                level=EvidenceLevel.INFO,
+                source="TrendAnalyzer",
+            ),
+            EvidenceEntry(
+                text=f"Strength: {strength:.2f} — spread {spread:.2f}",
+                level=EvidenceLevel.INFO,
+                source="TrendAnalyzer",
+            ),
         ]
         if above_both:
-            evidence_parts.append("Confirmed by price above both EMAs")
+            evidence_entries.append(
+                EvidenceEntry(
+                    text="Confirmed by price above both EMAs",
+                    level=EvidenceLevel.SIGNAL,
+                    source="TrendAnalyzer",
+                )
+            )
         elif below_both:
-            evidence_parts.append("Confirmed by price below both EMAs")
+            evidence_entries.append(
+                EvidenceEntry(
+                    text="Confirmed by price below both EMAs",
+                    level=EvidenceLevel.SIGNAL,
+                    source="TrendAnalyzer",
+                )
+            )
 
-        evidence = tuple(evidence_parts)
+        evidence = tuple(evidence_entries)
 
         return AnalysisResult(
             facts=(

@@ -12,6 +12,7 @@ from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
+from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
@@ -53,12 +54,24 @@ class ProduceXAnalyzer(Analyzer):
             facts=(
                 EMAFact(
                     timestamp=view.current.timestamp,
-                    evidence=("EMA20 = 103.0",),
+                    evidence=(
+                        EvidenceEntry(
+                            text="EMA20 = 103.0",
+                            level=EvidenceLevel.INFO,
+                            source="ProduceXAnalyzer",
+                        ),
+                    ),
                     value=103.0,
                     period=20,
                 ),
             ),
-            evidence=("EMA20 = 103.0",),
+            evidence=(
+                EvidenceEntry(
+                    text="EMA20 = 103.0",
+                    level=EvidenceLevel.INFO,
+                    source="ProduceXAnalyzer",
+                ),
+            ),
         )
 
 
@@ -75,12 +88,24 @@ class RequireXProduceYAnalyzer(Analyzer):
             facts=(
                 TrendFact(
                     timestamp=view.current.timestamp,
-                    evidence=("Trend: Bullish",),
+                    evidence=(
+                        EvidenceEntry(
+                            text="Trend: Bullish",
+                            level=EvidenceLevel.INFO,
+                            source="RequireXProduceYAnalyzer",
+                        ),
+                    ),
                     direction=TrendDirection.BULLISH,
                     strength=0.7,
                 ),
             ),
-            evidence=("Trend: Bullish",),
+            evidence=(
+                EvidenceEntry(
+                    text="Trend: Bullish",
+                    level=EvidenceLevel.INFO,
+                    source="RequireXProduceYAnalyzer",
+                ),
+            ),
         )
 
 
@@ -96,12 +121,24 @@ class RequireBothAnalyzer(Analyzer):
             facts=(
                 ATRFact(
                     timestamp=view.current.timestamp,
-                    evidence=("ATR14 = 5.0",),
+                    evidence=(
+                        EvidenceEntry(
+                            text="ATR14 = 5.0",
+                            level=EvidenceLevel.INFO,
+                            source="RequireBothAnalyzer",
+                        ),
+                    ),
                     value=5.0,
                     period=14,
                 ),
             ),
-            evidence=("ATR14 = 5.0",),
+            evidence=(
+                EvidenceEntry(
+                    text="ATR14 = 5.0",
+                    level=EvidenceLevel.INFO,
+                    source="RequireBothAnalyzer",
+                ),
+            ),
         )
 
 

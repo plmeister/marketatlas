@@ -1,6 +1,7 @@
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.view import MarketView
+from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import EMAFact
 
@@ -28,16 +29,40 @@ class EMAAnalyzer(Analyzer):
             for price in prices[period:]:
                 ema_value = price * k + ema_value * (1 - k)
 
-        evidence_parts: list[str] = [f"EMA{self._period} = {ema_value:.2f}"]
+        evidence_entries: list[EvidenceEntry] = [
+            EvidenceEntry(
+                text=f"EMA{self._period} = {ema_value:.2f}",
+                level=EvidenceLevel.INFO,
+                source="EMAAnalyzer",
+            ),
+        ]
 
         if ema_value < view.current.close:
-            evidence_parts.append(f"EMA{self._period} below price (bullish signal)")
+            evidence_entries.append(
+                EvidenceEntry(
+                    text=f"EMA{self._period} below price (bullish signal)",
+                    level=EvidenceLevel.SIGNAL,
+                    source="EMAAnalyzer",
+                )
+            )
         elif ema_value > view.current.close:
-            evidence_parts.append(f"EMA{self._period} above price (bearish signal)")
+            evidence_entries.append(
+                EvidenceEntry(
+                    text=f"EMA{self._period} above price (bearish signal)",
+                    level=EvidenceLevel.SIGNAL,
+                    source="EMAAnalyzer",
+                )
+            )
         else:
-            evidence_parts.append(f"EMA{self._period} at price (neutral)")
+            evidence_entries.append(
+                EvidenceEntry(
+                    text=f"EMA{self._period} at price (neutral)",
+                    level=EvidenceLevel.INFO,
+                    source="EMAAnalyzer",
+                )
+            )
 
-        evidence = tuple(evidence_parts)
+        evidence = tuple(evidence_entries)
 
         return AnalysisResult(
             facts=(

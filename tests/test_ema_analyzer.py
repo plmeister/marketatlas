@@ -49,11 +49,6 @@ class TestEMAAnalyzer:
         store = _make_store(closes)
         view = MarketView(store, cursor=4, window_size=4)
         result = EMAAnalyzer(3).analyze(view, {})
-        # SMA of first 3: (10+20+30)/3 = 20
-        # Then EMA of remaining: 40*k + 20*(1-k), 50*k + prev*(1-k)
-        # k = 2/4 = 0.5
-        # step1: 40*0.5 + 20*0.5 = 30
-        # step2: 50*0.5 + 30*0.5 = 40
         assert result.facts[0].value == pytest.approx(40.0)
 
     def test_known_ema_values(self) -> None:
@@ -61,7 +56,6 @@ class TestEMAAnalyzer:
         store = _make_store(closes)
         view = MarketView(store, cursor=len(closes) - 1, window_size=len(closes))
         result = EMAAnalyzer(10).analyze(view, {})
-        # SMA of all 10 = sum / 10
         expected_sma = sum(closes) / 10
         assert result.facts[0].value == pytest.approx(expected_sma)
 
@@ -70,8 +64,6 @@ class TestEMAAnalyzer:
         store = _make_store(closes)
         view = MarketView(store, cursor=1, window_size=1)
         result = EMAAnalyzer(20).analyze(view, {})
-        # Only 2 prices available, period=20 → uses period=2
-        # SMA of first 2: 150, no more prices to iterate
         assert result.facts[0].value == pytest.approx(150.0)
 
     def test_evidence_non_empty(self) -> None:
@@ -86,14 +78,14 @@ class TestEMAAnalyzer:
         store = _make_store(closes)
         view = MarketView(store, cursor=24, window_size=24)
         result = EMAAnalyzer(20).analyze(view, {})
-        assert any("bullish" in e.lower() for e in result.evidence)
+        assert any("bullish" in e.text.lower() for e in result.evidence)
 
     def test_bearish_signal_when_ema_above_price(self) -> None:
         closes = [200.0 - i * 0.5 for i in range(25)]
         store = _make_store(closes)
         view = MarketView(store, cursor=24, window_size=24)
         result = EMAAnalyzer(20).analyze(view, {})
-        assert any("bearish" in e.lower() for e in result.facts[0].evidence)
+        assert any("bearish" in e.text.lower() for e in result.facts[0].evidence)
 
     def test_fact_has_correct_timestamp(self) -> None:
         closes = [100.0] * 20

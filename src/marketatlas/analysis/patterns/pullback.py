@@ -2,6 +2,7 @@ from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.types import Candle
 from marketatlas.data.view import MarketView
+from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
 from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact
@@ -32,7 +33,13 @@ class PullbackDetector(Analyzer):
         assert isinstance(atr_fact, ATRFact)
 
         if trend.direction == TrendDirection.NEUTRAL or atr_fact.value <= 0:
-            evidence = ("No pullback — trend is neutral or ATR is zero",)
+            evidence = (
+                EvidenceEntry(
+                    text="No pullback — trend is neutral or ATR is zero",
+                    level=EvidenceLevel.INFO,
+                    source="PullbackDetector",
+                ),
+            )
             return AnalysisResult(
                 facts=(
                     PullbackFact(
@@ -54,7 +61,13 @@ class PullbackDetector(Analyzer):
         swing_low_price, swing_low_idx = self._find_swing_low(window)
 
         if swing_high_price is None or swing_low_price is None:
-            evidence = ("Insufficient swing points for pullback detection",)
+            evidence = (
+                EvidenceEntry(
+                    text="Insufficient swing points for pullback detection",
+                    level=EvidenceLevel.WARNING,
+                    source="PullbackDetector",
+                ),
+            )
             return AnalysisResult(
                 facts=(
                     PullbackFact(
@@ -79,7 +92,13 @@ class PullbackDetector(Analyzer):
         retracement_range = swing_high_price - swing_low_price
 
         if retracement_range <= 0:
-            evidence = ("Swing range is zero — no pullback",)
+            evidence = (
+                EvidenceEntry(
+                    text="Swing range is zero — no pullback",
+                    level=EvidenceLevel.INFO,
+                    source="PullbackDetector",
+                ),
+            )
             return AnalysisResult(
                 facts=(
                     PullbackFact(
@@ -98,24 +117,73 @@ class PullbackDetector(Analyzer):
 
         status = self._determine_status(retracement_atr)
 
-        evidence_parts: list[str] = [
-            f"Pullback {status.value} in {trend.direction.value} trend",
-            f"Retracement: {retracement_atr:.2f} ATR from swing high {swing_high_price:.2f}",
-            f"Current price {current_price:.2f}, swing low {swing_low_price:.2f}",
-            f"Retracement depth: {retracement_pct:.1%} of swing range",
+        evidence_entries: list[EvidenceEntry] = [
+            EvidenceEntry(
+                text=f"Pullback {status.value} in {trend.direction.value} trend",
+                level=(
+                    EvidenceLevel.SIGNAL
+                    if status == PullbackStatus.DETECTED
+                    else EvidenceLevel.INFO
+                ),
+                source="PullbackDetector",
+            ),
+            EvidenceEntry(
+                text=(
+                    f"Retracement: {retracement_atr:.2f} ATR "
+                    f"from swing high {swing_high_price:.2f}"
+                ),
+                level=EvidenceLevel.INFO,
+                source="PullbackDetector",
+            ),
+            EvidenceEntry(
+                text=f"Current price {current_price:.2f}, swing low {swing_low_price:.2f}",
+                level=EvidenceLevel.INFO,
+                source="PullbackDetector",
+            ),
+            EvidenceEntry(
+                text=f"Retracement depth: {retracement_pct:.1%} of swing range",
+                level=EvidenceLevel.INFO,
+                source="PullbackDetector",
+            ),
         ]
 
         if status == PullbackStatus.DETECTED:
-            evidence_parts.append("Waiting for reversal confirmation")
+            evidence_entries.append(
+                EvidenceEntry(
+                    text="Waiting for reversal confirmation",
+                    level=EvidenceLevel.SIGNAL,
+                    source="PullbackDetector",
+                    annotation_hint="mark_pullback_start",
+                )
+            )
         elif status == PullbackStatus.CONFIRMED:
-            evidence_parts.append("Reversal candle detected")
+            evidence_entries.append(
+                EvidenceEntry(
+                    text="Reversal candle detected",
+                    level=EvidenceLevel.SIGNAL,
+                    source="PullbackDetector",
+                    annotation_hint="mark_pullback_confirm",
+                )
+            )
         elif status == PullbackStatus.INVALIDATED:
             if retracement_atr >= self._max_retracement_atr:
-                evidence_parts.append("Retracement exceeds maximum — trend may be broken")
+                evidence_entries.append(
+                    EvidenceEntry(
+                        text="Retracement exceeds maximum — trend may be broken",
+                        level=EvidenceLevel.WARNING,
+                        source="PullbackDetector",
+                    )
+                )
             else:
-                evidence_parts.append("Retracement below minimum threshold")
+                evidence_entries.append(
+                    EvidenceEntry(
+                        text="Retracement below minimum threshold",
+                        level=EvidenceLevel.INFO,
+                        source="PullbackDetector",
+                    )
+                )
 
-        evidence_result: tuple[str, ...] = tuple(evidence_parts)
+        evidence_result: tuple[EvidenceEntry, ...] = tuple(evidence_entries)
 
         return AnalysisResult(
             facts=(
