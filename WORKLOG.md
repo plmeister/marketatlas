@@ -16,3 +16,4 @@
 - **013** — Evidence model: EvidenceEntry (text, level, source, annotation_hint), EvidenceLevel enum (INFO/SIGNAL/WARNING), EvidenceCollector (add, entries, by_level, summary). Structured evidence throughout analyzers, facts, and frames. 155 total tests.
 - **014** — Backtesting replay loop: Backtester iterates MarketStore, creates MarketView per step, runs AnalysisGraph, stores AnalysisFrame. Progress callback, edge cases (exact window, zero frames). 13 tests. 168 total.
 - **015** — HTML visualization: HTMLRenderer produces self-contained HTML with TradingView lightweight-charts. Candlestick chart, EMA overlays, ATR panel, pullback markers, evidence on crosshair move. 17 tests. 185 total.
+- **002** — External data fetcher: DataProvider interface, YahooProvider with yfinance, ProviderChain for fallback, CLI command. 7 tests. 192 total.

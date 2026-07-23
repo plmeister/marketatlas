@@ -16,4 +16,4 @@
 - [x] 013 — Evidence model
 - [x] 014 — Backtesting replay loop
 - [x] 015 — HTML visualization
-- [ ] 002 — External data fetcher
+- [x] 002 — External data fetcher
