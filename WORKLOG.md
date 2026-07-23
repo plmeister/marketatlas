@@ -17,3 +17,4 @@
 - **014** — Backtesting replay loop: Backtester iterates MarketStore, creates MarketView per step, runs AnalysisGraph, stores AnalysisFrame. Progress callback, edge cases (exact window, zero frames). 13 tests. 168 total.
 - **015** — HTML visualization: HTMLRenderer produces self-contained HTML with TradingView lightweight-charts. Candlestick chart, EMA overlays, ATR panel, pullback markers, evidence on crosshair move. 17 tests. 185 total.
 - **002** — External data fetcher: DataProvider interface, YahooProvider with yfinance, ProviderChain for fallback, CLI command. 7 tests. 192 total.
+- **016** — Strategy config loader: YAML→StrategyConfig with AnalyzerConfig/SignalConfig/RiskConfig. Analyzer registry, validation, build_analyzers. 21 tests. 213 total.
