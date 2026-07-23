@@ -15,5 +15,5 @@
 - [x] 012 — Analysis frame storage
 - [x] 013 — Evidence model
 - [x] 014 — Backtesting replay loop
-- [ ] 015 — HTML visualization
+- [x] 015 — HTML visualization
 - [ ] 002 — External data fetcher
