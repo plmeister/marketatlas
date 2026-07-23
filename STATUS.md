@@ -13,7 +13,7 @@
 - [x] 010 — Trend analyzer
 - [x] 011 — Pullback detector
 - [x] 012 — Analysis frame storage
-- [ ] 013 — Evidence model
+- [x] 013 — Evidence model
 - [ ] 014 — Backtesting replay loop
 - [ ] 015 — HTML visualization
 - [ ] 002 — External data fetcher
