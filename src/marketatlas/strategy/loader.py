@@ -10,6 +10,8 @@ from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.analyzers.swing import SwingStructureAnalyzer
 from marketatlas.analysis.analyzers.trend import TrendAnalyzer
 from marketatlas.analysis.base import Analyzer
+from marketatlas.analysis.patterns.four_swing_pullback import FourSwingPullbackDetector
+from marketatlas.facts.base import Fact
 
 from .config import AnalyzerConfig, RiskConfig, SignalConfig, StrategyConfig
 
@@ -18,6 +20,7 @@ ANALYZER_TYPES: dict[str, type[Analyzer]] = {
     "ATRAnalyzer": ATRAnalyzer,
     "TrendAnalyzer": TrendAnalyzer,
     "SwingStructureAnalyzer": SwingStructureAnalyzer,
+    "FourSwingPullbackDetector": FourSwingPullbackDetector,
 }
 
 
@@ -58,9 +61,21 @@ def validate_config(config: StrategyConfig) -> list[str]:
         if ac.type not in ANALYZER_TYPES:
             errors.append(f"Unknown analyzer type '{ac.type}' at index {i}")
 
+    # Build analyzers to check what they produce
+    analyzers: list[Analyzer] = []
+    for ac in config.analyzers:
+        cls = ANALYZER_TYPES.get(ac.type)
+        if cls is not None:
+            analyzers.append(cls(**ac.params))
+
+    produces_keys: set[tuple[type[Fact], str]] = set()
+    for a in analyzers:
+        for fk in a.produces():
+            produces_keys.add(fk)
+
     for i, sc in enumerate(config.signals):
         for req_key in sc.requires:
-            if not any(req_key in ac.type for ac in config.analyzers):
+            if not any(req_key == key for _, key in produces_keys):
                 errors.append(
                     f"Signal '{sc.type}' at index {i} requires '{req_key}' "
                     "not found in analyzers"

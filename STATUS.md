@@ -24,7 +24,7 @@
 - [x] 017 — Swing structure analyzer
 - [x] 018 — Four-swing pullback detector
 - [x] 019 — Support/resistance analyzer
-- [ ] 020 — Signal system
+- [x] 020 — Signal system
 - [ ] 021 — Risk layer & trade sizing
 - [ ] 022 — Strategy-aware backtester
 - [ ] 023 — No-read-ahead audit
