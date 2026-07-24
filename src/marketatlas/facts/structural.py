@@ -33,3 +33,15 @@ class SwingPoint:
 @dataclass(frozen=True)
 class SwingFact(Fact):
     swings: tuple[SwingPoint, ...]
+
+
+@dataclass(frozen=True)
+class SRLevel:
+    price: float
+    strength: int
+    type: str  # "support" or "resistance"
+
+
+@dataclass(frozen=True)
+class SRFact(Fact):
+    levels: tuple[SRLevel, ...]
