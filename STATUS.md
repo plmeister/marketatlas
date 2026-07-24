@@ -21,7 +21,7 @@
 ## Strategy Layer
 
 - [x] 016 — Strategy config loader (YAML)
-- [ ] 017 — Swing structure analyzer
+- [x] 017 — Swing structure analyzer
 - [ ] 018 — Four-swing pullback detector
 - [ ] 019 — Support/resistance analyzer
 - [ ] 020 — Signal system

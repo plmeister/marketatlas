@@ -18,3 +18,4 @@
 - **015** — HTML visualization: HTMLRenderer produces self-contained HTML with TradingView lightweight-charts. Candlestick chart, EMA overlays, ATR panel, pullback markers, evidence on crosshair move. 17 tests. 185 total.
 - **002** — External data fetcher: DataProvider interface, YahooProvider with yfinance, ProviderChain for fallback, CLI command. 7 tests. 192 total.
 - **016** — Strategy config loader: YAML→StrategyConfig with AnalyzerConfig/SignalConfig/RiskConfig. Analyzer registry, validation, build_analyzers. 21 tests. 213 total.
+- **017** — Swing structure analyzer: SwingStructureAnalyzer detects swing highs/lows from MarketView. SwingFact with ordered alternating swings, ATR-based separation filter, configurable lookback. 18 tests. 231 total.
