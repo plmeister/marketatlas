@@ -25,7 +25,7 @@
 - [x] 018 — Four-swing pullback detector
 - [x] 019 — Support/resistance analyzer
 - [x] 020 — Signal system
-- [ ] 021 — Risk layer & trade sizing
+- [x] 021 — Risk layer & trade sizing
 - [ ] 022 — Strategy-aware backtester
 - [ ] 023 — No-read-ahead audit
 - [ ] 024 — Interactive strategy visualization
