@@ -55,8 +55,8 @@ class StrategyBundle:
             for analyzer in strategy.graph.execution_order():
                 key: object = (
                     type(analyzer),
-                    tuple(sorted(analyzer.requires())),
-                    frozenset(sorted(analyzer.produces())),
+                    tuple(sorted(analyzer.requires(), key=lambda r: (r[0].__name__, r[1]))),
+                    frozenset(sorted(analyzer.produces(), key=lambda p: (p[0].__name__, p[1]))),
                 )
                 if key not in seen_keys:
                     seen_keys[key] = id(analyzer)
