@@ -45,10 +45,30 @@ class RiskEngine:
         facts: dict[FactKey, Fact],
         view: MarketView,
         balance: float = 1000.0,
-    ) -> TradeCandidate | None:
+    ) -> tuple[TradeCandidate | None, tuple[EvidenceEntry, ...]]:
+        rejection: list[EvidenceEntry] = []
+
         atr = facts.get((ATRFact, self._atr_key))
         if not isinstance(atr, ATRFact) or atr.value <= 0:
-            return None
+            rejection.append(
+                EvidenceEntry(
+                    text="Rejected: no valid ATR fact",
+                    level=EvidenceLevel.WARNING,
+                    source="RiskEngine",
+                )
+            )
+            return None, tuple(rejection)
+
+        sr_fact = facts.get((SRFact, self._sr_key))
+        if not isinstance(sr_fact, SRFact):
+            rejection.append(
+                EvidenceEntry(
+                    text="Rejected: no SR fact available",
+                    level=EvidenceLevel.WARNING,
+                    source="RiskEngine",
+                )
+            )
+            return None, tuple(rejection)
 
         atr_val = atr.value
         current = view.current
@@ -71,24 +91,65 @@ class RiskEngine:
 
         stop_distance = abs(entry - stop)
         if stop_distance <= 0:
-            return None
+            rejection.append(
+                EvidenceEntry(
+                    text="Rejected: stop distance is zero",
+                    level=EvidenceLevel.WARNING,
+                    source="RiskEngine",
+                )
+            )
+            return None, tuple(rejection)
 
         if stop_distance > self._max_stop_atr * atr_val:
-            return None
-
-        sr_fact = facts.get((SRFact, self._sr_key))
+            rejection.append(
+                EvidenceEntry(
+                    text=(
+                        f"Rejected: stop distance {stop_distance / atr_val:.1f} ATR "
+                        f"exceeds max {self._max_stop_atr:.1f} ATR"
+                    ),
+                    level=EvidenceLevel.WARNING,
+                    source="RiskEngine",
+                )
+            )
+            return None, tuple(rejection)
 
         rr_ratio = self._find_valid_rr(
             signal.direction, entry, stop_distance, sr_fact
         )
         if rr_ratio is None:
-            return None
+            rejection.append(
+                EvidenceEntry(
+                    text=(
+                        f"Rejected: no valid RR in [{self._min_rr}, {self._max_rr}] "
+                        f"without crossing S/R"
+                    ),
+                    level=EvidenceLevel.WARNING,
+                    source="RiskEngine",
+                )
+            )
+            return None, tuple(rejection)
 
         target = entry + rr_ratio * stop_distance if signal.direction == TrendDirection.BULLISH else entry - rr_ratio * stop_distance
 
-        if self._avoid_srxing and isinstance(sr_fact, SRFact):
-            if self._crosses_sr(signal.direction, entry, target, sr_fact.levels):
-                return None
+        if self._avoid_srxing and self._crosses_sr(signal.direction, entry, target, sr_fact.levels):
+            crossing = [
+                lv for lv in sr_fact.levels
+                if min(entry, target) < lv.price < max(entry, target)
+            ]
+            crossing_desc = ", ".join(
+                f"{lv.type} at {lv.price:.2f}" for lv in crossing
+            )
+            rejection.append(
+                EvidenceEntry(
+                    text=(
+                        f"Rejected: S/R crossing ({crossing_desc}) "
+                        f"between entry {entry:.2f} and target {target:.2f}"
+                    ),
+                    level=EvidenceLevel.WARNING,
+                    source="RiskEngine",
+                )
+            )
+            return None, tuple(rejection)
 
         risk_amount = balance * (self._risk_pct / 100)
         size = risk_amount / stop_distance
@@ -140,7 +201,7 @@ class RiskEngine:
             slippage_pct=self._slippage_pct,
             source=signal.source,
             evidence=tuple(evidence),
-        )
+        ), tuple(evidence)
 
     def _find_nearest_swing(
         self,
@@ -169,7 +230,7 @@ class RiskEngine:
         direction: TrendDirection,
         entry: float,
         stop_distance: float,
-        sr_fact: Fact | None,
+        sr_fact: SRFact,
     ) -> float | None:
         for rr in _frange(self._min_rr, self._max_rr + 0.001, 0.1):
             if direction == TrendDirection.BULLISH:
@@ -177,11 +238,7 @@ class RiskEngine:
             else:
                 target = entry - rr * stop_distance
 
-            if (
-                not self._avoid_srxing
-                or sr_fact is None
-                or not isinstance(sr_fact, SRFact)
-            ):
+            if not self._avoid_srxing:
                 return rr
 
             if not self._crosses_sr(direction, entry, target, sr_fact.levels):

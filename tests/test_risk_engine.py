@@ -105,40 +105,42 @@ class TestRiskEngine:
         store = _make_store([(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine()
-        result = engine.evaluate(_bullish_signal(), {}, view)
-        assert result is None
+        candidate, evidence = engine.evaluate(_bullish_signal(), {}, view)
+        assert candidate is None
+        assert any("ATR" in e.text for e in evidence)
 
     def test_zero_atr_returns_none(self) -> None:
         store = _make_store([(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine()
         bad_atr = ATRFact(timestamp=BASE, evidence=(), value=0.0, period=14)
-        result = engine.evaluate(_bullish_signal(), _facts(atr=bad_atr), view)
-        assert result is None
+        candidate, evidence = engine.evaluate(_bullish_signal(), _facts(atr=bad_atr), view)
+        assert candidate is None
+        assert any("ATR" in e.text for e in evidence)
 
     def test_bullish_entry_with_slippage(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(slippage_pct=0.1)
-        result = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0)), view
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
         )
-        assert result is not None
+        assert candidate is not None
         expected_entry = 100.0 * (1 + 0.1 / 100)
-        assert abs(result.entry - expected_entry) < 0.01
+        assert abs(candidate.entry - expected_entry) < 0.01
 
     def test_bearish_entry_with_slippage(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(slippage_pct=0.1)
-        result = engine.evaluate(
-            _bearish_signal(), _facts(atr=_atr_fact(2.0)), view
+        candidate, _evidence = engine.evaluate(
+            _bearish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
         )
-        assert result is not None
+        assert candidate is not None
         expected_entry = 100.0 * (1 - 0.1 / 100)
-        assert abs(result.entry - expected_entry) < 0.01
+        assert abs(candidate.entry - expected_entry) < 0.01
 
     def test_bullish_stop_below_swing_low(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
@@ -151,12 +153,12 @@ class TestRiskEngine:
                 SwingPoint(price=104.0, index=2, type=SwingType.HIGH, timestamp=BASE),
             )
         )
-        result = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0), swing=swings), view
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), swing=swings, sr=_sr_fact(())), view
         )
-        assert result is not None
+        assert candidate is not None
         expected_stop = 96.0 - 0.2 * 2.0
-        assert abs(result.stop - expected_stop) < 0.01
+        assert abs(candidate.stop - expected_stop) < 0.01
 
     def test_bearish_stop_above_swing_high(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
@@ -169,12 +171,12 @@ class TestRiskEngine:
                 SwingPoint(price=96.0, index=2, type=SwingType.LOW, timestamp=BASE),
             )
         )
-        result = engine.evaluate(
-            _bearish_signal(), _facts(atr=_atr_fact(2.0), swing=swings), view
+        candidate, _evidence = engine.evaluate(
+            _bearish_signal(), _facts(atr=_atr_fact(2.0), swing=swings, sr=_sr_fact(())), view
         )
-        assert result is not None
+        assert candidate is not None
         expected_stop = 104.0 + 0.2 * 2.0
-        assert abs(result.stop - expected_stop) < 0.01
+        assert abs(candidate.stop - expected_stop) < 0.01
 
     def test_stop_distance_exceeds_max_rejects(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
@@ -184,10 +186,11 @@ class TestRiskEngine:
         swings = _swings_fact(
             (SwingPoint(price=80.0, index=0, type=SwingType.LOW, timestamp=BASE),)
         )
-        result = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0), swing=swings), view
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), swing=swings, sr=_sr_fact(())), view
         )
-        assert result is None
+        assert candidate is None
+        assert any("stop distance" in e.text for e in evidence)
 
     def test_sr_crossing_bullish_resistance_rejects(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
@@ -197,10 +200,11 @@ class TestRiskEngine:
         sr = _sr_fact(
             (SRLevel(price=103.0, strength=2, type="resistance"),)
         )
-        result = engine.evaluate(
+        candidate, evidence = engine.evaluate(
             _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
         )
-        assert result is None
+        assert candidate is None
+        assert any("S/R" in e.text for e in evidence)
 
     def test_sr_crossing_bearish_support_rejects(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
@@ -210,116 +214,115 @@ class TestRiskEngine:
         sr = _sr_fact(
             (SRLevel(price=99.0, strength=2, type="support"),)
         )
-        result = engine.evaluate(
+        candidate, evidence = engine.evaluate(
             _bearish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
         )
-        assert result is None
+        assert candidate is None
+        assert any("S/R" in e.text for e in evidence)
 
-    def test_no_sr_levels_no_crossing_check(self) -> None:
+    def test_no_sr_fact_rejects(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(slippage_pct=0.0)
-        result = engine.evaluate(
+        candidate, evidence = engine.evaluate(
             _bullish_signal(), _facts(atr=_atr_fact(2.0)), view
         )
-        assert result is not None
+        assert candidate is None
+        assert any("no SR fact" in e.text for e in evidence)
 
     def test_rr_ratio_in_range(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(min_rr=2.0, max_rr=4.0, slippage_pct=0.0)
-        result = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0)), view
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
         )
-        assert result is not None
-        assert 2.0 <= result.rr_ratio <= 4.0
+        assert candidate is not None
+        assert 2.0 <= candidate.rr_ratio <= 4.0
 
     def test_size_calculation(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(risk_pct=1.0, slippage_pct=0.0)
-        result = engine.evaluate(
+        candidate, _evidence = engine.evaluate(
             _bullish_signal(),
-            _facts(atr=_atr_fact(2.0)),
+            _facts(atr=_atr_fact(2.0), sr=_sr_fact(())),
             view,
             balance=1000.0,
         )
-        assert result is not None
+        assert candidate is not None
         expected_risk = 1000.0 * 0.01
-        assert abs(result.risk_amount - expected_risk) < 0.01
-        assert result.size == expected_risk / abs(result.entry - result.stop)
+        assert abs(candidate.risk_amount - expected_risk) < 0.01
+        assert candidate.size == expected_risk / abs(candidate.entry - candidate.stop)
 
     def test_smaller_balance_smaller_size(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(risk_pct=1.0, slippage_pct=0.0)
-        r1 = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0)), view, balance=1000.0
+        c1, _ = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view, balance=1000.0
         )
-        r2 = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0)), view, balance=500.0
+        c2, _ = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view, balance=500.0
         )
-        assert r1 is not None and r2 is not None
-        assert r2.size < r1.size
+        assert c1 is not None and c2 is not None
+        assert c2.size < c1.size
 
     def test_slippage_evidence(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(slippage_pct=0.1)
-        result = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0)), view
+        _candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
         )
-        assert result is not None
-        assert any("Slippage" in e.text for e in result.evidence)
+        assert any("Slippage" in e.text for e in evidence)
 
     def test_stop_evidence(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(slippage_pct=0.0)
-        result = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0)), view
+        _candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
         )
-        assert result is not None
-        assert any("Stop:" in e.text for e in result.evidence)
+        assert any("Stop:" in e.text for e in evidence)
 
     def test_target_evidence(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(slippage_pct=0.0)
-        result = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0)), view
+        _candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
         )
-        assert result is not None
-        assert any("Target:" in e.text for e in result.evidence)
+        assert any("Target:" in e.text for e in evidence)
 
     def test_candidate_source_matches_signal(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(slippage_pct=0.0)
-        result = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0)), view
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
         )
-        assert result is not None
-        assert result.source == "PullbackSignal"
+        assert candidate is not None
+        assert candidate.source == "PullbackSignal"
 
     def test_candidate_direction_matches_signal(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(slippage_pct=0.0)
-        result = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0)), view
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
         )
-        assert result is not None
-        assert result.direction == TrendDirection.BULLISH
+        assert candidate is not None
+        assert candidate.direction == TrendDirection.BULLISH
 
     def test_avoid_srxing_false_allows_crossing(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
@@ -329,10 +332,10 @@ class TestRiskEngine:
         sr = _sr_fact(
             (SRLevel(price=103.0, strength=2, type="resistance"),)
         )
-        result = engine.evaluate(
+        candidate, _evidence = engine.evaluate(
             _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
         )
-        assert result is not None
+        assert candidate is not None
 
     def test_no_valid_rr_rejects(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
@@ -346,10 +349,11 @@ class TestRiskEngine:
                 SRLevel(price=115.0, strength=1, type="resistance"),
             )
         )
-        result = engine.evaluate(
+        candidate, evidence = engine.evaluate(
             _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
         )
-        assert result is None
+        assert candidate is None
+        assert any("RR" in e.text for e in evidence)
 
     def test_max_hold_days_property(self) -> None:
         engine = RiskEngine(max_hold_days=10)
@@ -366,12 +370,14 @@ class TestRiskEngine:
         swings = _swings_fact(
             (SwingPoint(price=96.0, index=0, type=SwingType.LOW, timestamp=BASE),)
         )
+        sr = _sr_fact(())
         facts = cast(
             dict[tuple[type[Fact], str], Fact],
             {
                 (ATRFact, "atr_custom"): atr,
                 (SwingFact, "swing_custom"): swings,
+                (SRFact, "sr_custom"): sr,
             },
         )
-        result = engine.evaluate(_bullish_signal(), facts, view)
-        assert result is not None
+        candidate, _evidence = engine.evaluate(_bullish_signal(), facts, view)
+        assert candidate is not None
