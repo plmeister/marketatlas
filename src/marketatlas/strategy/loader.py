@@ -7,6 +7,7 @@ import yaml
 
 from marketatlas.analysis.analyzers.atr import ATRAnalyzer
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
+from marketatlas.analysis.analyzers.sr import SupportResistanceAnalyzer
 from marketatlas.analysis.analyzers.swing import SwingStructureAnalyzer
 from marketatlas.analysis.analyzers.trend import TrendAnalyzer
 from marketatlas.analysis.base import Analyzer
@@ -20,6 +21,7 @@ ANALYZER_TYPES: dict[str, type[Analyzer]] = {
     "ATRAnalyzer": ATRAnalyzer,
     "TrendAnalyzer": TrendAnalyzer,
     "SwingStructureAnalyzer": SwingStructureAnalyzer,
+    "SupportResistanceAnalyzer": SupportResistanceAnalyzer,
     "FourSwingPullbackDetector": FourSwingPullbackDetector,
 }
 
