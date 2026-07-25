@@ -26,6 +26,6 @@
 - [x] 019 — Support/resistance analyzer
 - [x] 020 — Signal system
 - [x] 021 — Risk layer & trade sizing
-- [ ] 022 — Strategy-aware backtester
+- [x] 022 — Strategy-aware backtester
 - [ ] 023 — No-read-ahead audit
 - [ ] 024 — Interactive strategy visualization

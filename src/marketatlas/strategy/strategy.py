@@ -6,6 +6,7 @@ from marketatlas.data.view import MarketView
 from marketatlas.facts.base import Fact
 from marketatlas.strategy.config import StrategyConfig
 from marketatlas.strategy.loader import build_analyzers
+from marketatlas.strategy.risk import RiskEngine
 from marketatlas.strategy.signals import Signal, TradeSignal
 
 SIGNAL_TYPES: dict[str, type[Signal]] = {
@@ -19,6 +20,7 @@ class Strategy:
         self._config = config
         self._graph = self._build_graph()
         self._signals = self._build_signals()
+        self._risk_engine = self._build_risk()
 
     @property
     def name(self) -> str:
@@ -27,6 +29,10 @@ class Strategy:
     @property
     def graph(self) -> AnalysisGraph:
         return self._graph
+
+    @property
+    def risk_engine(self) -> RiskEngine:
+        return self._risk_engine
 
     def evaluate(
         self, view: MarketView, facts: dict[FactKey, Fact]
@@ -50,3 +56,7 @@ class Strategy:
                 raise ValueError(f"Unknown signal type '{sc.type}'")
             signals.append(cls(**sc.rules))
         return signals
+
+    def _build_risk(self) -> RiskEngine:
+        rc = self._config.risk
+        return RiskEngine(**rc.params)
