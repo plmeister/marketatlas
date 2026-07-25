@@ -1,0 +1,467 @@
+from datetime import UTC, datetime, timedelta
+
+from marketatlas.data.store import MarketStore
+from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
+from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
+from marketatlas.facts.pattern import PullbackFact, PullbackStatus
+from marketatlas.facts.primitive import ATRFact, EMAFact
+from marketatlas.facts.structural import (
+    SRFact,
+    SRLevel,
+    TrendDirection,
+    TrendFact,
+)
+from marketatlas.frames.frame import AnalysisFrame
+from marketatlas.frames.store import FrameStore
+from marketatlas.strategy.tradebook import TradeBook
+from marketatlas.visualization.context import RenderContext
+from marketatlas.visualization.interactive import (
+    InteractiveRenderer,
+    _extract_atr_per_frame,
+    _extract_ema_per_frame,
+    _extract_facts_per_frame,
+    _extract_frames_json,
+    _extract_pullbacks_per_frame,
+    _extract_sr_per_frame,
+    _extract_trades_json,
+)
+
+BASE = datetime(2024, 1, 1, tzinfo=UTC)
+
+
+def _make_candle(offset: int = 0, base_price: float = 100.0) -> Candle:
+    ts = BASE + timedelta(days=offset)
+    p = base_price + offset
+    return Candle(
+        timestamp=ts, open=p, high=p + 5, low=p - 5, close=p + 2, volume=1000.0,
+    )
+
+
+def _make_store(n: int = 10) -> MarketStore:
+    candles = tuple(_make_candle(i) for i in range(n))
+    return MarketStore(
+        MarketData(symbol=Symbol("BTCUSDT"), timeframe=Timeframe.D1, candles=candles)
+    )
+
+
+def _make_frame(offset: int = 0) -> AnalysisFrame:
+    candle = _make_candle(offset)
+    ema = EMAFact(timestamp=candle.timestamp, evidence=(), value=102.0 + offset, period=20)
+    atr = ATRFact(timestamp=candle.timestamp, evidence=(), value=3.5, period=14)
+    trend = TrendFact(
+        timestamp=candle.timestamp, evidence=(),
+        direction=TrendDirection.BULLISH, strength=0.7,
+    )
+    return AnalysisFrame(
+        timestamp=candle.timestamp,
+        candle=candle,
+        facts={
+            (EMAFact, "ema_20"): ema,
+            (ATRFact, "atr_14"): atr,
+            (TrendFact, "trend"): trend,
+        },
+        evidence=(
+            EvidenceEntry(text=f"frame {offset}", level=EvidenceLevel.INFO, source="test"),
+        ),
+    )
+
+
+def _make_sr_frame(offset: int = 0) -> AnalysisFrame:
+    candle = _make_candle(offset)
+    sr = SRFact(
+        timestamp=candle.timestamp, evidence=(),
+        levels=(
+            SRLevel(price=90.0, strength=2, type="support"),
+            SRLevel(price=110.0, strength=3, type="resistance"),
+        ),
+    )
+    return AnalysisFrame(
+        timestamp=candle.timestamp,
+        candle=candle,
+        facts={(SRFact, "sr"): sr},
+        evidence=(),
+    )
+
+
+def _make_pullback_frame(offset: int = 0) -> AnalysisFrame:
+    candle = _make_candle(offset)
+    pb = PullbackFact(
+        timestamp=candle.timestamp, evidence=(),
+        status=PullbackStatus.DETECTED,
+        retracement_atr=1.2,
+        direction=TrendDirection.BULLISH,
+    )
+    return AnalysisFrame(
+        timestamp=candle.timestamp,
+        candle=candle,
+        facts={(PullbackFact, "pullback"): pb},
+        evidence=(),
+    )
+
+
+def _make_frame_store(n: int = 5) -> FrameStore:
+    store = FrameStore()
+    for i in range(n):
+        store.append(_make_frame(i))
+    return store
+
+
+def _make_tradebook_with_trades() -> TradeBook:
+    """Create a TradeBook with simulated trades for testing."""
+    from marketatlas.facts.structural import TrendDirection
+    from marketatlas.strategy.signals import TradeSignal
+    from marketatlas.strategy.trade import TradeCandidate
+
+    tb = TradeBook(initial_balance=1000.0)
+
+    signal = TradeSignal(
+        direction=TrendDirection.BULLISH,
+        entry_zone=(100.0, 105.0),
+        confidence=0.8,
+        source="test_signal",
+        evidence=(),
+    )
+    candidate = TradeCandidate(
+        direction=TrendDirection.BULLISH,
+        entry=103.0,
+        stop=98.0,
+        target=118.0,
+        size=0.2,
+        risk_amount=10.0,
+        reward_amount=30.0,
+        rr_ratio=3.0,
+        slippage_pct=0.1,
+        source="test",
+        evidence=(),
+    )
+
+    # Submit and fill
+    tb.submit_order(candidate, signal, "test_strat", BASE + timedelta(days=5))
+    tb.fill_order(103.0, BASE + timedelta(days=6))
+    # Win
+    tb.close_trade(118.0, BASE + timedelta(days=8))
+
+    # Second trade
+    tb.submit_order(candidate, signal, "test_strat", BASE + timedelta(days=10))
+    tb.fill_order(103.0, BASE + timedelta(days=11))
+    # Loss
+    tb.close_trade(98.0, BASE + timedelta(days=13))
+
+    return tb
+
+
+class TestRenderContext:
+    def test_creation(self) -> None:
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        assert ctx.max_hold_days == 10
+        assert ctx.title == ""
+
+    def test_custom_title(self) -> None:
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb, title="My Chart")
+        assert ctx.title == "My Chart"
+
+
+class TestExtractFramesJson:
+    def test_extracts_timestamps(self) -> None:
+        frames = [_make_frame(i) for i in range(3)]
+        result = _extract_frames_json(frames)
+        assert len(result) == 3
+        assert result[0]["time"] == int(BASE.timestamp())
+
+    def test_includes_evidence(self) -> None:
+        frames = [_make_frame(0)]
+        result = _extract_frames_json(frames)
+        assert len(result[0]["evidence"]) == 1
+        assert result[0]["evidence"][0]["text"] == "frame 0"
+
+    def test_empty(self) -> None:
+        assert _extract_frames_json([]) == []
+
+
+class TestExtractEMA:
+    def test_extracts_ema_series(self) -> None:
+        frames = [_make_frame(i) for i in range(3)]
+        result = _extract_ema_per_frame(frames)
+        assert "EMA20" in result
+        assert len(result["EMA20"]) == 3
+
+    def test_empty(self) -> None:
+        assert _extract_ema_per_frame([]) == {}
+
+
+class TestExtractATR:
+    def test_extracts_atr(self) -> None:
+        frames = [_make_frame(i) for i in range(3)]
+        result = _extract_atr_per_frame(frames)
+        assert len(result) == 3
+        assert result[0]["value"] == 3.5
+
+    def test_empty(self) -> None:
+        assert _extract_atr_per_frame([]) == []
+
+
+class TestExtractSR:
+    def test_extracts_sr_levels(self) -> None:
+        frames = [_make_sr_frame(0), _make_sr_frame(1)]
+        result = _extract_sr_per_frame(frames)
+        assert len(result) == 2
+        assert len(result[0]["levels"]) == 2
+        assert result[0]["levels"][0]["type"] == "support"
+        assert result[0]["levels"][1]["type"] == "resistance"
+
+    def test_no_sr_fact_returns_empty(self) -> None:
+        frames = [_make_frame(0)]
+        result = _extract_sr_per_frame(frames)
+        assert len(result) == 1
+        assert result[0]["levels"] == []
+
+    def test_empty(self) -> None:
+        assert _extract_sr_per_frame([]) == []
+
+
+class TestExtractPullbacks:
+    def test_extracts_detected_pullbacks(self) -> None:
+        frames = [_make_pullback_frame(0), _make_pullback_frame(1)]
+        result = _extract_pullbacks_per_frame(frames)
+        assert len(result) == 2
+        assert result[0] is not None
+        assert result[0]["status"] == "detected"
+
+    def test_none_for_no_pullback(self) -> None:
+        frames = [_make_frame(0)]
+        result = _extract_pullbacks_per_frame(frames)
+        assert result[0] is None
+
+    def test_ignores_invalidated(self) -> None:
+        candle = _make_candle(0)
+        pb = PullbackFact(
+            timestamp=candle.timestamp, evidence=(),
+            status=PullbackStatus.INVALIDATED,
+            retracement_atr=1.0, direction=TrendDirection.BEARISH,
+        )
+        frame = AnalysisFrame(
+            timestamp=candle.timestamp, candle=candle,
+            facts={(PullbackFact, "pullback"): pb}, evidence=(),
+        )
+        result = _extract_pullbacks_per_frame([frame])
+        assert result[0] is None
+
+    def test_empty(self) -> None:
+        assert _extract_pullbacks_per_frame([]) == []
+
+
+class TestExtractFactsPerFrame:
+    def test_extracts_all_fact_types(self) -> None:
+        frames = [_make_frame(0)]
+        result = _extract_facts_per_frame(frames)
+        assert len(result) == 1
+        facts = result[0]
+        assert "ema_20" in facts
+        assert facts["ema_20"]["type"] == "ema"
+        assert "atr_14" in facts
+        assert facts["atr_14"]["type"] == "atr"
+        assert "trend" in facts
+        assert facts["trend"]["type"] == "trend"
+        assert facts["trend"]["direction"] == "bullish"
+
+    def test_sr_fact_included(self) -> None:
+        frames = [_make_sr_frame(0)]
+        result = _extract_facts_per_frame(frames)
+        assert "sr" in result[0]
+        assert result[0]["sr"]["type"] == "sr"
+        assert len(result[0]["sr"]["levels"]) == 2
+
+    def test_empty(self) -> None:
+        assert _extract_facts_per_frame([]) == []
+
+
+class TestExtractTrades:
+    def test_extracts_trade_data(self) -> None:
+        tb = _make_tradebook_with_trades()
+        result = _extract_trades_json(tb)
+        assert len(result) == 2
+        assert result[0]["result"] == "win"
+        assert result[1]["result"] == "loss"
+
+    def test_entry_exit_times(self) -> None:
+        tb = _make_tradebook_with_trades()
+        result = _extract_trades_json(tb)
+        assert result[0]["entry_time"] == int((BASE + timedelta(days=6)).timestamp())
+        assert result[0]["exit_time"] == int((BASE + timedelta(days=8)).timestamp())
+
+    def test_empty_tradebook(self) -> None:
+        tb = TradeBook()
+        assert _extract_trades_json(tb) == []
+
+
+class TestInteractiveRenderer:
+    def test_creates_html_file(self, tmp_path: object) -> None:
+        path = tmp_path / "interactive.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        assert path.exists()  # type: ignore[union-attr]
+
+    def test_contains_required_js_data(self, tmp_path: object) -> None:
+        path = tmp_path / "interactive.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "const CANDLES =" in content
+        assert "const FRAMES =" in content
+        assert "const EMA_SERIES =" in content
+        assert "const ATR_DATA =" in content
+        assert "const SR_DATA =" in content
+        assert "const TRADES =" in content
+        assert "const PULLBACKS =" in content
+        assert "const FACTS_DATA =" in content
+
+    def test_contains_controls(self, tmp_path: object) -> None:
+        path = tmp_path / "controls.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "btn-prev" in content
+        assert "btn-next" in content
+        assert "btn-play" in content
+        assert "speed-select" in content
+
+    def test_contains_info_panel(self, tmp_path: object) -> None:
+        path = tmp_path / "info.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "info-panel" in content
+        assert "evidence-panel" in content
+        assert "trade-timeline" in content
+
+    def test_contains_title(self, tmp_path: object) -> None:
+        path = tmp_path / "title.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(
+            frames=frame_store, store=store, tradebook=tb, title="Test Strategy"
+        )
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "Test Strategy" in content
+
+    def test_contains_keyboard_shortcuts(self, tmp_path: object) -> None:
+        path = tmp_path / "kb.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "ArrowLeft" in content
+        assert "ArrowRight" in content
+
+    def test_with_trades(self, tmp_path: object) -> None:
+        path = tmp_path / "trades.html"  # type: ignore[operator]
+        store = _make_store(15)
+        frame_store = _make_frame_store(10)
+        tb = _make_tradebook_with_trades()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert '"win"' in content
+        assert '"loss"' in content
+
+    def test_with_sr_levels(self, tmp_path: object) -> None:
+        path = tmp_path / "sr.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = FrameStore()
+        frame_store.append(_make_sr_frame(0))
+        frame_store.append(_make_sr_frame(1))
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "support" in content
+        assert "resistance" in content
+
+    def test_empty_frames(self, tmp_path: object) -> None:
+        path = tmp_path / "empty.html"  # type: ignore[operator]
+        store = _make_store(5)
+        frame_store = FrameStore()
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "No frames to display" in content
+
+    def test_file_size_reasonable(self, tmp_path: object) -> None:
+        path = tmp_path / "size.html"  # type: ignore[operator]
+        store = _make_store(100)
+        frame_store = _make_frame_store(100)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        size = path.stat().st_size  # type: ignore[union-attr]
+        assert size < 2_000_000  # under 2MB for 100 candles
+
+    def test_includes_lightweight_charts(self, tmp_path: object) -> None:
+        path = tmp_path / "charts.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "lightweight-charts" in content
+
+    def test_timeline_bars(self, tmp_path: object) -> None:
+        path = tmp_path / "timeline.html"  # type: ignore[operator]
+        store = _make_store(15)
+        frame_store = _make_frame_store(10)
+        tb = _make_tradebook_with_trades()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "timeline-bar" in content
+        assert "tl-win" in content
+        assert "tl-loss" in content
+
+    def test_summary_bar(self, tmp_path: object) -> None:
+        path = tmp_path / "summary.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "summary-bar" in content
+        assert "s-balance" in content
+        assert "s-pnl" in content

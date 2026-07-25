@@ -28,4 +28,4 @@
 - [x] 021 — Risk layer & trade sizing
 - [x] 022 — Strategy-aware backtester
 - [x] 023 — No-read-ahead audit
-- [ ] 024 — Interactive strategy visualization
+- [x] 024 — Interactive strategy visualization
