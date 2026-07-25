@@ -284,6 +284,9 @@ _INTERACTIVE_TEMPLATE = """\
   <span class="stat">Return: <b id="s-return">0.0%</b></span>
   <span class="stat">Trades: <b id="s-trades">0</b></span>
   <span class="stat">W/L: <b id="s-winrate">0.0%</b></span>
+  <span class="stat">PF: <b id="s-pf">0.0</b></span>
+  <span class="stat">Avg W: <b id="s-avgwin">0.00</b></span>
+  <span class="stat">Avg L: <b id="s-avgloss">0.00</b></span>
   <span class="stat">Drawdown: <b id="s-drawdown">0.0%</b></span>
 </div>
 <div id="frame-controls">
@@ -643,13 +646,14 @@ function updateEvidence(frameIdx) {{
 function updateSummary(frameIdx) {{
   let bal = INITIAL_BALANCE;
   let wins = 0, losses = 0, pnl = 0;
+  let grossProfit = 0, grossLoss = 0;
   let peak = INITIAL_BALANCE, worst = 0;
   TRADES.forEach(t => {{
     if (t.exit_time !== null && t.exit_time <= FRAMES[frameIdx].time && t.pnl !== null) {{
       bal += t.pnl;
       pnl += t.pnl;
-      if (t.result === 'win') wins++;
-      if (t.result === 'loss') losses++;
+      if (t.result === 'win') {{ wins++; grossProfit += t.pnl; }}
+      if (t.result === 'loss') {{ losses++; grossLoss += Math.abs(t.pnl); }}
     }}
     if (bal > peak) peak = bal;
     const dd = peak > 0 ? (peak - bal) / peak : 0;
@@ -667,6 +671,13 @@ function updateSummary(frameIdx) {{
   const total = wins + losses;
   document.getElementById('s-winrate').textContent =
       total > 0 ? (wins / total * 100).toFixed(0) + '%' : '0.0%';
+  const pf = grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? Infinity : 0);
+  document.getElementById('s-pf').textContent =
+      pf === Infinity ? '∞' : pf.toFixed(2);
+  document.getElementById('s-avgwin').textContent =
+      wins > 0 ? (grossProfit / wins).toFixed(2) : '0.00';
+  document.getElementById('s-avgloss').textContent =
+      losses > 0 ? (-grossLoss / losses).toFixed(2) : '0.00';
   document.getElementById('s-drawdown').textContent = (worst * 100).toFixed(1) + '%';
 }}
 

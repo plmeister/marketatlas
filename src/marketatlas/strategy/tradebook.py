@@ -64,6 +64,45 @@ class TradeBook:
         return self._balance - self._initial_balance
 
     @property
+    def gross_profit(self) -> float:
+        return sum(
+            float(t.pnl)
+            for t in self._trades
+            if t.pnl is not None and t.pnl > 0
+        )
+
+    @property
+    def gross_loss(self) -> float:
+        return abs(sum(
+            float(t.pnl)
+            for t in self._trades
+            if t.pnl is not None and t.pnl < 0
+        ))
+
+    @property
+    def profit_factor(self) -> float:
+        if self.gross_loss == 0:
+            return float("inf") if self.gross_profit > 0 else 0.0
+        return self.gross_profit / self.gross_loss
+
+    @property
+    def avg_win(self) -> float:
+        wins = [t.pnl for t in self._trades if t.result == "win" and t.pnl is not None]
+        return sum(wins) / len(wins) if wins else 0.0
+
+    @property
+    def avg_loss(self) -> float:
+        losses = [t.pnl for t in self._trades if t.result == "loss" and t.pnl is not None]
+        return sum(losses) / len(losses) if losses else 0.0
+
+    @property
+    def expectancy(self) -> float:
+        total = self.win_count + self.loss_count
+        if total == 0:
+            return 0.0
+        return self.total_pnl / total
+
+    @property
     def max_drawdown(self) -> float:
         if not self._trades:
             return 0.0
@@ -190,6 +229,12 @@ class TradeBook:
             "losses": self.loss_count,
             "win_rate": self.win_rate,
             "max_drawdown": self.max_drawdown,
+            "gross_profit": self.gross_profit,
+            "gross_loss": self.gross_loss,
+            "profit_factor": self.profit_factor,
+            "avg_win": self.avg_win,
+            "avg_loss": self.avg_loss,
+            "expectancy": self.expectancy,
             "by_strategy": self._strategy_breakdown(),
         }
 

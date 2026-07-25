@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 
 from marketatlas.analysis.base import Analyzer
-from marketatlas.analysis.graph import AnalysisGraph
 from marketatlas.analysis.result import AnalysisResult
 from marketatlas.backtesting.backtester import Backtester
 from marketatlas.data.store import MarketStore
@@ -10,9 +9,12 @@ from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import EMAFact
+from marketatlas.facts.structural import TrendDirection
 from marketatlas.strategy.bundle import StrategyBundle
 from marketatlas.strategy.config import StrategyConfig
+from marketatlas.strategy.signals import TradeSignal
 from marketatlas.strategy.strategy import Strategy
+from marketatlas.strategy.trade import TradeCandidate
 from marketatlas.strategy.tradebook import TradeBook
 
 
@@ -184,6 +186,12 @@ class TestTradeBook:
         assert tb.win_rate == 0.0
         assert tb.total_pnl == 0.0
         assert tb.max_drawdown == 0.0
+        assert tb.gross_profit == 0.0
+        assert tb.gross_loss == 0.0
+        assert tb.profit_factor == 0.0
+        assert tb.avg_win == 0.0
+        assert tb.avg_loss == 0.0
+        assert tb.expectancy == 0.0
 
     def test_has_no_open_trade(self) -> None:
         tb = TradeBook()
@@ -192,6 +200,119 @@ class TestTradeBook:
     def test_has_pending_order(self) -> None:
         tb = TradeBook()
         assert tb.has_pending_order is False
+
+    def test_summary_includes_new_metrics(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        summary = tb.summary
+        assert "gross_profit" in summary
+        assert "gross_loss" in summary
+        assert "profit_factor" in summary
+        assert "avg_win" in summary
+        assert "avg_loss" in summary
+        assert "expectancy" in summary
+
+
+class TestTradeBookMetrics:
+    def _make_candidate(
+        self, direction: TrendDirection = TrendDirection.BULLISH,
+        entry: float = 100.0, stop: float = 98.0, target: float = 104.0,
+    ) -> TradeCandidate:
+        return TradeCandidate(
+            direction=direction,
+            entry=entry,
+            stop=stop,
+            target=target,
+            size=1.0,
+            risk_amount=2.0,
+            reward_amount=4.0,
+            rr_ratio=2.0,
+            slippage_pct=0.1,
+            source="test",
+            evidence=(),
+        )
+
+    def _make_signal(
+        self, direction: TrendDirection = TrendDirection.BULLISH,
+    ) -> TradeSignal:
+        return TradeSignal(
+            direction=direction,
+            entry_zone=(99.0, 101.0),
+            confidence=0.8,
+            source="test",
+            evidence=(),
+        )
+
+    def test_single_win(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        candidate = self._make_candidate()
+        signal = self._make_signal()
+        ts = datetime(2024, 1, 1)
+        tb.submit_order(candidate, signal, "test", ts)
+        tb.fill_order(100.0, ts)
+        tb.close_trade(104.0, ts)
+        assert tb.gross_profit == 4.0
+        assert tb.gross_loss == 0.0
+        assert tb.profit_factor == float("inf")
+        assert tb.avg_win == 4.0
+        assert tb.avg_loss == 0.0
+        assert tb.expectancy == 4.0
+
+    def test_single_loss(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        candidate = self._make_candidate()
+        signal = self._make_signal()
+        ts = datetime(2024, 1, 1)
+        tb.submit_order(candidate, signal, "test", ts)
+        tb.fill_order(100.0, ts)
+        tb.close_trade(98.0, ts)
+        assert tb.gross_profit == 0.0
+        assert tb.gross_loss == 2.0
+        assert tb.profit_factor == 0.0
+        assert tb.avg_win == 0.0
+        assert tb.avg_loss == -2.0
+        assert tb.expectancy == -2.0
+
+    def test_mixed_trades(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        candidate = self._make_candidate()
+        signal = self._make_signal()
+        ts = datetime(2024, 1, 1)
+
+        tb.submit_order(candidate, signal, "test", ts)
+        tb.fill_order(100.0, ts)
+        tb.close_trade(104.0, ts)
+
+        tb.submit_order(candidate, signal, "test", ts)
+        tb.fill_order(100.0, ts)
+        tb.close_trade(98.0, ts)
+
+        tb.submit_order(candidate, signal, "test", ts)
+        tb.fill_order(100.0, ts)
+        tb.close_trade(105.0, ts)
+
+        assert tb.win_count == 2
+        assert tb.loss_count == 1
+        assert tb.gross_profit == 9.0
+        assert tb.gross_loss == 2.0
+        assert tb.profit_factor == 4.5
+        assert tb.avg_win == 4.5
+        assert tb.avg_loss == -2.0
+        assert tb.expectancy == 7.0 / 3
+
+    def test_bearish_trade_metrics(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        candidate = self._make_candidate(
+            direction=TrendDirection.BEARISH,
+            entry=100.0, stop=102.0, target=96.0,
+        )
+        signal = self._make_signal(direction=TrendDirection.BEARISH)
+        ts = datetime(2024, 1, 1)
+        tb.submit_order(candidate, signal, "test", ts)
+        tb.fill_order(100.0, ts)
+        tb.close_trade(96.0, ts)
+        assert tb.gross_profit == 4.0
+        assert tb.profit_factor == float("inf")
+        assert tb.avg_win == 4.0
 
 
 class TestStrategyBundle:
