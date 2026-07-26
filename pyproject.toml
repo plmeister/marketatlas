@@ -6,6 +6,9 @@ authors = ["Scott"]
 readme = "MINIMAL-VIABLE.md"
 packages = [{include = "marketatlas", from = "src"}]
 
+[tool.poetry.scripts]
+marketatlas = "marketatlas.cli:main"
+
 [tool.poetry.dependencies]
 python = "^3.11"
 polars = "^1.0"
