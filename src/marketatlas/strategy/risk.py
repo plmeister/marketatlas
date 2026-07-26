@@ -5,7 +5,13 @@ from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import ATRFact
-from marketatlas.facts.structural import SRFact, SRLevel, SwingFact, SwingPoint, SwingType, TrendDirection
+from marketatlas.facts.structural import (
+    SRFact,
+    SRLevel,
+    SwingFact,
+    SwingType,
+    TrendDirection,
+)
 from marketatlas.strategy.signals import TradeSignal
 from marketatlas.strategy.trade import TradeCandidate
 

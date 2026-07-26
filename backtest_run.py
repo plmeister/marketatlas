@@ -9,7 +9,7 @@ from pathlib import Path
 from marketatlas.backtesting.backtester import Backtester
 from marketatlas.data.providers.yahoo import YahooProvider
 from marketatlas.data.store import MarketStore
-from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
+from marketatlas.data.types import Symbol, Timeframe
 from marketatlas.strategy.bundle import StrategyBundle
 from marketatlas.strategy.loader import load_strategy
 from marketatlas.strategy.strategy import Strategy
@@ -113,7 +113,6 @@ def main() -> None:
     # Debug: scan frames for pullback status
     from marketatlas.data.view import MarketView as MV
     from marketatlas.facts.pattern import PullbackFact, PullbackStatus
-    from marketatlas.facts.structural import SwingFact, TrendFact
 
     detected = 0
     confirmed = 0

@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from marketatlas.analysis.analyzers.atr import ATRAnalyzer
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.analyzers.trend import TrendAnalyzer
