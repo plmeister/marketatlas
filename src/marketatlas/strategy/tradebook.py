@@ -53,6 +53,14 @@ class TradeBook:
         return sum(1 for t in self._trades if t.result == "loss")
 
     @property
+    def breakeven_count(self) -> int:
+        return sum(1 for t in self._trades if t.result == "breakeven")
+
+    @property
+    def closed_count(self) -> int:
+        return len(self._trades)
+
+    @property
     def win_rate(self) -> float:
         total = self.win_count + self.loss_count
         if total == 0:
@@ -224,9 +232,10 @@ class TradeBook:
                 if self.initial_balance != 0
                 else 0.0
             ),
-            "total_trades": self.win_count + self.loss_count,
+            "total_trades": self.closed_count,
             "wins": self.win_count,
             "losses": self.loss_count,
+            "breakevens": self.breakeven_count,
             "win_rate": self.win_rate,
             "max_drawdown": self.max_drawdown,
             "gross_profit": self.gross_profit,
@@ -246,6 +255,7 @@ class TradeBook:
                 breakdown[name] = {
                     "wins": 0,
                     "losses": 0,
+                    "breakevens": 0,
                     "total_pnl": 0.0,
                 }
             entry = breakdown[name]
@@ -253,6 +263,8 @@ class TradeBook:
                 entry["wins"] = entry["wins"] + 1  # type: ignore[operator]
             elif trade.result == "loss":
                 entry["losses"] = entry["losses"] + 1  # type: ignore[operator]
+            elif trade.result == "breakeven":
+                entry["breakevens"] = entry["breakevens"] + 1  # type: ignore[operator]
             if trade.pnl is not None:
                 entry["total_pnl"] = entry["total_pnl"] + trade.pnl  # type: ignore[operator]
         return breakdown
