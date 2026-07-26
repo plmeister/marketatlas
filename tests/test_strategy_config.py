@@ -7,6 +7,7 @@ from marketatlas.analysis.analyzers.trend import TrendAnalyzer
 from marketatlas.strategy.config import (
     AnalyzerConfig,
     RiskConfig,
+    SignalConfig,
     StrategyConfig,
 )
 from marketatlas.strategy.loader import (
@@ -217,3 +218,83 @@ class TestAnalyzerRegistry:
         assert "EMAAnalyzer" in ANALYZER_TYPES
         assert "ATRAnalyzer" in ANALYZER_TYPES
         assert "TrendAnalyzer" in ANALYZER_TYPES
+
+
+class TestParseEdgeCases:
+    def test_analyzer_not_a_mapping(self, tmp_path: Path) -> None:
+        yaml_str = "strategy:\n  name: test\nanalyzers:\n  - not_a_dict\n"
+        path = _write_yaml(tmp_path, yaml_str)
+        with pytest.raises(ConfigError, match="must be a mapping"):
+            load_strategy(path)
+
+    def test_analyzer_params_not_a_mapping(self, tmp_path: Path) -> None:
+        yaml_str = (
+            "strategy:\n  name: test\n"
+            "analyzers:\n  - type: EMAAnalyzer\n    params: not_a_dict\n"
+        )
+        path = _write_yaml(tmp_path, yaml_str)
+        with pytest.raises(ConfigError, match="'params' must be a mapping"):
+            load_strategy(path)
+
+    def test_analyzers_not_a_list(self, tmp_path: Path) -> None:
+        yaml_str = "strategy:\n  name: test\nanalyzers: not_a_list\n"
+        path = _write_yaml(tmp_path, yaml_str)
+        config = load_strategy(path)
+        assert config.analyzers == ()
+
+    def test_signal_not_a_mapping(self, tmp_path: Path) -> None:
+        yaml_str = "strategy:\n  name: test\nsignals:\n  - not_a_dict\n"
+        path = _write_yaml(tmp_path, yaml_str)
+        with pytest.raises(ConfigError, match="must be a mapping"):
+            load_strategy(path)
+
+    def test_signal_requires_not_a_list(self, tmp_path: Path) -> None:
+        yaml_str = (
+            "strategy:\n  name: test\n"
+            "signals:\n  - type: Sig\n    requires: not_a_list\n"
+        )
+        path = _write_yaml(tmp_path, yaml_str)
+        with pytest.raises(ConfigError, match="'requires' must be a list"):
+            load_strategy(path)
+
+    def test_signal_rules_not_a_mapping(self, tmp_path: Path) -> None:
+        yaml_str = (
+            "strategy:\n  name: test\n"
+            "signals:\n  - type: Sig\n    rules: not_a_dict\n"
+        )
+        path = _write_yaml(tmp_path, yaml_str)
+        with pytest.raises(ConfigError, match="'rules' must be a mapping"):
+            load_strategy(path)
+
+    def test_signals_not_a_list(self, tmp_path: Path) -> None:
+        yaml_str = "strategy:\n  name: test\nsignals: not_a_list\n"
+        path = _write_yaml(tmp_path, yaml_str)
+        config = load_strategy(path)
+        assert config.signals == ()
+
+    def test_risk_not_a_mapping(self, tmp_path: Path) -> None:
+        yaml_str = "strategy:\n  name: test\nrisk: not_a_dict\n"
+        path = _write_yaml(tmp_path, yaml_str)
+        with pytest.raises(ConfigError, match="'risk' must be a mapping"):
+            load_strategy(path)
+
+    def test_risk_params_not_a_mapping(self, tmp_path: Path) -> None:
+        yaml_str = (
+            "strategy:\n  name: test\n"
+            "risk:\n  algorithm: risk_based\n  params: not_a_dict\n"
+        )
+        path = _write_yaml(tmp_path, yaml_str)
+        with pytest.raises(ConfigError, match="'risk.params' must be a mapping"):
+            load_strategy(path)
+
+    def test_validate_signal_requires_unmet(self) -> None:
+        config = StrategyConfig(
+            name="test",
+            version="1.0",
+            analyzers=(AnalyzerConfig(type="EMAAnalyzer", params={"period": 20}),),
+            signals=(
+                SignalConfig(type="Sig", requires=("TrendAnalyzer",), rules={}),
+            ),
+        )
+        errors = validate_config(config)
+        assert any("TrendAnalyzer" in e for e in errors)
