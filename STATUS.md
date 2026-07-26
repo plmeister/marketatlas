@@ -29,3 +29,4 @@
 - [x] 022 — Strategy-aware backtester
 - [x] 023 — No-read-ahead audit
 - [x] 024 — Interactive strategy visualization
+- [x] 025 — Backtest CLI
