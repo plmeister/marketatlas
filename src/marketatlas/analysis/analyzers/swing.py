@@ -78,6 +78,7 @@ class SwingStructureAnalyzer(Analyzer):
         raw = self._find_raw_swings(window, view.cursor - lookback)
         filtered = self._filter_alternating(raw)
         separated = self._filter_atr_separation(filtered, atr_fact.value)
+        separated = self._filter_alternating(separated)
 
         high_count = sum(1 for s in separated if s.type == SwingType.HIGH)
         low_count = sum(1 for s in separated if s.type == SwingType.LOW)
