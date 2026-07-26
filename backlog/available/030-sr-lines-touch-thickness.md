@@ -1,6 +1,7 @@
 # 030: S/R Horizontal Lines with Touch-Based Thickness
 
 **Status:** pending  
+**Epic:** visualisation  
 **Priority:** medium
 
 ## Description

@@ -1,6 +1,7 @@
 # 029: Pullback Pattern Zigzag Line
 
 **Status:** pending  
+**Epic:** visualisation  
 **Priority:** medium
 
 ## Description

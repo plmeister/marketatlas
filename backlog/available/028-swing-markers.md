@@ -1,6 +1,7 @@
 # 028: Swing Point Markers on Chart
 
 **Status:** pending  
+**Epic:** visualisation  
 **Priority:** medium
 
 ## Description
