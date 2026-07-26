@@ -31,3 +31,4 @@
 - TradeBook fix: total_trades now includes breakeven trades (was win+loss only). Added breakeven_count, closed_count properties. Strategy breakdown counts breakevens. 14 new tests. 391 total.
 - **026** — JS template extraction: Moved inline JS from interactive.py into interactive.js file with `null; // @data:PLACEHOLDER` markers. Python renderer reads file, replaces markers with JSON data via string replace, injects into HTML. JS validates with `node --check`. 391 total.
 - **027** — HTML output validation tests: 15 tests validating generated HTML — JS syntax via node --check, data constants present, DOM elements, non-empty arrays, brace balance, smoke tests. 406 total.
+- Testing: added 10 edge case tests for strategy config loader (non-mapping items, non-list requires, non-mapping params/rules). loader.py coverage 90%→100%. 438 total.
