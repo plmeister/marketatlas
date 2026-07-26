@@ -1,5 +1,6 @@
 # 026: Separate JS Template for HTML Renderer
 
+**Epic:** testing
 **Status:** pending  
 **Priority:** high
 
