@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 
 import pytest
-
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.graph import (
     AnalysisGraph,
@@ -164,6 +163,24 @@ class TestAnalyzerBase:
         assert isinstance(result, AnalysisResult)
         assert len(result.facts) == 1
         assert isinstance(result.facts[0], EMAFact)
+
+    def test_default_instance_key(self) -> None:
+        """Analyzer base class default instance_key returns class name."""
+
+        class MyAnalyzer(Analyzer):
+            def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ()
+
+            def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ()
+
+            def analyze(
+                self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+            ) -> AnalysisResult:
+                return AnalysisResult(facts=(), evidence=())
+
+        analyzer = MyAnalyzer()
+        assert analyzer.instance_key == "MyAnalyzer"
 
 
 class TestAnalysisResult:

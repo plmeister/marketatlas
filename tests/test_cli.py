@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
 

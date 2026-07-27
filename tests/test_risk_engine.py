@@ -380,3 +380,85 @@ class TestRiskEngine:
         )
         candidate, _evidence = engine.evaluate(_bullish_signal(), facts, view)
         assert candidate is not None
+
+    def test_no_swing_fact_fallback_stop(self) -> None:
+        """Without swing fact, stop uses default 2*ATR fallback minus 0.2*ATR buffer."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0)
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
+        )
+        assert candidate is not None
+        # stop = (entry - 2*ATR) - 0.2*ATR = 100 - 4 - 0.4 = 95.6
+        expected_stop = 100.0 - 2.0 * 2.0 - 0.2 * 2.0
+        assert abs(candidate.stop - expected_stop) < 0.01
+
+    def test_bearish_no_swing_fact_fallback_stop(self) -> None:
+        """Bearish without swing fact, stop uses default 2*ATR fallback plus 0.2*ATR buffer."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0)
+        candidate, _evidence = engine.evaluate(
+            _bearish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
+        )
+        assert candidate is not None
+        # stop = (entry + 2*ATR) + 0.2*ATR = 100 + 4 + 0.4 = 104.4
+        expected_stop = 100.0 + 2.0 * 2.0 + 0.2 * 2.0
+        assert abs(candidate.stop - expected_stop) < 0.01
+
+    def test_bullish_swing_low_above_entry_fallback(self) -> None:
+        """Bullish: all swing lows above entry -> fallback to 2*ATR."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0)
+        swings = _swings_fact(
+            (SwingPoint(price=110.0, index=0, type=SwingType.LOW, timestamp=BASE),)
+        )
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(),
+            _facts(atr=_atr_fact(2.0), swing=swings, sr=_sr_fact(())),
+            view,
+        )
+        assert candidate is not None
+        expected_stop = 100.0 - 2.0 * 2.0 - 0.2 * 2.0
+        assert abs(candidate.stop - expected_stop) < 0.01
+
+    def test_bearish_swing_high_below_entry_fallback(self) -> None:
+        """Bearish: all swing highs below entry -> fallback to 2*ATR."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0)
+        swings = _swings_fact(
+            (SwingPoint(price=90.0, index=0, type=SwingType.HIGH, timestamp=BASE),)
+        )
+        candidate, _evidence = engine.evaluate(
+            _bearish_signal(),
+            _facts(atr=_atr_fact(2.0), swing=swings, sr=_sr_fact(())),
+            view,
+        )
+        assert candidate is not None
+        expected_stop = 100.0 + 2.0 * 2.0 + 0.2 * 2.0
+        assert abs(candidate.stop - expected_stop) < 0.01
+
+    def test_size_and_reward_calculation(self) -> None:
+        """Verify size and reward are correctly computed."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(risk_pct=2.0, slippage_pct=0.0)
+        candidate, _ = engine.evaluate(
+            _bullish_signal(),
+            _facts(atr=_atr_fact(2.0), sr=_sr_fact(())),
+            view,
+            balance=10000.0,
+        )
+        assert candidate is not None
+        expected_risk = 10000.0 * 0.02
+        assert abs(candidate.risk_amount - expected_risk) < 0.01
+        assert abs(candidate.reward_amount - candidate.rr_ratio * expected_risk) < 0.01
+        assert abs(candidate.size - expected_risk / abs(candidate.entry - candidate.stop)) < 0.01
