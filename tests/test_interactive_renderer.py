@@ -495,3 +495,42 @@ class TestInteractiveRenderer:
         assert "summary-bar" in content
         assert "s-balance" in content
         assert "s-pnl" in content
+
+    def test_swing_markers_in_output(self, tmp_path: object) -> None:
+        path = tmp_path / "swings.html"  # type: ignore[operator]
+        store = _make_store(10)
+        swing1 = SwingFact(
+            timestamp=_make_candle(0).timestamp, evidence=(),
+            swings=(
+                SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=_make_candle(0).timestamp),
+                SwingPoint(price=107.0, index=2, type=SwingType.HIGH, timestamp=_make_candle(2).timestamp),
+            ),
+        )
+        swing2 = SwingFact(
+            timestamp=_make_candle(1).timestamp, evidence=(),
+            swings=(
+                SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=_make_candle(0).timestamp),
+                SwingPoint(price=107.0, index=2, type=SwingType.HIGH, timestamp=_make_candle(2).timestamp),
+                SwingPoint(price=96.0, index=4, type=SwingType.LOW, timestamp=_make_candle(4).timestamp),
+            ),
+        )
+        frame0 = AnalysisFrame(
+            timestamp=_make_candle(0).timestamp, candle=_make_candle(0),
+            facts={(SwingFact, "swing"): swing1}, evidence=(),
+        )
+        frame1 = AnalysisFrame(
+            timestamp=_make_candle(1).timestamp, candle=_make_candle(1),
+            facts={(SwingFact, "swing"): swing2}, evidence=(),
+        )
+        frame_store = FrameStore()
+        frame_store.append(frame0)
+        frame_store.append(frame1)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert '"swing"' in content
+        assert '"swings"' in content
+        assert "#f59e0b" in content  # swing high color
+        assert "#3b82f6" in content  # swing low color

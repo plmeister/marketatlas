@@ -146,6 +146,24 @@ function updateMarkers(frameIdx) {
       text: pb.text,
     });
   }
+  // Swing point markers
+  const facts = FACTS_DATA[frameIdx] || {};
+  Object.values(facts).forEach(val => {
+    if (val.type === 'swing' && val.swings) {
+      val.swings.forEach(sw => {
+        const candleTime = CANDLES[sw.index] ? CANDLES[sw.index].time : null;
+        if (candleTime === null) return;
+        const isHigh = sw.type === 'high';
+        markers.push({
+          time: candleTime,
+          position: isHigh ? 'aboveBar' : 'belowBar',
+          color: isHigh ? '#f59e0b' : '#3b82f6',
+          shape: isHigh ? 'arrowDown' : 'arrowUp',
+          text: '',
+        });
+      });
+    }
+  });
   // Trade entry markers
   TRADES.forEach(t => {
     if (t.entry_time <= FRAMES[frameIdx].time) {
