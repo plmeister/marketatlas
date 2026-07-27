@@ -8,6 +8,9 @@ from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import (
     SRFact,
     SRLevel,
+    SwingFact,
+    SwingPoint,
+    SwingType,
     TrendDirection,
     TrendFact,
 )
@@ -276,6 +279,33 @@ class TestExtractFactsPerFrame:
         assert "sr" in result[0]
         assert result[0]["sr"]["type"] == "sr"
         assert len(result[0]["sr"]["levels"]) == 2
+
+    def test_pullback_fact_included(self) -> None:
+        frames = [_make_pullback_frame(0)]
+        result = _extract_facts_per_frame(frames)
+        assert "pullback" in result[0]
+        assert result[0]["pullback"]["type"] == "pullback"
+        assert result[0]["pullback"]["status"] == "detected"
+        assert result[0]["pullback"]["direction"] == "bullish"
+
+    def test_swing_fact_included(self) -> None:
+        candle = _make_candle(0)
+        swing = SwingFact(
+            timestamp=candle.timestamp, evidence=(),
+            swings=(
+                SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=candle.timestamp),
+                SwingPoint(price=105.0, index=2, type=SwingType.HIGH, timestamp=candle.timestamp),
+            ),
+        )
+        frame = AnalysisFrame(
+            timestamp=candle.timestamp, candle=candle,
+            facts={(SwingFact, "swing"): swing}, evidence=(),
+        )
+        result = _extract_facts_per_frame([frame])
+        assert "swing" in result[0]
+        assert result[0]["swing"]["type"] == "swing"
+        assert len(result[0]["swing"]["swings"]) == 2
+        assert result[0]["swing"]["swings"][0]["type"] == "low"
 
     def test_empty(self) -> None:
         assert _extract_facts_per_frame([]) == []

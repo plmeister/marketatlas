@@ -153,6 +153,27 @@ class TestExtractTrendMarkers:
         assert len(bear) == 0
         assert len(neut) == 0
 
+    def test_bearish_and_neutral_directions(self) -> None:
+        candle = _make_candle(0)
+        bear_frame = AnalysisFrame(
+            timestamp=candle.timestamp, candle=candle,
+            facts={(TrendFact, "trend"): TrendFact(
+                timestamp=candle.timestamp, evidence=(),
+                direction=TrendDirection.BEARISH, strength=0.5,
+            )}, evidence=(),
+        )
+        neut_frame = AnalysisFrame(
+            timestamp=candle.timestamp, candle=candle,
+            facts={(TrendFact, "trend"): TrendFact(
+                timestamp=candle.timestamp, evidence=(),
+                direction=TrendDirection.NEUTRAL, strength=0.1,
+            )}, evidence=(),
+        )
+        bull, bear, neut = _extract_trend_markers([bear_frame, neut_frame])
+        assert len(bull) == 0
+        assert len(bear) == 1
+        assert len(neut) == 1
+
     def test_empty(self) -> None:
         bull, bear, neut = _extract_trend_markers([])
         assert bull == [] and bear == [] and neut == []

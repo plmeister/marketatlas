@@ -90,6 +90,15 @@ class TestTradeBookBasics:
         assert tb.has_no_open_trade is True
 
 
+class TestCloseTradeNoop:
+    def test_close_trade_no_open_trade(self) -> None:
+        tb = TradeBook()
+        ts = datetime(2024, 1, 1)
+        tb.close_trade(100.0, ts)
+        assert tb.has_no_open_trade is True
+        assert tb.balance == tb.initial_balance
+
+
 class TestTradeResolution:
     def test_bullish_win(self) -> None:
         tb = TradeBook(initial_balance=1000.0)
@@ -139,6 +148,24 @@ class TestTradeResolution:
 
         assert tb.win_count == 1
         expected_pnl = (100.0 - 85.0) * 0.2
+        assert tb.total_pnl == pytest.approx(expected_pnl)
+
+    def test_bearish_stop_hit(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+
+        cand = _candidate(
+            direction=TrendDirection.BEARISH, entry=100.0, stop=105.0, target=85.0, size=0.2,
+        )
+        tb.submit_order(cand, _signal(TrendDirection.BEARISH), "s", t0)
+        tb.fill_order(100.0, t0 + timedelta(days=1))
+
+        hit_stop = _candle(t0 + timedelta(days=2), h=106.0, lo=98.0, c=99.0)
+        tb.resolve_at_cursor(hit_stop)
+
+        assert tb.has_no_open_trade is True
+        assert tb.loss_count == 1
+        expected_pnl = (100.0 - 105.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
     def test_max_hold_days_force_close(self) -> None:
