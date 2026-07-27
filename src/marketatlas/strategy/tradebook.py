@@ -128,6 +128,10 @@ class TradeBook:
         return worst
 
     @property
+    def peak_balance(self) -> float:
+        return self._peak_balance
+
+    @property
     def has_no_open_trade(self) -> bool:
         return self._open_trade is None
 
@@ -237,6 +241,7 @@ class TradeBook:
             "losses": self.loss_count,
             "breakevens": self.breakeven_count,
             "win_rate": self.win_rate,
+            "peak_balance": self.peak_balance,
             "max_drawdown": self.max_drawdown,
             "gross_profit": self.gross_profit,
             "gross_loss": self.gross_loss,

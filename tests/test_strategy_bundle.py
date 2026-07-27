@@ -44,6 +44,12 @@ class TestStrategyBundleInit:
         assert bundle.graph is not None
         assert bundle.tradebook.balance == 1000.0
 
+    def test_strategy_config_property(self) -> None:
+        config = _strategy_config(name="mystrat")
+        s = Strategy("s1", config)
+        assert s.config is config
+        assert s.config.name == "mystrat"
+
     def test_custom_balance(self) -> None:
         config = _strategy_config()
         s = Strategy("s1", config)

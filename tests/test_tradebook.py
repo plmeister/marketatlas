@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
+
 from marketatlas.data.types import Candle
 from marketatlas.facts.structural import TrendDirection
 from marketatlas.strategy.signals import TradeSignal
@@ -60,6 +61,7 @@ class TestTradeBookBasics:
         tb = TradeBook(initial_balance=1000.0)
         assert tb.balance == 1000.0
         assert tb.initial_balance == 1000.0
+        assert tb.peak_balance == 1000.0
         assert tb.trades == ()
         assert tb.has_no_open_trade is True
         assert tb.has_pending_order is False
@@ -331,3 +333,35 @@ class TestProfitFactor:
         tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=111.0, lo=99.0))
 
         assert tb.profit_factor == float("inf")
+
+
+class TestPeakBalance:
+    def test_peak_balance_tracks_high_watermark(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+
+        # Win: balance goes to 1004
+        c1 = _candidate(entry=100.0, stop=95.0, target=110.0, size=0.4)
+        tb.submit_order(c1, _signal(), "s", t0)
+        tb.fill_order(100.0, t0)
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=111.0, lo=99.0))
+        assert tb.peak_balance == pytest.approx(1004.0)
+
+        # Loss: balance drops to 1002
+        t1 = t0 + timedelta(days=5)
+        c2 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.4)
+        tb.submit_order(c2, _signal(), "s", t1)
+        tb.fill_order(100.0, t1)
+        tb.resolve_at_cursor(_candle(t1 + timedelta(days=1), lo=94.0, h=101.0))
+        assert tb.peak_balance == pytest.approx(1004.0)
+
+    def test_peak_balance_in_summary(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        c1 = _candidate(entry=100.0, stop=95.0, target=110.0, size=0.4)
+        tb.submit_order(c1, _signal(), "s", t0)
+        tb.fill_order(100.0, t0)
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=111.0, lo=99.0))
+        s = tb.summary
+        assert "peak_balance" in s
+        assert s["peak_balance"] == pytest.approx(1004.0)

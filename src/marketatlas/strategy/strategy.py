@@ -23,6 +23,10 @@ class Strategy:
         self._risk_engine = self._build_risk()
 
     @property
+    def config(self) -> StrategyConfig:
+        return self._config
+
+    @property
     def name(self) -> str:
         return self._name
 
