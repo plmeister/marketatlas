@@ -1,9 +1,11 @@
 from datetime import UTC, datetime
 
 import pytest
+
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.graph import (
     AnalysisGraph,
+    AnalyzerRegistry,
     CyclicDependencyError,
     UnsatisfiedDependencyError,
 )
@@ -316,3 +318,110 @@ class TestAnalysisGraphRun:
         assert isinstance(atr, ATRFact)
         assert ema.value == 103.0
         assert atr.value == 6.0
+
+
+class TestAnalysisGraphDuplicateProducer:
+    def test_duplicate_producer_raises(self) -> None:
+        class DupA(Analyzer):
+            def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ()
+
+            def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ((EMAFact, "ema_20"),)
+
+            def analyze(
+                self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+            ) -> AnalysisResult:
+                return AnalysisResult(facts=(), evidence=())
+
+        class DupB(Analyzer):
+            def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ()
+
+            def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ((EMAFact, "ema_20"),)
+
+            def analyze(
+                self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+            ) -> AnalysisResult:
+                return AnalysisResult(facts=(), evidence=())
+
+        with pytest.raises(CyclicDependencyError):
+            AnalysisGraph([DupA(), DupB()])
+
+
+class TestAnalyzerRegistry:
+    def test_register_and_build(self) -> None:
+        registry = AnalyzerRegistry()
+        registry.register(ProduceXAnalyzer)
+        graph = registry.build()
+        assert isinstance(graph, AnalysisGraph)
+        order = graph.execution_order()
+        assert len(order) == 1
+        assert isinstance(order[0], ProduceXAnalyzer)
+
+    def test_build_with_dependencies(self) -> None:
+        registry = AnalyzerRegistry()
+        registry.register(ProduceXAnalyzer)
+        registry.register(RequireXProduceYAnalyzer)
+        graph = registry.build()
+        order = graph.execution_order()
+        assert len(order) == 2
+        assert isinstance(order[0], ProduceXAnalyzer)
+        assert isinstance(order[1], RequireXProduceYAnalyzer)
+
+    def test_build_with_kwargs(self) -> None:
+        class KwargsAnalyzer(Analyzer):
+            def __init__(self, period: int = 20) -> None:
+                self._period = period
+
+            def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ()
+
+            def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+                return ((EMAFact, f"ema_{self._period}"),)
+
+            def analyze(
+                self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+            ) -> AnalysisResult:
+                return AnalysisResult(facts=(), evidence=())
+
+        registry = AnalyzerRegistry()
+        registry.register(KwargsAnalyzer, period=50)
+        graph = registry.build()
+        order = graph.execution_order()
+        assert len(order) == 1
+        assert order[0].produces() == ((EMAFact, "ema_50"),)
+
+    def test_resolve_selects_needed(self) -> None:
+        registry = AnalyzerRegistry()
+        registry.register(ProduceXAnalyzer)
+        registry.register(RequireXProduceYAnalyzer)
+        registry.register(RequireBothAnalyzer)
+        graph = registry.resolve({(TrendFact, "trend")})
+        order = graph.execution_order()
+        names = [type(a).__name__ for a in order]
+        assert "ProduceXAnalyzer" in names
+        assert "RequireXProduceYAnalyzer" in names
+        assert "RequireBothAnalyzer" not in names
+
+    def test_resolve_all_needed(self) -> None:
+        registry = AnalyzerRegistry()
+        registry.register(ProduceXAnalyzer)
+        registry.register(RequireXProduceYAnalyzer)
+        registry.register(RequireBothAnalyzer)
+        graph = registry.resolve({(ATRFact, "atr_14")})
+        order = graph.execution_order()
+        assert len(order) == 3
+
+    def test_resolve_unsatisfied_raises(self) -> None:
+        registry = AnalyzerRegistry()
+        registry.register(RequireXProduceYAnalyzer)
+        with pytest.raises(UnsatisfiedDependencyError):
+            registry.resolve({(TrendFact, "trend")})
+
+    def test_resolve_empty_needed(self) -> None:
+        registry = AnalyzerRegistry()
+        registry.register(ProduceXAnalyzer)
+        graph = registry.resolve(set())
+        assert len(graph.execution_order()) == 0

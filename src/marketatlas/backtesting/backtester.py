@@ -1,27 +1,40 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from marketatlas.analysis.graph import FactKey
+from marketatlas.analysis.graph import AnalysisGraph, FactKey
 from marketatlas.data.store import MarketStore
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.collector import EvidenceCollector
 from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.frames.store import FrameStore
-from marketatlas.strategy.bundle import StrategyBundle
+from marketatlas.strategy.risk import RiskEngine
 from marketatlas.strategy.tradebook import TradeBook
 
 if TYPE_CHECKING:
     from marketatlas.facts.base import Fact
+    from marketatlas.strategy.signals import TradeSignal
+
+
+@runtime_checkable
+class BundleProtocol(Protocol):
+    @property
+    def graph(self) -> AnalysisGraph: ...
+    @property
+    def tradebook(self) -> TradeBook: ...
+    def evaluate_all(
+        self, view: MarketView, facts: dict[FactKey, Fact]
+    ) -> list[tuple[str, TradeSignal]]: ...
+    def get_risk_engine(self, strategy_name: str) -> RiskEngine: ...
 
 
 class Backtester:
     def __init__(
         self,
         store: MarketStore,
-        bundle: StrategyBundle,
+        bundle: BundleProtocol,
         window_size: int = 100,
         max_hold_days: int = 10,
     ) -> None:

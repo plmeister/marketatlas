@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from marketatlas.analysis.base import Analyzer
+from marketatlas.analysis.graph import AnalysisGraph, FactKey
 from marketatlas.analysis.result import AnalysisResult
 from marketatlas.backtesting.backtester import Backtester
 from marketatlas.data.store import MarketStore
@@ -8,10 +9,11 @@ from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
-from marketatlas.facts.primitive import EMAFact
-from marketatlas.facts.structural import TrendDirection
+from marketatlas.facts.primitive import ATRFact, EMAFact
+from marketatlas.facts.structural import SRFact, TrendDirection
 from marketatlas.strategy.bundle import StrategyBundle
 from marketatlas.strategy.config import StrategyConfig
+from marketatlas.strategy.risk import RiskEngine
 from marketatlas.strategy.signals import TradeSignal
 from marketatlas.strategy.strategy import Strategy
 from marketatlas.strategy.trade import TradeCandidate
@@ -329,3 +331,157 @@ class TestStrategyBundle:
         bundle = StrategyBundle([s1, s2])
         assert "a" in bundle.strategies
         assert "b" in bundle.strategies
+
+
+class StubAnalyzerForSignals(Analyzer):
+    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+        return ()
+
+    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+        return ((ATRFact, "atr_14"),)
+
+    def analyze(
+        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+    ) -> AnalysisResult:
+        return AnalysisResult(
+            facts=(
+                ATRFact(
+                    timestamp=view.current.timestamp,
+                    evidence=(),
+                    value=3.0,
+                    period=14,
+                ),
+            ),
+            evidence=(),
+        )
+
+
+class StubSRAnalyzer(Analyzer):
+    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+        return ()
+
+    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
+        return ((SRFact, "sr"),)
+
+    def analyze(
+        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+    ) -> AnalysisResult:
+        return AnalysisResult(
+            facts=(
+                SRFact(
+                    timestamp=view.current.timestamp,
+                    evidence=(),
+                    levels=(),
+                ),
+            ),
+            evidence=(),
+        )
+
+
+class _SignalBundle:
+    def __init__(
+        self,
+        signals: list[tuple[str, TradeSignal]],
+        risk_engine: RiskEngine,
+        graph: AnalysisGraph | None = None,
+        tradebook: TradeBook | None = None,
+    ) -> None:
+        self._signals = signals
+        self._risk_engine = risk_engine
+        self._graph = graph or AnalysisGraph([])
+        self._tradebook = tradebook or TradeBook()
+
+    @property
+    def graph(self) -> AnalysisGraph:
+        return self._graph
+
+    @property
+    def tradebook(self) -> TradeBook:
+        return self._tradebook
+
+    def evaluate_all(
+        self, view: MarketView, facts: dict[FactKey, Fact]
+    ) -> list[tuple[str, TradeSignal]]:
+        return list(self._signals)
+
+    def get_risk_engine(self, strategy_name: str) -> RiskEngine:
+        return self._risk_engine
+
+
+def _make_signal_bundle(
+    signals: list[tuple[str, TradeSignal]],
+    risk_engine: RiskEngine | None = None,
+) -> _SignalBundle:
+    graph = AnalysisGraph([StubAnalyzerForSignals(), StubSRAnalyzer()])
+    return _SignalBundle(
+        signals=signals,
+        risk_engine=risk_engine or RiskEngine(risk_pct=1.0, slippage_pct=0.0),
+        graph=graph,
+    )
+
+
+class TestBacktesterSignalEval:
+    def test_signal_submitted_with_facts(self) -> None:
+        store = _make_store(100)
+        signal = TradeSignal(
+            direction=TrendDirection.BULLISH,
+            entry_zone=(100.0, 102.0),
+            confidence=0.8,
+            source="test_signal",
+            evidence=(),
+        )
+        bundle = _make_signal_bundle(
+            signals=[("strat", signal)],
+        )
+        bt = Backtester(store, bundle, window_size=50)
+        frame_store, tradebook = bt.run()
+        assert len(frame_store) == 50
+        assert tradebook.closed_count >= 1
+
+    def test_close_remaining_open_trade_at_end(self) -> None:
+        store = _make_store(100)
+        signal = TradeSignal(
+            direction=TrendDirection.BULLISH,
+            entry_zone=(100.0, 102.0),
+            confidence=0.8,
+            source="test_signal",
+            evidence=(),
+        )
+        risk_engine = RiskEngine(
+            risk_pct=1.0, slippage_pct=0.0, max_stop_atr=100.0,
+            min_rr=1.0, max_rr=2.0, avoid_srxing=False,
+        )
+        bundle = _make_signal_bundle(
+            signals=[("strat", signal)],
+            risk_engine=risk_engine,
+        )
+        bt = Backtester(store, bundle, window_size=50, max_hold_days=9999)
+        frame_store, tradebook = bt.run()
+        assert len(frame_store) == 50
+        assert tradebook.closed_count >= 1
+
+    def test_no_signal_means_no_trades(self) -> None:
+        store = _make_store(100)
+        bundle = _make_signal_bundle(signals=[])
+        bt = Backtester(store, bundle, window_size=50)
+        frame_store, tradebook = bt.run()
+        assert len(frame_store) == 50
+        assert tradebook.closed_count == 0
+
+    def test_risk_engine_rejects_no_trade(self) -> None:
+        store = _make_store(100)
+        signal = TradeSignal(
+            direction=TrendDirection.BULLISH,
+            entry_zone=(100.0, 102.0),
+            confidence=0.8,
+            source="test_signal",
+            evidence=(),
+        )
+        bundle = _make_signal_bundle(
+            signals=[("strat", signal)],
+            risk_engine=RiskEngine(atr_key="atr_missing", sr_key="sr_missing"),
+        )
+        bt = Backtester(store, bundle, window_size=50)
+        frame_store, tradebook = bt.run()
+        assert len(frame_store) == 50
+        assert tradebook.closed_count == 0

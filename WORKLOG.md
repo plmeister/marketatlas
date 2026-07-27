@@ -32,3 +32,4 @@
 - **026** — JS template extraction: Moved inline JS from interactive.py into interactive.js file with `null; // @data:PLACEHOLDER` markers. Python renderer reads file, replaces markers with JSON data via string replace, injects into HTML. JS validates with `node --check`. 391 total.
 - **027** — HTML output validation tests: 15 tests validating generated HTML — JS syntax via node --check, data constants present, DOM elements, non-empty arrays, brace balance, smoke tests. 406 total.
 - Testing: added 10 edge case tests for strategy config loader (non-mapping items, non-list requires, non-mapping params/rules). loader.py coverage 90%→100%. 438 total.
+- Testing: graph.py (71%→100%) — duplicate-producer error, AnalyzerRegistry (register/build/resolve). backtester.py (87%→100%) — signal eval path, close remaining trade. Introduced BundleProtocol for duck-typed bundle param. 12 new tests. 450 total.
