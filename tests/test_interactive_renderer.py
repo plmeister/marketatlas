@@ -287,14 +287,49 @@ class TestExtractFactsPerFrame:
         assert result[0]["pullback"]["type"] == "pullback"
         assert result[0]["pullback"]["status"] == "detected"
         assert result[0]["pullback"]["direction"] == "bullish"
+        assert "swing_pattern_indices" in result[0]["pullback"]
+        assert result[0]["pullback"]["swing_pattern_indices"] == []
+
+    def test_pullback_with_swing_indices(self) -> None:
+        candle = _make_candle(5)
+        ts = candle.timestamp
+        swing_fact = SwingFact(
+            timestamp=ts, evidence=(),
+            swings=(
+                SwingPoint(price=95.0, index=1, type=SwingType.LOW, timestamp=ts),
+                SwingPoint(price=110.0, index=3, type=SwingType.HIGH, timestamp=ts),
+                SwingPoint(price=97.0, index=5, type=SwingType.LOW, timestamp=ts),
+                SwingPoint(price=112.0, index=7, type=SwingType.HIGH, timestamp=ts),
+            ),
+        )
+        pullback = PullbackFact(
+            timestamp=candle.timestamp, evidence=(),
+            status=PullbackStatus.DETECTED,
+            retracement_atr=1.5,
+            direction=TrendDirection.BULLISH,
+            swing_pattern=(95.0, 110.0, 97.0, 112.0),
+        )
+        frame = AnalysisFrame(
+            timestamp=candle.timestamp, candle=candle,
+            facts={
+                (SwingFact, "swing"): swing_fact,
+                (PullbackFact, "pullback"): pullback,
+            },
+            evidence=(),
+        )
+        result = _extract_facts_per_frame([frame])
+        pb = result[0]["pullback"]
+        assert pb["swing_pattern"] == [95.0, 110.0, 97.0, 112.0]
+        assert pb["swing_pattern_indices"] == [1, 3, 5, 7]
 
     def test_swing_fact_included(self) -> None:
         candle = _make_candle(0)
+        ts = candle.timestamp
         swing = SwingFact(
-            timestamp=candle.timestamp, evidence=(),
+            timestamp=ts, evidence=(),
             swings=(
-                SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=candle.timestamp),
-                SwingPoint(price=105.0, index=2, type=SwingType.HIGH, timestamp=candle.timestamp),
+                SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=ts),
+                SwingPoint(price=105.0, index=2, type=SwingType.HIGH, timestamp=ts),
             ),
         )
         frame = AnalysisFrame(
@@ -499,19 +534,22 @@ class TestInteractiveRenderer:
     def test_swing_markers_in_output(self, tmp_path: object) -> None:
         path = tmp_path / "swings.html"  # type: ignore[operator]
         store = _make_store(10)
+        t0 = _make_candle(0).timestamp
+        t2 = _make_candle(2).timestamp
+        t4 = _make_candle(4).timestamp
         swing1 = SwingFact(
-            timestamp=_make_candle(0).timestamp, evidence=(),
+            timestamp=t0, evidence=(),
             swings=(
-                SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=_make_candle(0).timestamp),
-                SwingPoint(price=107.0, index=2, type=SwingType.HIGH, timestamp=_make_candle(2).timestamp),
+                SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=t0),
+                SwingPoint(price=107.0, index=2, type=SwingType.HIGH, timestamp=t2),
             ),
         )
         swing2 = SwingFact(
             timestamp=_make_candle(1).timestamp, evidence=(),
             swings=(
-                SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=_make_candle(0).timestamp),
-                SwingPoint(price=107.0, index=2, type=SwingType.HIGH, timestamp=_make_candle(2).timestamp),
-                SwingPoint(price=96.0, index=4, type=SwingType.LOW, timestamp=_make_candle(4).timestamp),
+                SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=t0),
+                SwingPoint(price=107.0, index=2, type=SwingType.HIGH, timestamp=t2),
+                SwingPoint(price=96.0, index=4, type=SwingType.LOW, timestamp=t4),
             ),
         )
         frame0 = AnalysisFrame(
@@ -534,3 +572,46 @@ class TestInteractiveRenderer:
         assert '"swings"' in content
         assert "#f59e0b" in content  # swing high color
         assert "#3b82f6" in content  # swing low color
+
+    def test_zigzag_in_output(self, tmp_path: object) -> None:
+        path = tmp_path / "zigzag.html"  # type: ignore[operator]
+        store = _make_store(10)
+        t1 = _make_candle(1).timestamp
+        t3 = _make_candle(3).timestamp
+        t5 = _make_candle(5).timestamp
+        t7 = _make_candle(7).timestamp
+        swing_fact = SwingFact(
+            timestamp=t5, evidence=(),
+            swings=(
+                SwingPoint(price=95.0, index=1, type=SwingType.LOW, timestamp=t1),
+                SwingPoint(price=110.0, index=3, type=SwingType.HIGH, timestamp=t3),
+                SwingPoint(price=97.0, index=5, type=SwingType.LOW, timestamp=t5),
+                SwingPoint(price=112.0, index=7, type=SwingType.HIGH, timestamp=t7),
+            ),
+        )
+        pullback = PullbackFact(
+            timestamp=_make_candle(5).timestamp, evidence=(),
+            status=PullbackStatus.DETECTED,
+            retracement_atr=1.5,
+            direction=TrendDirection.BULLISH,
+            swing_pattern=(95.0, 110.0, 97.0, 112.0),
+        )
+        frame = AnalysisFrame(
+            timestamp=_make_candle(5).timestamp, candle=_make_candle(5),
+            facts={
+                (SwingFact, "swing"): swing_fact,
+                (PullbackFact, "pullback"): pullback,
+            },
+            evidence=(),
+        )
+        frame_store = FrameStore()
+        frame_store.append(frame)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "zigzagBull" in content
+        assert "zigzagBear" in content
+        assert "updateZigzag" in content
+        assert "swing_pattern_indices" in content

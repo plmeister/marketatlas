@@ -45,6 +45,18 @@ Object.keys(EMA_SERIES).forEach(name => {
   emaSeriesMap[name] = s;
 });
 
+// Pullback zigzag line series
+const zigzagBull = chart.addLineSeries({
+  color: '#22c55e', lineWidth: 2,
+  priceLineVisible: false, lastValueVisible: false,
+  lineVisible: false,
+});
+const zigzagBear = chart.addLineSeries({
+  color: '#ef4444', lineWidth: 2,
+  priceLineVisible: false, lastValueVisible: false,
+  lineVisible: false,
+});
+
 // ATR panel
 const atrContainer = document.getElementById('atr-container');
 const atrChart = LightweightCharts.createChart(atrContainer, {
@@ -134,6 +146,27 @@ function updateTradeLines(frameIdx) {
 
 // --- Markers management ---
 let currentMarkers = [];
+function updateZigzag(frameIdx) {
+  zigzagBull.applyOptions({ lineVisible: false });
+  zigzagBear.applyOptions({ lineVisible: false });
+  if (frameIdx >= FACTS_DATA.length) return;
+  const facts = FACTS_DATA[frameIdx] || {};
+  Object.values(facts).forEach(val => {
+    if (val.type !== 'pullback') return;
+    if (val.status !== 'detected' && val.status !== 'confirmed') return;
+    const indices = val.swing_pattern_indices || [];
+    const prices = val.swing_pattern || [];
+    if (indices.length < 2) return;
+    const lineData = indices.map((idx, i) => ({
+      time: CANDLES[idx] ? CANDLES[idx].time : null,
+      value: prices[i],
+    })).filter(p => p.time !== null);
+    if (lineData.length < 2) return;
+    const series = val.direction === 'bullish' ? zigzagBull : zigzagBear;
+    series.setData(lineData);
+    series.applyOptions({ lineVisible: true });
+  });
+}
 function updateMarkers(frameIdx) {
   const markers = [];
   if (frameIdx < PULLBACKS.length && PULLBACKS[frameIdx]) {
@@ -429,10 +462,11 @@ function updateFrame(idx) {
   const atrSliced = ATR_DATA.filter(d => d.time <= cutoff);
   atrLine.setData(atrSliced);
 
-  // Update S/R, trades, markers
+  // Update S/R, trades, markers, zigzag
   updateSR(idx);
   updateTradeLines(idx);
   updateMarkers(idx);
+  updateZigzag(idx);
   updateInfoPanel(idx);
   updateEvidence(idx);
   updateSummary(idx);
