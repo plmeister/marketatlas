@@ -126,6 +126,16 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
                     "strength": fact.strength,
                 }
             elif isinstance(fact, PullbackFact):
+                # Match swing_pattern prices to SwingFact swings for indices
+                swing_indices: list[int] = []
+                for fk, fv in frame.facts.items():
+                    if isinstance(fv, SwingFact) and fk[0] is SwingFact:
+                        price_to_idx = {s.price: s.index for s in fv.swings}
+                        swing_indices = [
+                            price_to_idx[p] for p in fact.swing_pattern
+                            if p in price_to_idx
+                        ]
+                        break
                 facts[label] = {
                     "type": "pullback",
                     "status": fact.status.value,
@@ -134,6 +144,7 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
                     "confirmation_strength": fact.confirmation_strength,
                     "deviation_pct": fact.deviation_pct,
                     "swing_pattern": list(fact.swing_pattern),
+                    "swing_pattern_indices": swing_indices,
                 }
             elif isinstance(fact, SRFact):
                 levels = [
