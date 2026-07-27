@@ -35,3 +35,4 @@
 - Testing: graph.py (71%→100%) — duplicate-producer error, AnalyzerRegistry (register/build/resolve). backtester.py (87%→100%) — signal eval path, close remaining trade. Introduced BundleProtocol for duck-typed bundle param. 12 new tests. 450 total.
 - Testing: cli.py (0%→99%) — 14 tests covering fetch/run commands, error paths, strategy loading, provider failures, date defaults, trade log display, by-strategy breakdown, parser validation. Overall coverage 91%→97%. 464 total.
 - Testing: swing.py (94%→100%) — consecutive same-type swing replacement. base.py (88%→100%) — default instance_key. risk.py — swing fallback paths, size/reward calc. 9 new tests. 478 total.
+- **028** — Swing point markers: swing highs/lows rendered as small arrow markers on candlestick chart. Orange down-arrows above bar for highs, blue up-arrows below bar for lows. Per-frame update, read-ahead safe. 1 new test. 479 total.
