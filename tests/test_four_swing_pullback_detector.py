@@ -739,3 +739,174 @@ class TestFourSwingPullbackDetector:
         )
         fact = cast(PullbackFact, result.facts[0])
         assert fact.status == PullbackStatus.INVALIDATED
+
+    def test_linearity_swings_outside_view_skipped(self) -> None:
+        """Swing indices beyond the view range hit the bounds-check continue (line 248).
+
+        The last swing pair (index 30→9999) is out of bounds and gets skipped.
+        The other pairs are within view and linear, so linearity is 0.
+        The pattern is valid (HL/HH/HL/HH), so status is DETECTED.
+        The key assertion is that analysis completes without error.
+        """
+        candles = _bullish_linear_candles()
+        store = _make_store(candles)
+        n = len(candles)
+        view = MarketView(store, cursor=n - 1, window_size=n)
+        detector = FourSwingPullbackDetector()
+        swing_fact = SwingFact(
+            timestamp=BASE,
+            evidence=(),
+            swings=(
+                SwingPoint(price=48200.0, index=10, type=SwingType.LOW, timestamp=BASE),
+                SwingPoint(price=51500.0, index=20, type=SwingType.HIGH, timestamp=BASE),
+                SwingPoint(price=49100.0, index=30, type=SwingType.LOW, timestamp=BASE),
+                SwingPoint(price=52800.0, index=9999, type=SwingType.HIGH, timestamp=BASE),
+            ),
+        )
+        result = detector.analyze(
+            view,
+            _keyed_facts(swing_fact, _bullish_trend_fact(), _atr_fact(50.0)),
+        )
+        fact = cast(PullbackFact, result.facts[0])
+        assert fact.deviation_pct == 0.0
+
+    def test_linearity_same_index_swings_skipped(self) -> None:
+        """Two swings at same index hit idx1 == idx2 continue (line 250)."""
+        candles = _bullish_linear_candles()
+        store = _make_store(candles)
+        n = len(candles)
+        view = MarketView(store, cursor=n - 1, window_size=n)
+        detector = FourSwingPullbackDetector()
+        swing_fact = SwingFact(
+            timestamp=BASE,
+            evidence=(),
+            swings=(
+                SwingPoint(price=48200.0, index=10, type=SwingType.LOW, timestamp=BASE),
+                SwingPoint(price=51500.0, index=10, type=SwingType.HIGH, timestamp=BASE),
+                SwingPoint(price=49100.0, index=30, type=SwingType.LOW, timestamp=BASE),
+                SwingPoint(price=52800.0, index=40, type=SwingType.HIGH, timestamp=BASE),
+            ),
+        )
+        result = detector.analyze(
+            view,
+            _keyed_facts(swing_fact, _bullish_trend_fact(), _atr_fact(50.0)),
+        )
+        fact = cast(PullbackFact, result.facts[0])
+        assert fact.status == PullbackStatus.INVALIDATED
+
+    def test_linearity_flat_candles_between_swings_skipped(self) -> None:
+        """Flat candles (high==low) between swings hit candle_range<=0 continue (line 259)."""
+        flat_candle_data: list[CandleTuple] = []
+        for i in range(41):
+            flat_candle_data.append((100.0, 100.0, 100.0, 100.0, 1000.0))
+        store = _make_store(flat_candle_data)
+        view = MarketView(store, cursor=40, window_size=41)
+        detector = FourSwingPullbackDetector()
+        swing_fact = SwingFact(
+            timestamp=BASE,
+            evidence=(),
+            swings=(
+                SwingPoint(price=100.0, index=5, type=SwingType.LOW, timestamp=BASE),
+                SwingPoint(price=100.0, index=15, type=SwingType.HIGH, timestamp=BASE),
+                SwingPoint(price=100.0, index=25, type=SwingType.LOW, timestamp=BASE),
+                SwingPoint(price=100.0, index=35, type=SwingType.HIGH, timestamp=BASE),
+            ),
+        )
+        result = detector.analyze(
+            view,
+            _keyed_facts(swing_fact, _bullish_trend_fact(), _atr_fact(1.0)),
+        )
+        fact = cast(PullbackFact, result.facts[0])
+        assert fact.status == PullbackStatus.INVALIDATED
+
+    def test_confirmation_flat_candle_body_pct_zero(self) -> None:
+        """Current candle with high==low yields body_pct=0 via _candle_body_pct (line 311).
+
+        The last candle is flat (high==low), so _candle_body_pct returns 0.
+        With min_body_pct=0.6, body_ok=False so the pattern stays DETECTED.
+        """
+        base_candles = _bullish_linear_candles()
+        confirmation = [
+            (53000.0, 53100.0, 52900.0, 53050.0, 1500.0),
+            (53050.0, 53050.0, 53050.0, 53050.0, 1500.0),
+        ]
+        candles_data = base_candles + confirmation
+        store = _make_store(candles_data)
+        view = MarketView(store, cursor=len(candles_data) - 1, window_size=len(candles_data))
+        detector = FourSwingPullbackDetector(
+            confirmation_min_body_pct=0.6,
+            confirmation_min_volume_ratio=0.0,
+        )
+        result = detector.analyze(
+            view,
+            _keyed_facts(_bullish_4swing_fact(), _bullish_trend_fact(), _atr_fact(50.0)),
+        )
+        fact = cast(PullbackFact, result.facts[0])
+        assert fact.status == PullbackStatus.DETECTED
+
+    def test_volume_ratio_short_data_returns_one(self) -> None:
+        """View with < 21 candles hits early return in _volume_ratio (line 317).
+
+        Build a small dataset with linear candles matching the swing prices.
+        With < 21 candles, _volume_ratio returns 1.0 (denominator guard).
+        """
+        linear_candles = _linear_candles_between(
+            [(100.0, 2), (104.0, 4), (101.0, 6), (105.0, 8)],
+            candle_range=2.0,
+        )
+        store = _make_store(linear_candles)
+        view = MarketView(store, cursor=len(linear_candles) - 1, window_size=len(linear_candles))
+        detector = FourSwingPullbackDetector(
+            confirmation_min_body_pct=0.0,
+            confirmation_min_volume_ratio=0.0,
+        )
+        swing_fact = SwingFact(
+            timestamp=BASE,
+            evidence=(),
+            swings=(
+                SwingPoint(price=100.0, index=2, type=SwingType.LOW, timestamp=BASE),
+                SwingPoint(price=104.0, index=4, type=SwingType.HIGH, timestamp=BASE),
+                SwingPoint(price=101.0, index=6, type=SwingType.LOW, timestamp=BASE),
+                SwingPoint(price=105.0, index=8, type=SwingType.HIGH, timestamp=BASE),
+            ),
+        )
+        result = detector.analyze(
+            view,
+            _keyed_facts(swing_fact, _bullish_trend_fact(), _atr_fact(1.0)),
+        )
+        fact = cast(PullbackFact, result.facts[0])
+        assert fact.status == PullbackStatus.DETECTED
+
+    def test_volume_ratio_zero_avg_volume_returns_one(self) -> None:
+        """All lookback volumes zero hits avg_vol<=0 branch in _volume_ratio (line 321).
+
+        Build 25+ candles with zero volume. Swings are positioned within the range.
+        Linear candles match swing prices so linearity passes. avg_vol=0 -> returns 1.0.
+        """
+        linear_candles = _linear_candles_between(
+            [(100.0, 2), (104.0, 8), (101.0, 14), (105.0, 20)],
+            candle_range=2.0,
+        )
+        zero_vol_candles = [(o, h, lo, c, 0.0) for o, h, lo, c, _v in linear_candles]
+        store = _make_store(zero_vol_candles)
+        view = MarketView(store, cursor=len(zero_vol_candles) - 1, window_size=len(zero_vol_candles))
+        detector = FourSwingPullbackDetector(
+            confirmation_min_body_pct=0.0,
+            confirmation_min_volume_ratio=0.0,
+        )
+        swing_fact = SwingFact(
+            timestamp=BASE,
+            evidence=(),
+            swings=(
+                SwingPoint(price=100.0, index=2, type=SwingType.LOW, timestamp=BASE),
+                SwingPoint(price=104.0, index=8, type=SwingType.HIGH, timestamp=BASE),
+                SwingPoint(price=101.0, index=14, type=SwingType.LOW, timestamp=BASE),
+                SwingPoint(price=105.0, index=20, type=SwingType.HIGH, timestamp=BASE),
+            ),
+        )
+        result = detector.analyze(
+            view,
+            _keyed_facts(swing_fact, _bullish_trend_fact(), _atr_fact(1.0)),
+        )
+        fact = cast(PullbackFact, result.facts[0])
+        assert fact.status == PullbackStatus.DETECTED

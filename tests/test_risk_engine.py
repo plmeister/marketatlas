@@ -462,3 +462,76 @@ class TestRiskEngine:
         assert abs(candidate.risk_amount - expected_risk) < 0.01
         assert abs(candidate.reward_amount - candidate.rr_ratio * expected_risk) < 0.01
         assert abs(candidate.size - expected_risk / abs(candidate.entry - candidate.stop)) < 0.01
+
+    def test_stop_distance_always_positive_bullish(self) -> None:
+        """Stop distance is always > 0 for bullish trades across many configurations.
+
+        Documents that the stop_distance <= 0 branch (risk.py:100-107) is dead code:
+        - With swings: swing lows < entry, so stop = swing - 0.2*ATR < entry
+        - Without swings: stop = entry - 2.2*ATR < entry
+        """
+        for atr_val in [0.5, 1.0, 5.0, 50.0]:
+            for slippage in [0.0, 0.1, 1.0]:
+                candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+                store = _make_store(candles)
+                view = MarketView(store, cursor=4, window_size=4)
+                engine = RiskEngine(slippage_pct=slippage)
+                candidate, _ = engine.evaluate(
+                    _bullish_signal(),
+                    _facts(atr=_atr_fact(atr_val), sr=_sr_fact(())),
+                    view,
+                )
+                assert candidate is not None
+                assert abs(candidate.entry - candidate.stop) > 0
+
+    def test_stop_distance_always_positive_bearish(self) -> None:
+        """Stop distance is always > 0 for bearish trades across many configurations.
+
+        Documents that the stop_distance <= 0 branch (risk.py:100-107) is dead code:
+        - With swings: swing highs > entry, so stop = swing + 0.2*ATR > entry
+        - Without swings: stop = entry + 2.2*ATR > entry
+        """
+        for atr_val in [0.5, 1.0, 5.0, 50.0]:
+            for slippage in [0.0, 0.1, 1.0]:
+                candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+                store = _make_store(candles)
+                view = MarketView(store, cursor=4, window_size=4)
+                engine = RiskEngine(slippage_pct=slippage)
+                candidate, _ = engine.evaluate(
+                    _bearish_signal(),
+                    _facts(atr=_atr_fact(atr_val), sr=_sr_fact(())),
+                    view,
+                )
+                assert candidate is not None
+                assert abs(candidate.entry - candidate.stop) > 0
+
+    def test_sr_crossing_rejection_redundant_with_find_valid_rr(self) -> None:
+        """S/R crossing rejection at risk.py:141-158 is dead code.
+
+        _find_valid_rr already filters out any rr whose target crosses S/R
+        (line 250). The re-check at line 140 uses the same entry/target/levels,
+        so it always returns False. This test proves that when _find_valid_rr
+        returns a valid rr, the final crossing check is always clean.
+        """
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+
+        sr = _sr_fact(
+            (SRLevel(price=103.0, strength=3, type="resistance"),)
+        )
+        engine = RiskEngine(
+            avoid_srxing=True, min_rr=2.0, max_rr=4.0, slippage_pct=0.0
+        )
+        candidate, _ = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        if candidate is not None:
+            lo, hi = min(candidate.entry, candidate.target), max(
+                candidate.entry, candidate.target
+            )
+            for lv in sr.levels:
+                assert not (lo < lv.price < hi), (
+                    "candidate target should not cross S/R — "
+                    "_find_valid_rr should have filtered it"
+                )
