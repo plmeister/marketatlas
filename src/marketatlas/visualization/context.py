@@ -14,3 +14,4 @@ class RenderContext:
     tradebook: TradeBook
     max_hold_days: int = 10
     title: str = ""
+    min_touches: int = 2

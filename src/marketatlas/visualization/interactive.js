@@ -9,6 +9,7 @@ const FACTS_DATA = null; // @data:FACTS_DATA
 const EVIDENCE_MAP = null; // @data:EVIDENCE_MAP
 const SUMMARY = null; // @data:SUMMARY
 const INITIAL_BALANCE = null; // @data:INITIAL_BALANCE
+const MIN_TOUCHES = null; // @data:MIN_TOUCHES
 
 let currentFrame = 0;
 let playing = false;
@@ -93,12 +94,17 @@ function updateSR(frameIdx) {
   if (frameIdx >= SR_DATA.length) return;
   const levels = SR_DATA[frameIdx].levels;
   levels.forEach(lv => {
+    if (lv.strength < MIN_TOUCHES) return;
     const isSupport = lv.type === 'support';
     const color = isSupport ? '#3b82f6' : '#f59e0b';
+    let lineWidth;
+    if (lv.strength >= 5) lineWidth = 3;
+    else if (lv.strength >= 3) lineWidth = 2;
+    else lineWidth = 1;
     const pl = candleSeries.createPriceLine({
       price: lv.price,
       color: color,
-      lineWidth: Math.min(1 + lv.strength, 3),
+      lineWidth: lineWidth,
       lineStyle: LightweightCharts.LineStyle.Dashed,
       axisLabelVisible: true,
       title: (isSupport ? 'S' : 'R') + ' ' + lv.price.toFixed(0) + ' (' + lv.strength + ')',
@@ -296,7 +302,7 @@ function updateInfoPanel(frameIdx) {
 
   // S/R levels
   if (frameIdx < SR_DATA.length) {
-    const srLevels = SR_DATA[frameIdx].levels;
+    const srLevels = SR_DATA[frameIdx].levels.filter(lv => lv.strength >= MIN_TOUCHES);
     if (srLevels.length > 0) {
       html += '<h3>S/R Levels</h3>';
       srLevels.forEach(lv => {

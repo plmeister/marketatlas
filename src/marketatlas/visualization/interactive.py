@@ -210,7 +210,7 @@ _JS_TEMPLATE_PATH = Path(__file__).parent / "interactive.js"
 _JS_PLACEHOLDERS = [
     "CANDLES", "FRAMES", "EMA_SERIES", "ATR_DATA", "SR_DATA",
     "TRADES", "PULLBACKS", "FACTS_DATA", "EVIDENCE_MAP",
-    "SUMMARY", "INITIAL_BALANCE",
+    "SUMMARY", "INITIAL_BALANCE", "MIN_TOUCHES",
 ]
 
 _INTERACTIVE_TEMPLATE = """\
@@ -394,6 +394,7 @@ class InteractiveRenderer:
             "EVIDENCE_MAP": json.dumps(evidence_map),
             "SUMMARY": json.dumps(summary_json),
             "INITIAL_BALANCE": json.dumps(ctx.tradebook.initial_balance),
+            "MIN_TOUCHES": json.dumps(ctx.min_touches),
         }
         for name in _JS_PLACEHOLDERS:
             js_template = js_template.replace(

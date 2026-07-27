@@ -161,6 +161,7 @@ class TestRenderContext:
         ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
         assert ctx.max_hold_days == 10
         assert ctx.title == ""
+        assert ctx.min_touches == 2
 
     def test_custom_title(self) -> None:
         store = _make_store(10)
@@ -168,6 +169,13 @@ class TestRenderContext:
         tb = TradeBook()
         ctx = RenderContext(frames=frame_store, store=store, tradebook=tb, title="My Chart")
         assert ctx.title == "My Chart"
+
+    def test_custom_min_touches(self) -> None:
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb, min_touches=3)
+        assert ctx.min_touches == 3
 
 
 class TestExtractFramesJson:
@@ -615,3 +623,52 @@ class TestInteractiveRenderer:
         assert "zigzagBear" in content
         assert "updateZigzag" in content
         assert "swing_pattern_indices" in content
+
+    def test_min_touches_in_output(self, tmp_path: object) -> None:
+        path = tmp_path / "mt.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb, min_touches=3)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "const MIN_TOUCHES = 3" in content
+
+    def test_sr_levels_below_min_touches_hidden(self, tmp_path: object) -> None:
+        path = tmp_path / "sr_filter.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = FrameStore()
+        candle = _make_candle(0)
+        sr = SRFact(
+            timestamp=candle.timestamp, evidence=(),
+            levels=(
+                SRLevel(price=90.0, strength=1, type="support"),
+                SRLevel(price=95.0, strength=2, type="support"),
+                SRLevel(price=110.0, strength=3, type="resistance"),
+            ),
+        )
+        frame = AnalysisFrame(
+            timestamp=candle.timestamp, candle=candle,
+            facts={(SRFact, "sr"): sr}, evidence=(),
+        )
+        frame_store.append(frame)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb, min_touches=2)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "const MIN_TOUCHES = 2" in content
+        assert "lv.strength < MIN_TOUCHES" in content
+
+    def test_tiered_line_width_in_js(self, tmp_path: object) -> None:
+        path = tmp_path / "tier.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "lv.strength >= 5" in content
+        assert "lv.strength >= 3" in content
