@@ -30,3 +30,4 @@
 - [x] 023 — No-read-ahead audit
 - [x] 024 — Interactive strategy visualization
 - [x] 025 — Backtest CLI
+- [x] 035 — Future candle visibility
