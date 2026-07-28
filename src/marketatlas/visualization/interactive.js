@@ -14,6 +14,8 @@ const MIN_TOUCHES = null; // @data:MIN_TOUCHES
 let currentFrame = 0;
 let playing = false;
 let playInterval = null;
+let autoScrollDisabled = false;
+let futureVisibility = 'hide'; // 'hide' | 'dim' | 'show'
 
 // --- Chart setup ---
 const chartContainer = document.getElementById('chart-container');
@@ -238,10 +240,15 @@ function updateInfoPanel(frameIdx) {
   const facts = FACTS_DATA[frameIdx] || {};
   let html = '';
 
-  html += '<h3>Frame ' + frameIdx + '</h3>';
+  html += '<h3>Frame ' + (frameIdx + 1) + '/' + FRAMES.length + '</h3>';
   const d = new Date(frame.time * 1000);
   html += '<div class="row"><span class="label">Date</span><span class="value">' +
           d.toISOString().slice(0, 10) + '</span></div>';
+
+  // Remaining candles
+  const remaining = CANDLES.filter(c => c.time > frame.time).length;
+  html += '<div class="row"><span class="label">Remaining</span><span class="value">' +
+          remaining + ' candles</span></div>';
 
   // Find close price from candles
   const candle = CANDLES.find(c => c.time === frame.time);
@@ -450,6 +457,33 @@ function updateTimelineCursor(frameIdx) {
   cursor.style.left = pct + '%';
 }
 
+// --- Future candle visibility ---
+function updateCandles(frameIdx) {
+  if (futureVisibility === 'hide') {
+    const cutoff = FRAMES[frameIdx].time;
+    const visible = CANDLES.filter(c => c.time <= cutoff);
+    candleSeries.setData(visible);
+  } else if (futureVisibility === 'dim') {
+    const cutoff = FRAMES[frameIdx].time;
+    const dimmed = CANDLES.map(c => {
+      if (c.time > cutoff) {
+        return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close, color: 'rgba(128,128,128,0.3)' };
+      }
+      return c;
+    });
+    candleSeries.setData(dimmed);
+  } else {
+    candleSeries.setData(CANDLES);
+  }
+}
+
+const futureVisibilityLabels = { hide: '\u{1F441} Hide', dim: '\u{1F441}\uFE0F Dim', show: '\u{1F441}\u200D\u{1F5E1} Show' };
+function toggleFutureVisibility() {
+  futureVisibility = futureVisibility === 'hide' ? 'dim' : futureVisibility === 'dim' ? 'show' : 'hide';
+  document.getElementById('btn-visibility').innerHTML = futureVisibilityLabels[futureVisibility];
+  updateCandles(currentFrame);
+}
+
 // --- Frame stepping ---
 function updateFrame(idx) {
   if (idx < 0) idx = 0;
@@ -468,6 +502,9 @@ function updateFrame(idx) {
   const atrSliced = ATR_DATA.filter(d => d.time <= cutoff);
   atrLine.setData(atrSliced);
 
+  // Update candle visibility (hide/dim future candles)
+  updateCandles(idx);
+
   // Update S/R, trades, markers, zigzag
   updateSR(idx);
   updateTradeLines(idx);
@@ -481,30 +518,35 @@ function updateFrame(idx) {
   // Update frame counter
   document.getElementById('frame-num').textContent = String(idx + 1);
 
-  // Scroll chart to current frame
-  const time = FRAMES[idx].time;
-  chart.timeScale().scrollToPosition(0.8, false);
+  // Auto-scroll chart to current frame
+  if (!autoScrollDisabled && futureVisibility === 'hide') {
+    chart.timeScale().scrollToTime(FRAMES[idx].time);
+  }
 }
 
 // --- Controls ---
 document.getElementById('btn-prev').addEventListener('click', () => {
   stopPlay();
+  autoScrollDisabled = false;
   updateFrame(currentFrame - 1);
 });
 document.getElementById('btn-next').addEventListener('click', () => {
   stopPlay();
+  autoScrollDisabled = false;
   updateFrame(currentFrame + 1);
 });
 document.getElementById('btn-play').addEventListener('click', togglePlay);
 document.getElementById('speed-select').addEventListener('change', () => {
   if (playing) { stopPlay(); startPlay(); }
 });
+document.getElementById('btn-visibility').addEventListener('click', toggleFutureVisibility);
 
 function togglePlay() {
   if (playing) { stopPlay(); } else { startPlay(); }
 }
 function startPlay() {
   playing = true;
+  autoScrollDisabled = false;
   document.getElementById('btn-play').textContent = '\u23F8 Pause';
   document.getElementById('btn-play').classList.add('active');
   const speed = parseInt(document.getElementById('speed-select').value, 10);
@@ -525,7 +567,16 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowLeft') { stopPlay(); updateFrame(currentFrame - 1); }
   else if (e.key === 'ArrowRight') { stopPlay(); updateFrame(currentFrame + 1); }
   else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  else if (e.key === 'v' || e.key === 'V') { toggleFutureVisibility(); }
 });
+
+// Disable auto-scroll on user interaction (manual pan/zoom)
+chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+  if (!playing) autoScrollDisabled = true;
+});
+chartContainer.addEventListener('mousedown', () => { if (!playing) autoScrollDisabled = true; });
+chartContainer.addEventListener('wheel', () => { if (!playing) autoScrollDisabled = true; });
+chartContainer.addEventListener('touchstart', () => { if (!playing) autoScrollDisabled = true; });
 
 // --- Resize ---
 window.addEventListener('resize', () => {

@@ -319,6 +319,7 @@ _INTERACTIVE_TEMPLATE = """\
     <option value="200">5 fps</option>
     <option value="100">10 fps</option>
   </select>
+  <button id="btn-visibility" title="Toggle future candle visibility (V)">&#128065; Hide</button>
 </div>
 <div id="main-area">
   <div id="chart-col">
