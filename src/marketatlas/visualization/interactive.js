@@ -76,12 +76,34 @@ const atrLine = atrChart.addLineSeries({
   priceLineVisible: false, lastValueVisible: true, title: 'ATR',
 });
 
+// Volume histogram panel
+const volumeContainer = document.getElementById('volume-container');
+const volumeChart = LightweightCharts.createChart(volumeContainer, {
+  width: volumeContainer.clientWidth,
+  height: 80,
+  layout: { background: { color: '#1a1a2e' }, textColor: '#e0e0e0' },
+  grid: { vertLines: { color: '#1e2a3a' }, horzLines: { color: '#1e2a3a' } },
+  timeScale: { borderColor: '#0f3460', timeVisible: true },
+  rightPriceScale: { borderColor: '#0f3460' },
+});
+const volumeSeries = volumeChart.addHistogramSeries({
+  priceLineVisible: false,
+  lastValueVisible: false,
+});
+volumeSeries.setData(CANDLES.map(c => ({
+  time: c.time, value: c.volume,
+  color: c.close >= c.open ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)',
+})));
+
 // Sync time scales
 chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-  if (range) atrChart.timeScale().setVisibleLogicalRange(range);
+  if (range) { atrChart.timeScale().setVisibleLogicalRange(range); volumeChart.timeScale().setVisibleLogicalRange(range); }
 });
 atrChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-  if (range) chart.timeScale().setVisibleLogicalRange(range);
+  if (range) { chart.timeScale().setVisibleLogicalRange(range); volumeChart.timeScale().setVisibleLogicalRange(range); }
+});
+volumeChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+  if (range) { chart.timeScale().setVisibleLogicalRange(range); atrChart.timeScale().setVisibleLogicalRange(range); }
 });
 
 // --- S/R price lines management ---
@@ -487,6 +509,33 @@ function toggleFutureVisibility() {
   updateCandles(currentFrame);
 }
 
+// --- Volume histogram ---
+function updateVolume(frameIdx) {
+  const cutoff = FRAMES[frameIdx].time;
+  if (futureVisibility === 'hide') {
+    const visible = CANDLES.filter(c => c.time <= cutoff).map(c => ({
+      time: c.time, value: c.volume,
+      color: c.close >= c.open ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)',
+    }));
+    volumeSeries.setData(visible);
+  } else if (futureVisibility === 'dim') {
+    const data = CANDLES.map(c => {
+      if (c.time > cutoff) {
+        return { time: c.time, value: c.volume, color: 'rgba(128,128,128,0.2)' };
+      }
+      return { time: c.time, value: c.volume,
+        color: c.close >= c.open ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)' };
+    });
+    volumeSeries.setData(data);
+  } else {
+    const data = CANDLES.map(c => ({
+      time: c.time, value: c.volume,
+      color: c.close >= c.open ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)',
+    }));
+    volumeSeries.setData(data);
+  }
+}
+
 // --- Auto-scroll ---
 function scrollToFrame(idx) {
   if (idx < 0 || idx >= FRAMES.length) return;
@@ -532,6 +581,7 @@ function updateFrame(idx) {
 
   // Update candle visibility (hide/dim future candles)
   updateCandles(idx);
+  updateVolume(idx);
 
   // Update S/R, trades, markers, zigzag
   updateSR(idx);
@@ -642,6 +692,7 @@ chartContainer.addEventListener('touchstart', () => {
 window.addEventListener('resize', () => {
   chart.applyOptions({ width: chartContainer.clientWidth });
   atrChart.applyOptions({ width: atrContainer.clientWidth });
+  volumeChart.applyOptions({ width: volumeContainer.clientWidth });
 });
 
 // --- Init ---

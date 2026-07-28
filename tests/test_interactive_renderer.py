@@ -733,3 +733,50 @@ class TestInteractiveRenderer:
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
         assert "key === 'a'" in content
+
+    def test_volume_container_in_output(self, tmp_path: object) -> None:
+        path = tmp_path / "vol.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "volume-container" in content
+        assert "volumeChart" in content
+        assert "addHistogramSeries" in content
+
+    def test_volume_update_in_frame(self, tmp_path: object) -> None:
+        path = tmp_path / "vol_update.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "updateVolume" in content
+
+    def test_volume_resize_handler(self, tmp_path: object) -> None:
+        path = tmp_path / "vol_resize.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "volumeContainer.clientWidth" in content
+
+    def test_volume_chart_synced_timescales(self, tmp_path: object) -> None:
+        path = tmp_path / "vol_sync.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        # Volume chart participates in time scale sync
+        assert "volumeChart.timeScale()" in content

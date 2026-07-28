@@ -247,6 +247,7 @@ _INTERACTIVE_TEMPLATE = """\
   #main-area {{ display: flex; }}
   #chart-col {{ flex: 1; min-width: 0; }}
   #chart-container {{ width: 100%; height: 500px; }}
+  #volume-container {{ width: 100%; height: 80px; border-top: 1px solid #0f3460; }}
   #atr-container {{ width: 100%; height: 120px; border-top: 1px solid #0f3460; }}
   #info-panel {{ width: 280px; min-width: 280px; background: #16213e;
                 border-left: 1px solid #0f3460; padding: 12px; overflow-y: auto;
@@ -326,6 +327,7 @@ _INTERACTIVE_TEMPLATE = """\
 <div id="main-area">
   <div id="chart-col">
     <div id="chart-container"></div>
+    <div id="volume-container"></div>
     <div id="atr-container"></div>
   </div>
   <div id="info-panel">

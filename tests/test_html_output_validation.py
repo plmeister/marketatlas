@@ -35,6 +35,7 @@ EXPECTED_DATA_CONSTANTS = [
 
 EXPECTED_DOM_ELEMENTS = [
     "chart-container",
+    "volume-container",
     "frame-controls",
     "info-panel",
     "evidence-panel",
