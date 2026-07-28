@@ -15,6 +15,7 @@ let currentFrame = 0;
 let playing = false;
 let playInterval = null;
 let autoScrollDisabled = false;
+let programmaticScroll = false;
 let futureVisibility = 'hide'; // 'hide' | 'dim' | 'show'
 
 // --- Chart setup ---
@@ -488,11 +489,12 @@ function toggleFutureVisibility() {
 function scrollToFrame(idx) {
   if (idx < 0 || idx >= FRAMES.length) return;
   const time = FRAMES[idx].time;
+  programmaticScroll = true;
   if (futureVisibility === 'hide') {
     chart.timeScale().scrollToTime(time);
     return;
   }
-  // Dim/show modes: animate with scrollPosition
+  // Dim/show modes: animate with scrollToPosition
   const range = chart.timeScale().getVisibleLogicalRange();
   if (!range) { chart.timeScale().scrollToTime(time); return; }
   const candleIdx = CANDLES.findIndex(c => c.time === time);
@@ -503,7 +505,7 @@ function scrollToFrame(idx) {
   if (Math.abs(diff) < 2) return;
   const seriesLen = candleSeries.data().length;
   const targetPos = seriesLen - 1 - candleIdx - visibleBars / 2;
-  chart.timeScale().scrollPosition(targetPos, {
+  chart.timeScale().scrollToPosition(targetPos, {
     animation: { duration: 150, type: 'ease-out' },
   });
 }
@@ -618,6 +620,7 @@ document.addEventListener('keydown', (e) => {
 
 // Disable auto-scroll on user interaction (manual pan/zoom)
 chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+  if (programmaticScroll) { programmaticScroll = false; return; }
   if (!playing) {
     autoScrollDisabled = true;
     document.getElementById('btn-autoscroll').classList.remove('active');

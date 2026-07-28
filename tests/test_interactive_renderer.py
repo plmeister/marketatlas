@@ -706,7 +706,7 @@ class TestInteractiveRenderer:
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
         assert "scrollToFrame" in content
-        assert "scrollPosition" in content
+        assert "scrollToPosition" in content
         assert "animation" in content
 
     def test_autoscroll_all_modes_in_js(self, tmp_path: object) -> None:
