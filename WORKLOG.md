@@ -45,3 +45,4 @@
 - **036** — Volume histogram: 80px panel between chart and ATR with color-coded bars (green=up, red=down). Respects hide/dim/show candle visibility. Three-way time scale sync (volume↔chart↔ATR). Resize handler. 5 new tests. 507 total.
 - First/Last frame buttons with Home/End keyboard shortcuts added to interactive viz. Jump to start/end of frame sequence. 506 total.
 - **036** — AST model: BaseNode, Parameter, Binding, Definition, Analysis frozen dataclasses. Immutable semantic model for analysis definitions. 24 tests. 531 total.
+- **037** — Builder API: AnalysisBuilder fluent class with define/with_param/bind/build chainable methods. _DefinitionBuilder proxies parent methods for seamless chaining. Eager validation (duplicate names, unknown references). 13 tests. 544 total.
