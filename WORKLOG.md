@@ -43,3 +43,4 @@
 - **034** — Frame stepper candle visibility: auto-scroll works in all visibility modes (was hide-only). Crosshair snaps to current candle on frame update. Smooth scroll animation via scrollPosition for dim/show modes. Auto-scroll toggle button (A key or click), visual feedback on manual pan disable. 6 new tests. 502 total.
 - Expectancy stat added to interactive visualization summary bar. Fixed bearish trade entry price line color (was always green). 1 new test. 502 total.
 - **036** — Volume histogram: 80px panel between chart and ATR with color-coded bars (green=up, red=down). Respects hide/dim/show candle visibility. Three-way time scale sync (volume↔chart↔ATR). Resize handler. 5 new tests. 507 total.
+- First/Last frame buttons with Home/End keyboard shortcuts added to interactive viz. Jump to start/end of frame sequence. 506 total.

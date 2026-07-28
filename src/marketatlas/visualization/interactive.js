@@ -609,6 +609,18 @@ function updateFrame(idx) {
 }
 
 // --- Controls ---
+document.getElementById('btn-first').addEventListener('click', () => {
+  stopPlay();
+  autoScrollDisabled = false;
+  document.getElementById('btn-autoscroll').classList.add('active');
+  updateFrame(0);
+});
+document.getElementById('btn-last').addEventListener('click', () => {
+  stopPlay();
+  autoScrollDisabled = false;
+  document.getElementById('btn-autoscroll').classList.add('active');
+  updateFrame(FRAMES.length - 1);
+});
 document.getElementById('btn-prev').addEventListener('click', () => {
   stopPlay();
   autoScrollDisabled = false;
@@ -659,7 +671,9 @@ function stopPlay() {
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowLeft') { stopPlay(); updateFrame(currentFrame - 1); }
+  if (e.key === 'Home') { stopPlay(); updateFrame(0); }
+  else if (e.key === 'End') { stopPlay(); updateFrame(FRAMES.length - 1); }
+  else if (e.key === 'ArrowLeft') { stopPlay(); updateFrame(currentFrame - 1); }
   else if (e.key === 'ArrowRight') { stopPlay(); updateFrame(currentFrame + 1); }
   else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
   else if (e.key === 'v' || e.key === 'V') { toggleFutureVisibility(); }

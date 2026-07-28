@@ -411,8 +411,10 @@ class TestInteractiveRenderer:
         renderer = InteractiveRenderer(ctx)
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
+        assert "btn-first" in content
         assert "btn-prev" in content
         assert "btn-next" in content
+        assert "btn-last" in content
         assert "btn-play" in content
         assert "speed-select" in content
 
@@ -451,6 +453,8 @@ class TestInteractiveRenderer:
         renderer = InteractiveRenderer(ctx)
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
+        assert "Home" in content
+        assert "End" in content
         assert "ArrowLeft" in content
         assert "ArrowRight" in content
 

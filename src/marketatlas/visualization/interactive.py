@@ -310,10 +310,12 @@ _INTERACTIVE_TEMPLATE = """\
   <span class="stat">Drawdown: <b id="s-drawdown">0.0%</b></span>
 </div>
 <div id="frame-controls">
+  <button id="btn-first" title="First frame (Home)">&#9654;&#9664; First</button>
   <button id="btn-prev" title="Previous frame (Left arrow)">&#9664; Prev</button>
   <span class="frame-label">Frame
     <span id="frame-num">0</span> / <span id="frame-total">0</span></span>
   <button id="btn-next" title="Next frame (Right arrow)">Next &#9654;</button>
+  <button id="btn-last" title="Last frame (End)">Last &#9654;&#9664;</button>
   <button id="btn-play" title="Play/Pause (Space)">&#9654; Play</button>
   <select id="speed-select" title="Playback speed">
     <option value="1000">1 fps</option>
