@@ -132,7 +132,7 @@ function updateTradeLines(frameIdx) {
     const notExited = t.exit_time === null || t.exit_time >= frameTime;
     const isActive = t.entry_time <= frameTime && notExited;
     if (!isActive) return;
-    const entryColor = t.direction === 'bullish' ? '#22c55e' : '#22c55e';
+    const entryColor = t.direction === 'bullish' ? '#22c55e' : '#ef4444';
     const stopColor = '#ef4444';
     const targetColor = '#22c55e';
     tradePriceLines.push(candleSeries.createPriceLine({
@@ -419,6 +419,8 @@ function updateSummary(frameIdx) {
       wins > 0 ? (grossProfit / wins).toFixed(2) : '0.00';
   document.getElementById('s-avgloss').textContent =
       losses > 0 ? (-grossLoss / losses).toFixed(2) : '0.00';
+  const exp = total > 0 ? pnl / total : 0;
+  document.getElementById('s-expectancy').textContent = (exp >= 0 ? '$' : '-$') + Math.abs(exp).toFixed(2);
   document.getElementById('s-drawdown').textContent = (worst * 100).toFixed(1) + '%';
 }
 

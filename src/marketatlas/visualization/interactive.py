@@ -305,6 +305,7 @@ _INTERACTIVE_TEMPLATE = """\
   <span class="stat">PF: <b id="s-pf">0.0</b></span>
   <span class="stat">Avg W: <b id="s-avgwin">0.00</b></span>
   <span class="stat">Avg L: <b id="s-avgloss">0.00</b></span>
+  <span class="stat">Expectancy: <b id="s-expectancy">$0.00</b></span>
   <span class="stat">Drawdown: <b id="s-drawdown">0.0%</b></span>
 </div>
 <div id="frame-controls">
@@ -375,6 +376,7 @@ class InteractiveRenderer:
             "losses": summary["losses"],
             "win_rate": summary["win_rate"],
             "max_drawdown": summary["max_drawdown"],
+            "expectancy": summary["expectancy"],
         }
 
         title = ctx.title or f"{ctx.store.symbol.name} — {ctx.store.timeframe.value}"

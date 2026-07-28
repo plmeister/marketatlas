@@ -538,6 +538,7 @@ class TestInteractiveRenderer:
         assert "summary-bar" in content
         assert "s-balance" in content
         assert "s-pnl" in content
+        assert "s-expectancy" in content
 
     def test_swing_markers_in_output(self, tmp_path: object) -> None:
         path = tmp_path / "swings.html"  # type: ignore[operator]
