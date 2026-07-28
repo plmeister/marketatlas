@@ -484,6 +484,30 @@ function toggleFutureVisibility() {
   updateCandles(currentFrame);
 }
 
+// --- Auto-scroll ---
+function scrollToFrame(idx) {
+  if (idx < 0 || idx >= FRAMES.length) return;
+  const time = FRAMES[idx].time;
+  if (futureVisibility === 'hide') {
+    chart.timeScale().scrollToTime(time);
+    return;
+  }
+  // Dim/show modes: animate with scrollPosition
+  const range = chart.timeScale().getVisibleLogicalRange();
+  if (!range) { chart.timeScale().scrollToTime(time); return; }
+  const candleIdx = CANDLES.findIndex(c => c.time === time);
+  if (candleIdx < 0) { chart.timeScale().scrollToTime(time); return; }
+  const visibleBars = range.to - range.from;
+  const currentCenter = (range.from + range.to) / 2;
+  const diff = currentCenter - candleIdx;
+  if (Math.abs(diff) < 2) return;
+  const seriesLen = candleSeries.data().length;
+  const targetPos = seriesLen - 1 - candleIdx - visibleBars / 2;
+  chart.timeScale().scrollPosition(targetPos, {
+    animation: { duration: 150, type: 'ease-out' },
+  });
+}
+
 // --- Frame stepping ---
 function updateFrame(idx) {
   if (idx < 0) idx = 0;
@@ -518,9 +542,15 @@ function updateFrame(idx) {
   // Update frame counter
   document.getElementById('frame-num').textContent = String(idx + 1);
 
+  // Snap crosshair to current candle
+  const currentCandle = CANDLES.find(c => c.time === FRAMES[idx].time);
+  if (currentCandle) {
+    chart.setCrosshairPosition(currentCandle.close, currentCandle.time, candleSeries);
+  }
+
   // Auto-scroll chart to current frame
-  if (!autoScrollDisabled && futureVisibility === 'hide') {
-    chart.timeScale().scrollToTime(FRAMES[idx].time);
+  if (!autoScrollDisabled) {
+    scrollToFrame(idx);
   }
 }
 
@@ -528,11 +558,13 @@ function updateFrame(idx) {
 document.getElementById('btn-prev').addEventListener('click', () => {
   stopPlay();
   autoScrollDisabled = false;
+  document.getElementById('btn-autoscroll').classList.add('active');
   updateFrame(currentFrame - 1);
 });
 document.getElementById('btn-next').addEventListener('click', () => {
   stopPlay();
   autoScrollDisabled = false;
+  document.getElementById('btn-autoscroll').classList.add('active');
   updateFrame(currentFrame + 1);
 });
 document.getElementById('btn-play').addEventListener('click', togglePlay);
@@ -541,12 +573,21 @@ document.getElementById('speed-select').addEventListener('change', () => {
 });
 document.getElementById('btn-visibility').addEventListener('click', toggleFutureVisibility);
 
+// Auto-scroll toggle
+document.getElementById('btn-autoscroll').addEventListener('click', () => {
+  autoScrollDisabled = !autoScrollDisabled;
+  const btn = document.getElementById('btn-autoscroll');
+  btn.classList.toggle('active', !autoScrollDisabled);
+  if (!autoScrollDisabled) scrollToFrame(currentFrame);
+});
+
 function togglePlay() {
   if (playing) { stopPlay(); } else { startPlay(); }
 }
 function startPlay() {
   playing = true;
   autoScrollDisabled = false;
+  document.getElementById('btn-autoscroll').classList.add('active');
   document.getElementById('btn-play').textContent = '\u23F8 Pause';
   document.getElementById('btn-play').classList.add('active');
   const speed = parseInt(document.getElementById('speed-select').value, 10);
@@ -568,15 +609,29 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowRight') { stopPlay(); updateFrame(currentFrame + 1); }
   else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
   else if (e.key === 'v' || e.key === 'V') { toggleFutureVisibility(); }
+  else if (e.key === 'a' || e.key === 'A') {
+    autoScrollDisabled = !autoScrollDisabled;
+    document.getElementById('btn-autoscroll').classList.toggle('active', !autoScrollDisabled);
+    if (!autoScrollDisabled) scrollToFrame(currentFrame);
+  }
 });
 
 // Disable auto-scroll on user interaction (manual pan/zoom)
 chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
-  if (!playing) autoScrollDisabled = true;
+  if (!playing) {
+    autoScrollDisabled = true;
+    document.getElementById('btn-autoscroll').classList.remove('active');
+  }
 });
-chartContainer.addEventListener('mousedown', () => { if (!playing) autoScrollDisabled = true; });
-chartContainer.addEventListener('wheel', () => { if (!playing) autoScrollDisabled = true; });
-chartContainer.addEventListener('touchstart', () => { if (!playing) autoScrollDisabled = true; });
+chartContainer.addEventListener('mousedown', () => {
+  if (!playing) { autoScrollDisabled = true; document.getElementById('btn-autoscroll').classList.remove('active'); }
+});
+chartContainer.addEventListener('wheel', () => {
+  if (!playing) { autoScrollDisabled = true; document.getElementById('btn-autoscroll').classList.remove('active'); }
+});
+chartContainer.addEventListener('touchstart', () => {
+  if (!playing) { autoScrollDisabled = true; document.getElementById('btn-autoscroll').classList.remove('active'); }
+});
 
 // --- Resize ---
 window.addEventListener('resize', () => {

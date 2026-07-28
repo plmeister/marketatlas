@@ -672,3 +672,63 @@ class TestInteractiveRenderer:
         content = path.read_text()  # type: ignore[union-attr]
         assert "lv.strength >= 5" in content
         assert "lv.strength >= 3" in content
+
+    def test_autoscroll_button_in_output(self, tmp_path: object) -> None:
+        path = tmp_path / "scroll.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "btn-autoscroll" in content
+        assert "autoScrollDisabled" in content
+
+    def test_crosshair_snap_in_js(self, tmp_path: object) -> None:
+        path = tmp_path / "crosshair.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "setCrosshairPosition" in content
+
+    def test_smooth_scroll_function_in_js(self, tmp_path: object) -> None:
+        path = tmp_path / "smooth.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "scrollToFrame" in content
+        assert "scrollPosition" in content
+        assert "animation" in content
+
+    def test_autoscroll_all_modes_in_js(self, tmp_path: object) -> None:
+        path = tmp_path / "modes.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "!autoScrollDisabled" in content
+        # Ensure no futureVisibility === 'hide' guard on auto-scroll
+        assert "futureVisibility === 'hide'" not in content.split("Auto-scroll chart")[1].split("}")[0]
+
+    def test_keyboard_shortcut_a_in_js(self, tmp_path: object) -> None:
+        path = tmp_path / "kb_a.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "key === 'a'" in content
