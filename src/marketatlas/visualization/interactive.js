@@ -200,6 +200,16 @@ function updateZigzag(frameIdx) {
 }
 function updateMarkers(frameIdx) {
   const markers = [];
+  // Current candle diamond marker
+  if (frameIdx < FRAMES.length) {
+    markers.push({
+      time: FRAMES[frameIdx].time,
+      position: 'belowBar',
+      color: '#facc15',
+      shape: 'diamond',
+      text: '',
+    });
+  }
   if (frameIdx < PULLBACKS.length && PULLBACKS[frameIdx]) {
     const pb = PULLBACKS[frameIdx];
     markers.push({
