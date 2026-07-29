@@ -553,16 +553,17 @@ function scrollToFrame(idx) {
   programmaticScroll = true;
   const range = chart.timeScale().getVisibleLogicalRange();
   if (!range) { chart.timeScale().scrollToTime(time); return; }
-  const candleIdx = CANDLES.findIndex(c => c.time === time);
-  if (candleIdx < 0) { chart.timeScale().scrollToTime(time); return; }
+  const seriesData = candleSeries.data();
+  const seriesIdx = seriesData.findIndex(d => d.time === time);
+  if (seriesIdx < 0) { chart.timeScale().scrollToTime(time); return; }
   const visibleBars = range.to - range.from;
   const currentCenter = (range.from + range.to) / 2;
-  const diff = currentCenter - candleIdx;
-  if (Math.abs(diff) < 2) return;
-  const seriesLen = candleSeries.data().length;
-  const targetPos = seriesLen - 1 - candleIdx - visibleBars / 2;
+  const diff = currentCenter - seriesIdx;
+  if (Math.abs(diff) < Math.max(2, visibleBars * 0.15)) return;
+  const distFromRight = seriesData.length - 1 - seriesIdx;
+  const targetPos = Math.max(0, distFromRight - visibleBars / 2);
   chart.timeScale().scrollToPosition(targetPos, {
-    animation: { duration: 150, type: 'ease-out' },
+    animation: { duration: 200, type: 'ease-out' },
   });
 }
 

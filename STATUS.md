@@ -30,6 +30,7 @@
 - [x] 023 — No-read-ahead audit
 - [x] 024 — Interactive strategy visualization
 - [x] 025 — Backtest CLI
+- [x] 034 — Frame stepper candle visibility
 - [x] 035 — Future candle visibility
 - [x] 033 — Instrument registry
 

@@ -53,3 +53,4 @@
 - **043** — Provider Registry: ProviderRegistry with register/resolve/list_providers. Supports Provider objects, class-based registration, and decorator syntax. Default registry pre-populated with 8 built-in providers. 26 tests. 664 total.
 - **033** — Instrument Registry: Instrument dataclass (canonical, asset_class, description, providers), InstrumentRegistry (load/save YAML, lookup by canonical, reverse resolve, CLI instruments list/add). YahooProvider supports optional registry for symbol resolution. 16 tests. 680 total.
 - **046** — Snapshot tests for compiled analyses: single/linear/branching/full strategy AST + graph snapshots. `--update-snapshots` flag, JSON snapshots in `tests/snapshots/`. 10 tests. 713 total.
+- **034 fix** — scrollToFrame now uses `candleSeries.data()` instead of CANDLES for index lookup, clamps targetPos ≥ 0, widens scroll threshold to 15% of visible bars. Prevents broken auto-scroll when future candles hidden.
