@@ -31,6 +31,7 @@
 - [x] 024 — Interactive strategy visualization
 - [x] 025 — Backtest CLI
 - [x] 035 — Future candle visibility
+- [x] 033 — Instrument registry
 
 ## AST Layer
 

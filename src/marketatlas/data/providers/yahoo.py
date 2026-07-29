@@ -5,6 +5,7 @@ from time import sleep
 
 import yfinance as yf  # type: ignore[import-untyped]
 
+from marketatlas.data.instrument import InstrumentRegistry
 from marketatlas.data.providers.base import DataProvider, RateLimitError, SymbolNotFoundError
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
@@ -21,9 +22,23 @@ class YahooProvider(DataProvider):
         Timeframe.W1: "1wk",
     }
 
-    def __init__(self, max_retries: int = 3, retry_delay: float = 1.0) -> None:
+    def __init__(
+        self,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+        registry: InstrumentRegistry | None = None,
+    ) -> None:
         self._max_retries = max_retries
         self._retry_delay = retry_delay
+        self._registry = registry
+
+    def _resolve_symbol(self, symbol: Symbol) -> Symbol:
+        if self._registry is None:
+            return symbol
+        yahoo_sym = self._registry.get_symbol(symbol.name, "yahoo")
+        if yahoo_sym is not None:
+            return Symbol(yahoo_sym)
+        return symbol
 
     def fetch(
         self,
@@ -36,7 +51,8 @@ class YahooProvider(DataProvider):
         if interval is None:
             raise ValueError(f"Unsupported timeframe: {timeframe}")
 
-        ticker = yf.Ticker(symbol.name)
+        resolved = self._resolve_symbol(symbol)
+        ticker = yf.Ticker(resolved.name)
 
         for attempt in range(self._max_retries):
             try:

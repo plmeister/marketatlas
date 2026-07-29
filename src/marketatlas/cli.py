@@ -5,6 +5,7 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from marketatlas.data.instrument import Instrument, InstrumentRegistry
 from marketatlas.data.providers.yahoo import YahooProvider
 from marketatlas.data.types import Symbol, Timeframe
 
@@ -159,6 +160,47 @@ def run_command(args: argparse.Namespace) -> None:
         print(f"\nHTML chart: {output_path}")
 
 
+def instruments_list_command(args: argparse.Namespace) -> None:
+    registry_path = Path(args.registry) if args.registry else Path("instruments.yaml")
+    if not registry_path.exists():
+        print("No instruments registry found. Use 'instruments add' to create one.")
+        return
+    registry = InstrumentRegistry(registry_path)
+    instruments = registry.list_all()
+    if not instruments:
+        print("No instruments registered.")
+        return
+    print(f"{'Canonical':<20} {'Class':<12} {'Description':<40} Providers")
+    print("-" * 120)
+    for inst in instruments:
+        provs = ", ".join(f"{k}={v}" for k, v in inst.providers.items())
+        print(f"{inst.canonical:<20} {inst.asset_class:<12} {inst.description:<40} {provs}")
+    print(f"\nTotal: {len(instruments)} instruments")
+
+
+def instruments_add_command(args: argparse.Namespace) -> None:
+    registry_path = Path(args.registry) if args.registry else Path("instruments.yaml")
+    registry = InstrumentRegistry(registry_path)
+
+    providers: dict[str, str] = {}
+    if args.yahoo_symbol:
+        providers["yahoo"] = args.yahoo_symbol
+    if args.dukascopy_symbol:
+        providers["dukascopy"] = args.dukascopy_symbol
+    if args.oanda_symbol:
+        providers["oanda"] = args.oanda_symbol
+
+    instr = Instrument(
+        canonical=args.canonical,
+        asset_class=args.asset_class,
+        description=args.description,
+        providers=providers,
+    )
+    registry.add(instr)
+    registry.save(registry_path)
+    print(f"Added instrument: {instr.canonical} ({instr.asset_class})")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="MarketAtlas CLI")
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
@@ -192,12 +234,35 @@ def main() -> None:
         help="Max hold days (default: 10)",
     )
 
+    instr_parser = subparsers.add_parser("instruments", help="Manage instrument registry")
+    instr_sub = instr_parser.add_subparsers(dest="instr_command", help="Instrument command")
+
+    list_parser = instr_sub.add_parser("list", help="List registered instruments")
+    list_parser.add_argument("--registry", default="", help="Path to instruments YAML file")
+
+    add_parser = instr_sub.add_parser("add", help="Add an instrument")
+    add_parser.add_argument("canonical", help="Canonical name (e.g. EURUSD)")
+    add_parser.add_argument("--class", dest="asset_class", required=True,
+                            help="Asset class (forex, crypto, equity, commodity)")
+    add_parser.add_argument("--description", required=True, help="Human-readable description")
+    add_parser.add_argument("--yahoo-symbol", help="Yahoo Finance symbol")
+    add_parser.add_argument("--dukascopy-symbol", help="Dukascopy symbol")
+    add_parser.add_argument("--oanda-symbol", help="OANDA symbol")
+    add_parser.add_argument("--registry", default="", help="Path to instruments YAML file")
+
     args = parser.parse_args()
 
     if args.command == "fetch":
         fetch_command(args)
     elif args.command == "run":
         run_command(args)
+    elif args.command == "instruments":
+        if args.instr_command == "list":
+            instruments_list_command(args)
+        elif args.instr_command == "add":
+            instruments_add_command(args)
+        else:
+            instr_parser.print_help()
     else:
         parser.print_help()
 
