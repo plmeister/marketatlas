@@ -46,3 +46,4 @@
 - First/Last frame buttons with Home/End keyboard shortcuts added to interactive viz. Jump to start/end of frame sequence. 506 total.
 - **036** — AST model: BaseNode, Parameter, Binding, Definition, Analysis frozen dataclasses. Immutable semantic model for analysis definitions. 24 tests. 531 total.
 - **037** — Builder API: AnalysisBuilder fluent class with define/with_param/bind/build chainable methods. _DefinitionBuilder proxies parent methods for seamless chaining. Eager validation (duplicate names, unknown references). 13 tests. 544 total.
+- **039** — AST serialization: JSON serialization/deserialization for AST. to_dict/from_dict, to_json/from_json, pretty-print, round-trip, error handling for malformed/missing fields. 33 tests. 607 total.

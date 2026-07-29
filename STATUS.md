@@ -35,7 +35,7 @@
 ## AST Layer
 
 - [x] 036 — AST model (core node types)
-- [ ] 037 — Builder API (fluent construction)
-- [ ] 038 — AST validation (semantic checks)
-- [ ] 039 — AST serialization (JSON)
+- [x] 037 — Builder API (fluent construction)
+- [x] 038 — AST validation (semantic checks)
+- [x] 039 — AST serialization (JSON)
 - [ ] 040 — Compiler adapter (AST to graph)
