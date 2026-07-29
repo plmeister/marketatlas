@@ -9,6 +9,15 @@ from marketatlas.analysis.ast.models import (
     Parameter,
     Provider,
 )
+from marketatlas.analysis.ast.pipeline import (
+    CompilationError,
+    CompilerPass,
+    DefinitionExpansionPass,
+    GraphGenerationPass,
+    Pipeline,
+    RegistryResolutionPass,
+    ValidationPass,
+)
 from marketatlas.analysis.ast.registry import ProviderNotFoundError, ProviderRegistry, create_default_registry
 from marketatlas.analysis.ast.serialization import from_dict, from_json, to_dict, to_json
 from marketatlas.analysis.ast.validation import (
@@ -25,13 +34,20 @@ __all__ = [
     "BaseNode",
     "Binding",
     "Capability",
+    "CompilationError",
+    "CompilerPass",
     "Definition",
+    "DefinitionExpansionPass",
     "Diagnostic",
     "DiagnosticSeverity",
+    "GraphGenerationPass",
     "Parameter",
+    "Pipeline",
     "Provider",
     "ProviderNotFoundError",
     "ProviderRegistry",
+    "RegistryResolutionPass",
+    "ValidationPass",
     "ValidationResult",
     "create_default_registry",
     "from_dict",
