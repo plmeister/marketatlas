@@ -72,8 +72,8 @@ class FrameStore:
         rows: list[dict[str, Any]] = []
         for f in self._frames:
             facts_dict: dict[str, Any] = {}
-            for (fact_cls, key), fact in f.facts.items():
-                raw: dict[str, Any] = {"type": fact_cls.__name__, "key": key}
+            for fact_key, fact in f.facts.items():
+                raw: dict[str, Any] = {"key": fact_key.name}
                 for k, v in fact.__dict__.items():
                     if isinstance(v, datetime):
                         raw[k] = v.isoformat()
@@ -81,7 +81,7 @@ class FrameStore:
                         raw[k] = _serialize_evidence(v)
                     else:
                         raw[k] = v
-                facts_dict[f"{fact_cls.__name__}_{key}"] = raw
+                facts_dict[fact_key.name] = raw
             rows.append(
                 {
                     "timestamp": f.timestamp.isoformat(),

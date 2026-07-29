@@ -1,4 +1,5 @@
 from marketatlas.analysis.base import Analyzer
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.math import compute_ema
 from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.view import MarketView
@@ -15,14 +16,14 @@ class EMAAnalyzer(Analyzer):
     def instance_key(self) -> str:
         return f"ema_{self._period}"
 
-    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+    def requires(self) -> tuple[FactKey, ...]:
         return ()
 
-    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
-        return ((EMAFact, self.instance_key),)
+    def produces(self) -> tuple[FactKey, ...]:
+        return (FactKey(self.instance_key),)
 
     def analyze(
-        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+        self, view: MarketView, facts: dict[FactKey, Fact]
     ) -> AnalysisResult:
         ema_value = compute_ema(view.prices, self._period)
 

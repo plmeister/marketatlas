@@ -1,4 +1,5 @@
 from marketatlas.analysis.base import Analyzer
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.types import Candle
 from marketatlas.data.view import MarketView
@@ -28,21 +29,21 @@ class PullbackDetector(Analyzer):
     def instance_key(self) -> str:
         return "pullback"
 
-    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+    def requires(self) -> tuple[FactKey, ...]:
         return (
-            (TrendFact, self._trend_key),
-            (ATRFact, self._atr_key),
+            FactKey(self._trend_key),
+            FactKey(self._atr_key),
         )
 
-    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
-        return ((PullbackFact, self.instance_key),)
+    def produces(self) -> tuple[FactKey, ...]:
+        return (FactKey(self.instance_key),)
 
     def analyze(
-        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+        self, view: MarketView, facts: dict[FactKey, Fact]
     ) -> AnalysisResult:
-        trend = facts[TrendFact, self._trend_key]
+        trend = facts[FactKey(self._trend_key)]
         assert isinstance(trend, TrendFact)
-        atr_fact = facts[ATRFact, self._atr_key]
+        atr_fact = facts[FactKey(self._atr_key)]
         assert isinstance(atr_fact, ATRFact)
 
         if trend.direction == TrendDirection.NEUTRAL or atr_fact.value <= 0:

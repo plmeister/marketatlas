@@ -1,4 +1,5 @@
 from marketatlas.analysis.base import Analyzer
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.graph import (
     AnalysisGraph,
     CyclicDependencyError,
@@ -11,5 +12,6 @@ __all__ = [
     "AnalysisResult",
     "Analyzer",
     "CyclicDependencyError",
+    "FactKey",
     "UnsatisfiedDependencyError",
 ]

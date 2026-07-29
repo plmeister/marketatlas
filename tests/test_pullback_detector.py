@@ -5,6 +5,7 @@ from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
@@ -75,10 +76,10 @@ def _atr_fact(value: float = 2.0) -> ATRFact:
 
 def _keyed_facts(
     trend: TrendFact, atr: ATRFact
-) -> dict[tuple[type, str], object]:
+) -> dict[FactKey, object]:
     return {
-        (TrendFact, "trend"): trend,
-        (ATRFact, "atr_14"): atr,
+        FactKey("trend"): trend,
+        FactKey("atr_14"): atr,
     }
 
 
@@ -158,11 +159,11 @@ def _deep_retrace_candles() -> list[tuple[float, float, float, float]]:
 class TestPullbackDetector:
     def test_requires_trend_and_atr(self) -> None:
         detector = PullbackDetector()
-        assert detector.requires() == ((TrendFact, "trend"), (ATRFact, "atr_14"))
+        assert detector.requires() == (FactKey("trend"), FactKey("atr_14"))
 
     def test_produces_pullback_fact(self) -> None:
         detector = PullbackDetector()
-        assert detector.produces() == ((PullbackFact, "pullback"),)
+        assert detector.produces() == (FactKey("pullback"),)
 
     def test_bullish_trend_detected_pullback(self) -> None:
         candles = _rising_then_retracing_candles()

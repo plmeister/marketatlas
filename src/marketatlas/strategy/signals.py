@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.facts.base import Fact
@@ -21,5 +22,5 @@ class TradeSignal:
 class Signal(ABC):
     @abstractmethod
     def evaluate(
-        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+        self, view: MarketView, facts: dict[FactKey, Fact]
     ) -> TradeSignal | None: ...

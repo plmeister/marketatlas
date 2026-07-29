@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
-from typing import cast
+
 
 from marketatlas.analysis.analyzers.sr import SupportResistanceAnalyzer
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import (
@@ -65,11 +66,8 @@ def _make_swings(
 
 def _keyed_facts(
     swings: SwingFact, atr: ATRFact
-) -> dict[tuple[type[Fact], str], Fact]:
-    return cast(
-        dict[tuple[type[Fact], str], Fact],
-        {(SwingFact, "swing"): swings, (ATRFact, "atr_14"): atr},
-    )
+) -> dict[FactKey, Fact]:
+    return {FactKey("swing"): swings, FactKey("atr_14"): atr}
 
 
 def _swings_fact(swings: tuple[SwingPoint, ...]) -> SwingFact:
@@ -80,12 +78,12 @@ class TestSupportResistanceAnalyzer:
     def test_requires(self) -> None:
         analyzer = SupportResistanceAnalyzer()
         reqs = analyzer.requires()
-        assert (SwingFact, "swing") in reqs
-        assert (ATRFact, "atr_14") in reqs
+        assert FactKey("swing") in reqs
+        assert FactKey("atr_14") in reqs
 
     def test_produces(self) -> None:
         analyzer = SupportResistanceAnalyzer()
-        assert analyzer.produces() == ((SRFact, "sr"),)
+        assert analyzer.produces() == (FactKey("sr"),)
 
     def test_no_swings_returns_empty(self) -> None:
         candles = [(100.0, 101.0, 99.0, 100.0)] * 5
@@ -255,10 +253,7 @@ class TestSupportResistanceAnalyzer:
         )
         sf = _swings_fact(_make_swings([(95.0, SwingType.LOW)]))
         atr = _atr_fact(2.0)
-        facts = cast(
-            dict[tuple[type[Fact], str], Fact],
-            {(SwingFact, "swing_custom"): sf, (ATRFact, "atr_custom"): atr},
-        )
+        facts = {FactKey("swing_custom"): sf, FactKey("atr_custom"): atr}
         result = analyzer.analyze(view, facts)
         fact = result.facts[0]
         assert isinstance(fact, SRFact)
@@ -280,10 +275,7 @@ class TestSupportResistanceAnalyzer:
         view = MarketView(store, cursor=4, window_size=4)
         analyzer = SupportResistanceAnalyzer()
         sf = _swings_fact(_make_swings([(95.0, SwingType.LOW)]))
-        facts = cast(
-            dict[tuple[type[Fact], str], Fact],
-            {(SwingFact, "swing"): sf},
-        )
+        facts = {FactKey("swing"): sf}
         result = analyzer.analyze(view, facts)
         fact = result.facts[0]
         assert isinstance(fact, SRFact)

@@ -1,11 +1,10 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.types import Candle
 from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.facts.base import Fact
-
-FactKey = tuple[type[Fact], str]
 
 
 @dataclass(frozen=True)

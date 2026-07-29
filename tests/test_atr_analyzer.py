@@ -5,6 +5,7 @@ from marketatlas.analysis.analyzers.atr import ATRAnalyzer
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.primitive import ATRFact
 
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
@@ -41,7 +42,7 @@ class TestATRAnalyzer:
         assert ATRAnalyzer(14).requires() == ()
 
     def test_produces_atr_fact(self) -> None:
-        assert ATRAnalyzer(14).produces() == ((ATRFact, "atr_14"),)
+        assert ATRAnalyzer(14).produces() == (FactKey("atr_14"),)
 
     def test_single_candle(self) -> None:
         store = _make_store([105.0], [95.0], [100.0])

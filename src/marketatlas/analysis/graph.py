@@ -7,22 +7,20 @@ from marketatlas.data.view import MarketView
 from marketatlas.facts.base import Fact
 
 from .base import Analyzer
-
-FactKey = tuple[type[Fact], str]
+from .factkey import FactKey
 
 
 class CyclicDependencyError(Exception):
     def __init__(self, cycle: list[FactKey]) -> None:
-        names = " → ".join(f"{t.__name__}({k})" for t, k in cycle)
+        names = " → ".join(str(fk) for fk in cycle)
         super().__init__(f"Cyclic dependency detected: {names}")
         self.cycle = cycle
 
 
 class UnsatisfiedDependencyError(Exception):
     def __init__(self, analyzer: Analyzer, missing: FactKey) -> None:
-        fact_type, key = missing
         super().__init__(
-            f"{type(analyzer).__name__} requires {fact_type.__name__}({key}) "
+            f"{type(analyzer).__name__} requires {missing} "
             f"but no analyzer produces it"
         )
         self.analyzer = analyzer
@@ -37,8 +35,7 @@ class AnalysisGraph:
     def _topo_sort(self) -> list[Analyzer]:
         produces_map: dict[FactKey, Analyzer] = {}
         for analyzer in self._analyzers:
-            for fact_type, key in analyzer.produces():
-                fk = (fact_type, key)
+            for fk in analyzer.produces():
                 if fk in produces_map:
                     raise CyclicDependencyError([fk])
                 produces_map[fk] = analyzer

@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from marketatlas.analysis.graph import AnalysisGraph, FactKey
+from marketatlas.analysis.factkey import FactKey
+from marketatlas.analysis.graph import AnalysisGraph
 from marketatlas.data.store import MarketStore
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.collector import EvidenceCollector

@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
-from typing import cast
+
 
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import (
@@ -88,14 +89,14 @@ def _facts(
     atr: ATRFact | None = None,
     swing: SwingFact | None = None,
     sr: SRFact | None = None,
-) -> dict[tuple[type[Fact], str], Fact]:
-    f: dict[tuple[type[Fact], str], Fact] = {}
+) -> dict[FactKey, Fact]:
+    f: dict[FactKey, Fact] = {}
     if atr is not None:
-        f[(ATRFact, "atr_14")] = atr
+        f[FactKey("atr_14")] = atr
     if swing is not None:
-        f[(SwingFact, "swing")] = swing
+        f[FactKey("swing")] = swing
     if sr is not None:
-        f[(SRFact, "sr")] = sr
+        f[FactKey("sr")] = sr
     return f
 
 
@@ -370,14 +371,11 @@ class TestRiskEngine:
             (SwingPoint(price=96.0, index=0, type=SwingType.LOW, timestamp=BASE),)
         )
         sr = _sr_fact(())
-        facts = cast(
-            dict[tuple[type[Fact], str], Fact],
-            {
-                (ATRFact, "atr_custom"): atr,
-                (SwingFact, "swing_custom"): swings,
-                (SRFact, "sr_custom"): sr,
-            },
-        )
+        facts = {
+            FactKey("atr_custom"): atr,
+            FactKey("swing_custom"): swings,
+            FactKey("sr_custom"): sr,
+        }
         candidate, _evidence = engine.evaluate(_bullish_signal(), facts, view)
         assert candidate is not None
 

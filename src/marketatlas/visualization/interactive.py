@@ -34,7 +34,7 @@ def _extract_ema_per_frame(
     series: dict[str, list[dict[str, Any]]] = {}
     for frame in frames:
         for fact_type_key, fact in frame.facts.items():
-            if isinstance(fact, EMAFact) and fact_type_key[0] is EMAFact:
+            if isinstance(fact, EMAFact):
                 name = f"EMA{fact.period}"
                 if name not in series:
                     series[name] = []
@@ -63,7 +63,7 @@ def _extract_sr_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
     for frame in frames:
         sr_fact: SRFact | None = None
         for fact_type_key, fact in frame.facts.items():
-            if isinstance(fact, SRFact) and fact_type_key[0] is SRFact:
+            if isinstance(fact, SRFact):
                 sr_fact = fact
                 break
         levels = []
@@ -114,7 +114,7 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
     for frame in frames:
         facts: dict[str, Any] = {}
         for fact_type_key, fact in frame.facts.items():
-            label = fact_type_key[1]
+            label = fact_type_key.name
             if isinstance(fact, EMAFact):
                 facts[label] = {"type": "ema", "value": fact.value, "period": fact.period}
             elif isinstance(fact, ATRFact):
@@ -129,7 +129,7 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
                 # Match swing_pattern prices to SwingFact swings for indices
                 swing_indices: list[int] = []
                 for fk, fv in frame.facts.items():
-                    if isinstance(fv, SwingFact) and fk[0] is SwingFact:
+                    if isinstance(fv, SwingFact):
                         price_to_idx = {s.price: s.index for s in fv.swings}
                         swing_indices = [
                             price_to_idx[p] for p in fact.swing_pattern

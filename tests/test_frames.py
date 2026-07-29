@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import pytest
 from marketatlas.data.types import Candle
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.primitive import EMAFact
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.frames.store import FrameStore
@@ -33,7 +34,7 @@ def _make_frame(offset: int = 0) -> AnalysisFrame:
     return AnalysisFrame(
         timestamp=candle.timestamp,
         candle=candle,
-        facts={(EMAFact, "ema_20"): ema},
+        facts={FactKey("ema_20"): ema},
         evidence=(
             EvidenceEntry(
                 text="price above EMA",
@@ -60,7 +61,7 @@ class TestAnalysisFrame:
         frame = AnalysisFrame(
             timestamp=candle.timestamp,
             candle=candle,
-            facts={(EMAFact, "ema_20"): ema},
+            facts={FactKey("ema_20"): ema},
             evidence=(),
         )
         assert frame.annotations == ()

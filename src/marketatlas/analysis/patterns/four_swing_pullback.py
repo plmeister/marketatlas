@@ -1,4 +1,5 @@
 from marketatlas.analysis.base import Analyzer
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.types import Candle
 from marketatlas.data.view import MarketView
@@ -32,22 +33,22 @@ class FourSwingPullbackDetector(Analyzer):
     def instance_key(self) -> str:
         return "four_swing_pullback"
 
-    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+    def requires(self) -> tuple[FactKey, ...]:
         return (
-            (SwingFact, self._swing_key),
-            (TrendFact, self._trend_key),
-            (ATRFact, self._atr_key),
+            FactKey(self._swing_key),
+            FactKey(self._trend_key),
+            FactKey(self._atr_key),
         )
 
-    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
-        return ((PullbackFact, self.instance_key),)
+    def produces(self) -> tuple[FactKey, ...]:
+        return (FactKey(self.instance_key),)
 
     def analyze(
-        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+        self, view: MarketView, facts: dict[FactKey, Fact]
     ) -> AnalysisResult:
-        swing_fact = facts.get((SwingFact, self._swing_key))
-        trend_fact = facts.get((TrendFact, self._trend_key))
-        atr_fact = facts.get((ATRFact, self._atr_key))
+        swing_fact = facts.get(FactKey(self._swing_key))
+        trend_fact = facts.get(FactKey(self._trend_key))
+        atr_fact = facts.get(FactKey(self._atr_key))
 
         if (
             not isinstance(swing_fact, SwingFact)

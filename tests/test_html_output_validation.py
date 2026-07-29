@@ -9,6 +9,7 @@ from pathlib import Path
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
 from marketatlas.frames.frame import AnalysisFrame
@@ -78,9 +79,9 @@ def _make_frame(offset: int = 0) -> AnalysisFrame:
         timestamp=candle.timestamp,
         candle=candle,
         facts={
-            (EMAFact, "ema_20"): ema,
-            (ATRFact, "atr_14"): atr,
-            (TrendFact, "trend"): trend,
+            FactKey("ema_20"): ema,
+            FactKey("atr_14"): atr,
+            FactKey("trend"): trend,
         },
         evidence=(
             EvidenceEntry(text=f"frame {offset}", level=EvidenceLevel.INFO, source="test"),

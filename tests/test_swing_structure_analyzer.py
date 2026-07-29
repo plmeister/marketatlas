@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
-from typing import cast
+
 
 from marketatlas.analysis.analyzers.swing import SwingStructureAnalyzer
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import SwingFact, SwingType
@@ -44,11 +45,8 @@ def _atr_fact(value: float = 2.0) -> ATRFact:
     )
 
 
-def _keyed_facts(atr: ATRFact) -> dict[tuple[type[Fact], str], Fact]:
-    return cast(
-        dict[tuple[type[Fact], str], Fact],
-        {(ATRFact, "atr_14"): atr},
-    )
+def _keyed_facts(atr: ATRFact) -> dict[FactKey, Fact]:
+    return {FactKey("atr_14"): atr}
 
 
 def _zigzag_candles() -> list[tuple[float, float, float, float]]:
@@ -94,11 +92,11 @@ def _close_swings_candles() -> list[tuple[float, float, float, float]]:
 class TestSwingStructureAnalyzer:
     def test_requires_atr(self) -> None:
         analyzer = SwingStructureAnalyzer()
-        assert analyzer.requires() == ((ATRFact, "atr_14"),)
+        assert analyzer.requires() == (FactKey("atr_14"),)
 
     def test_produces_swing_fact(self) -> None:
         analyzer = SwingStructureAnalyzer()
-        assert analyzer.produces() == ((SwingFact, "swing"),)
+        assert analyzer.produces() == (FactKey("swing"),)
 
     def test_zigzag_alternating_pattern(self) -> None:
         candles = _zigzag_candles()
@@ -262,10 +260,7 @@ class TestSwingStructureAnalyzer:
         analyzer = SwingStructureAnalyzer(
             lookback=len(candles), min_swing_atr=0.3, atr_key="atr_custom"
         )
-        facts = cast(
-            dict[tuple[type[Fact], str], Fact],
-            {(ATRFact, "atr_custom"): _atr_fact(2.0)},
-        )
+        facts = {FactKey("atr_custom"): _atr_fact(2.0)}
         result = analyzer.analyze(view, facts)
         fact = result.facts[0]
         assert isinstance(fact, SwingFact)

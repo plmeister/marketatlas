@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import (
@@ -59,9 +60,9 @@ def _make_frame(offset: int = 0) -> AnalysisFrame:
         timestamp=candle.timestamp,
         candle=candle,
         facts={
-            (EMAFact, "ema_20"): ema,
-            (ATRFact, "atr_14"): atr,
-            (TrendFact, "trend"): trend,
+            FactKey("ema_20"): ema,
+            FactKey("atr_14"): atr,
+            FactKey("trend"): trend,
         },
         evidence=(
             EvidenceEntry(text=f"frame {offset}", level=EvidenceLevel.INFO, source="test"),
@@ -81,7 +82,7 @@ def _make_sr_frame(offset: int = 0) -> AnalysisFrame:
     return AnalysisFrame(
         timestamp=candle.timestamp,
         candle=candle,
-        facts={(SRFact, "sr"): sr},
+        facts={FactKey("sr"): sr},
         evidence=(),
     )
 
@@ -97,7 +98,7 @@ def _make_pullback_frame(offset: int = 0) -> AnalysisFrame:
     return AnalysisFrame(
         timestamp=candle.timestamp,
         candle=candle,
-        facts={(PullbackFact, "pullback"): pb},
+        facts={FactKey("pullback"): pb},
         evidence=(),
     )
 
@@ -258,7 +259,7 @@ class TestExtractPullbacks:
         )
         frame = AnalysisFrame(
             timestamp=candle.timestamp, candle=candle,
-            facts={(PullbackFact, "pullback"): pb}, evidence=(),
+            facts={FactKey("pullback"): pb}, evidence=(),
         )
         result = _extract_pullbacks_per_frame([frame])
         assert result[0] is None
@@ -320,8 +321,8 @@ class TestExtractFactsPerFrame:
         frame = AnalysisFrame(
             timestamp=candle.timestamp, candle=candle,
             facts={
-                (SwingFact, "swing"): swing_fact,
-                (PullbackFact, "pullback"): pullback,
+                FactKey("swing"): swing_fact,
+                FactKey("pullback"): pullback,
             },
             evidence=(),
         )
@@ -342,7 +343,7 @@ class TestExtractFactsPerFrame:
         )
         frame = AnalysisFrame(
             timestamp=candle.timestamp, candle=candle,
-            facts={(SwingFact, "swing"): swing}, evidence=(),
+            facts={FactKey("swing"): swing}, evidence=(),
         )
         result = _extract_facts_per_frame([frame])
         assert "swing" in result[0]
@@ -567,11 +568,11 @@ class TestInteractiveRenderer:
         )
         frame0 = AnalysisFrame(
             timestamp=_make_candle(0).timestamp, candle=_make_candle(0),
-            facts={(SwingFact, "swing"): swing1}, evidence=(),
+            facts={FactKey("swing"): swing1}, evidence=(),
         )
         frame1 = AnalysisFrame(
             timestamp=_make_candle(1).timestamp, candle=_make_candle(1),
-            facts={(SwingFact, "swing"): swing2}, evidence=(),
+            facts={FactKey("swing"): swing2}, evidence=(),
         )
         frame_store = FrameStore()
         frame_store.append(frame0)
@@ -612,8 +613,8 @@ class TestInteractiveRenderer:
         frame = AnalysisFrame(
             timestamp=_make_candle(5).timestamp, candle=_make_candle(5),
             facts={
-                (SwingFact, "swing"): swing_fact,
-                (PullbackFact, "pullback"): pullback,
+                FactKey("swing"): swing_fact,
+                FactKey("pullback"): pullback,
             },
             evidence=(),
         )
@@ -655,7 +656,7 @@ class TestInteractiveRenderer:
         )
         frame = AnalysisFrame(
             timestamp=candle.timestamp, candle=candle,
-            facts={(SRFact, "sr"): sr}, evidence=(),
+            facts={FactKey("sr"): sr}, evidence=(),
         )
         frame_store.append(frame)
         tb = TradeBook()

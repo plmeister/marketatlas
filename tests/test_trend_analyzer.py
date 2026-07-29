@@ -8,6 +8,7 @@ from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
 
@@ -44,14 +45,14 @@ def _flat_closes(n: int, value: float = 100.0) -> list[float]:
 
 def _make_ema_facts(
     view: MarketView, fast_period: int, slow_period: int
-) -> dict[tuple[type, str], object]:
+) -> dict[FactKey, object]:
     fast = EMAAnalyzer(fast_period)
     slow = EMAAnalyzer(slow_period)
     fast_result = fast.analyze(view, {})
     slow_result = slow.analyze(view, {})
     return {
-        (EMAFact, fast.instance_key): fast_result.facts[0],
-        (EMAFact, slow.instance_key): slow_result.facts[0],
+        FactKey(fast.instance_key): fast_result.facts[0],
+        FactKey(slow.instance_key): slow_result.facts[0],
     }
 
 
@@ -64,12 +65,12 @@ def _trend(result: AnalysisResult) -> TrendFact:
 class TestTrendAnalyzer:
     def test_requires_empty(self) -> None:
         assert TrendAnalyzer().requires() == (
-            (EMAFact, "ema_20"),
-            (EMAFact, "ema_50"),
+            FactKey("ema_20"),
+            FactKey("ema_50"),
         )
 
     def test_produces_trend_fact(self) -> None:
-        assert TrendAnalyzer().produces() == ((TrendFact, "trend"),)
+        assert TrendAnalyzer().produces() == (FactKey("trend"),)
 
     def test_bullish_when_fast_above_slow(self) -> None:
         closes = _rising_closes(60)
@@ -127,7 +128,7 @@ class TestTrendAnalyzer:
 
         facts_with_atr: dict = {
             **facts,
-            (ATRFact, "atr_14"): ATRFact(
+            FactKey("atr_14"): ATRFact(
                 timestamp=BASE,
                 evidence=(
                     EvidenceEntry(

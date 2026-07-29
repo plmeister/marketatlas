@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
 
 from marketatlas.analysis.base import Analyzer
-from marketatlas.analysis.graph import AnalysisGraph, FactKey
+from marketatlas.analysis.factkey import FactKey
+from marketatlas.analysis.graph import AnalysisGraph
 from marketatlas.analysis.result import AnalysisResult
 from marketatlas.backtesting.backtester import Backtester
 from marketatlas.data.store import MarketStore
@@ -40,14 +41,14 @@ def _make_candles(n: int, start: datetime | None = None) -> tuple[Candle, ...]:
 
 
 class StubAnalyzer(Analyzer):
-    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+    def requires(self) -> tuple[FactKey, ...]:
         return ()
 
-    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
-        return ((EMAFact, "stub_ema"),)
+    def produces(self) -> tuple[FactKey, ...]:
+        return (FactKey("stub_ema"),)
 
     def analyze(
-        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+        self, view: MarketView, facts: dict[FactKey, Fact]
     ) -> AnalysisResult:
         candle = view.current
         ema = EMAFact(
@@ -334,14 +335,14 @@ class TestStrategyBundle:
 
 
 class StubAnalyzerForSignals(Analyzer):
-    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+    def requires(self) -> tuple[FactKey, ...]:
         return ()
 
-    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
-        return ((ATRFact, "atr_14"),)
+    def produces(self) -> tuple[FactKey, ...]:
+        return (FactKey("atr_14"),)
 
     def analyze(
-        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+        self, view: MarketView, facts: dict[FactKey, Fact]
     ) -> AnalysisResult:
         return AnalysisResult(
             facts=(
@@ -357,14 +358,14 @@ class StubAnalyzerForSignals(Analyzer):
 
 
 class StubSRAnalyzer(Analyzer):
-    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+    def requires(self) -> tuple[FactKey, ...]:
         return ()
 
-    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
-        return ((SRFact, "sr"),)
+    def produces(self) -> tuple[FactKey, ...]:
+        return (FactKey("sr"),)
 
     def analyze(
-        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+        self, view: MarketView, facts: dict[FactKey, Fact]
     ) -> AnalysisResult:
         return AnalysisResult(
             facts=(

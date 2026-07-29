@@ -1,4 +1,5 @@
 from marketatlas.analysis.base import Analyzer
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
@@ -22,20 +23,20 @@ class SupportResistanceAnalyzer(Analyzer):
     def instance_key(self) -> str:
         return "sr"
 
-    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+    def requires(self) -> tuple[FactKey, ...]:
         return (
-            (SwingFact, self._swing_key),
-            (ATRFact, self._atr_key),
+            FactKey(self._swing_key),
+            FactKey(self._atr_key),
         )
 
-    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
-        return ((SRFact, self.instance_key),)
+    def produces(self) -> tuple[FactKey, ...]:
+        return (FactKey(self.instance_key),)
 
     def analyze(
-        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+        self, view: MarketView, facts: dict[FactKey, Fact]
     ) -> AnalysisResult:
-        swing_fact = facts.get((SwingFact, self._swing_key))
-        atr_fact = facts.get((ATRFact, self._atr_key))
+        swing_fact = facts.get(FactKey(self._swing_key))
+        atr_fact = facts.get(FactKey(self._atr_key))
 
         if not isinstance(swing_fact, SwingFact) or not swing_fact.swings:
             evidence = (

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from marketatlas.analysis.graph import FactKey
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
@@ -54,7 +54,7 @@ class RiskEngine:
     ) -> tuple[TradeCandidate | None, tuple[EvidenceEntry, ...]]:
         rejection: list[EvidenceEntry] = []
 
-        atr = facts.get((ATRFact, self._atr_key))
+        atr = facts.get(FactKey(self._atr_key))
         if not isinstance(atr, ATRFact) or atr.value <= 0:
             rejection.append(
                 EvidenceEntry(
@@ -65,7 +65,7 @@ class RiskEngine:
             )
             return None, tuple(rejection)
 
-        sr_fact = facts.get((SRFact, self._sr_key))
+        sr_fact = facts.get(FactKey(self._sr_key))
         if not isinstance(sr_fact, SRFact):
             rejection.append(
                 EvidenceEntry(
@@ -85,7 +85,7 @@ class RiskEngine:
         else:
             entry = open_price * (1 - self._slippage_pct / 100)
 
-        swing_fact = facts.get((SwingFact, self._swing_key))
+        swing_fact = facts.get(FactKey(self._swing_key))
         nearest_swing = self._find_nearest_swing(
             signal.direction, entry, atr_val, swing_fact
         )

@@ -5,6 +5,7 @@ Proves every component only sees data available at or before the current candle.
 
 from datetime import datetime, timedelta
 
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.backtesting.backtester import Backtester
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
@@ -96,7 +97,7 @@ def _snapshot_frame(frame) -> dict:
         "volume": frame.candle.volume,
         "num_facts": len(frame.facts),
         "num_evidence": len(frame.evidence),
-        "fact_keys": sorted(frame.facts.keys(), key=lambda k: (k[0].__name__, k[1])),
+        "fact_keys": sorted(frame.facts.keys(), key=lambda k: k.name),
     }
 
 

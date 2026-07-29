@@ -11,8 +11,8 @@ from marketatlas.analysis.analyzers.sr import SupportResistanceAnalyzer
 from marketatlas.analysis.analyzers.swing import SwingStructureAnalyzer
 from marketatlas.analysis.analyzers.trend import TrendAnalyzer
 from marketatlas.analysis.base import Analyzer
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.patterns.four_swing_pullback import FourSwingPullbackDetector
-from marketatlas.facts.base import Fact
 
 from .config import AnalyzerConfig, RiskConfig, SignalConfig, StrategyConfig
 
@@ -70,14 +70,15 @@ def validate_config(config: StrategyConfig) -> list[str]:
         if cls is not None:
             analyzers.append(cls(**ac.params))
 
-    produces_keys: set[tuple[type[Fact], str]] = set()
+    produces_keys: set[FactKey] = set()
     for a in analyzers:
         for fk in a.produces():
             produces_keys.add(fk)
 
     for i, sc in enumerate(config.signals):
         for req_key in sc.requires:
-            if not any(req_key == key for _, key in produces_keys):
+            needed = FactKey(req_key)
+            if needed not in produces_keys:
                 errors.append(
                     f"Signal '{sc.type}' at index {i} requires '{req_key}' "
                     "not found in analyzers"

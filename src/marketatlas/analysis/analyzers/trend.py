@@ -1,4 +1,5 @@
 from marketatlas.analysis.base import Analyzer
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
@@ -22,20 +23,20 @@ class TrendAnalyzer(Analyzer):
     def instance_key(self) -> str:
         return "trend"
 
-    def requires(self) -> tuple[tuple[type[Fact], str], ...]:
+    def requires(self) -> tuple[FactKey, ...]:
         return (
-            (EMAFact, self._fast_key),
-            (EMAFact, self._slow_key),
+            FactKey(self._fast_key),
+            FactKey(self._slow_key),
         )
 
-    def produces(self) -> tuple[tuple[type[Fact], str], ...]:
-        return ((TrendFact, self.instance_key),)
+    def produces(self) -> tuple[FactKey, ...]:
+        return (FactKey(self.instance_key),)
 
     def analyze(
-        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+        self, view: MarketView, facts: dict[FactKey, Fact]
     ) -> AnalysisResult:
-        fast_ema_fact = facts[EMAFact, self._fast_key]
-        slow_ema_fact = facts[EMAFact, self._slow_key]
+        fast_ema_fact = facts[FactKey(self._fast_key)]
+        slow_ema_fact = facts[FactKey(self._slow_key)]
         assert isinstance(fast_ema_fact, EMAFact)
         assert isinstance(slow_ema_fact, EMAFact)
         fast_ema = fast_ema_fact.value
@@ -49,7 +50,7 @@ class TrendAnalyzer(Analyzer):
             direction = TrendDirection.NEUTRAL
 
         atr_value = 0.0
-        atr_fact = facts.get((ATRFact, self._atr_key))
+        atr_fact = facts.get(FactKey(self._atr_key))
         if atr_fact is not None and isinstance(atr_fact, ATRFact):
             atr_value = atr_fact.value
 

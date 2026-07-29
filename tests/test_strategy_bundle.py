@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.base import Fact
 from marketatlas.strategy.bundle import StrategyBundle
 from marketatlas.strategy.config import AnalyzerConfig, SignalConfig, StrategyConfig
@@ -125,8 +126,8 @@ class TestEvaluateAll:
         from marketatlas.facts.primitive import ATRFact
         from marketatlas.facts.structural import TrendDirection, TrendFact
 
-        facts: dict[tuple[type[Fact], str], Fact] = {
-            (PullbackFact, "four_swing_pullback"): PullbackFact(
+        facts: dict[FactKey, Fact] = {
+            FactKey("four_swing_pullback"): PullbackFact(
                 timestamp=BASE,
                 evidence=(),
                 status=PullbackStatus.CONFIRMED,
@@ -136,13 +137,13 @@ class TestEvaluateAll:
                 deviation_pct=0.05,
                 confirmation_strength=0.72,
             ),
-            (TrendFact, "trend"): TrendFact(
+            FactKey("trend"): TrendFact(
                 timestamp=BASE,
                 evidence=(),
                 direction=TrendDirection.BULLISH,
                 strength=0.7,
             ),
-            (ATRFact, "atr_14"): ATRFact(
+            FactKey("atr_14"): ATRFact(
                 timestamp=BASE,
                 evidence=(),
                 value=50.0,
@@ -175,8 +176,8 @@ class TestEvaluateAll:
         s2 = Strategy("s2", config2)
         bundle = StrategyBundle([s1, s2])
 
-        facts: dict[tuple[type[Fact], str], Fact] = {
-            (PullbackFact, "four_swing_pullback"): PullbackFact(
+        facts: dict[FactKey, Fact] = {
+            FactKey("four_swing_pullback"): PullbackFact(
                 timestamp=BASE,
                 evidence=(),
                 status=PullbackStatus.CONFIRMED,
@@ -186,13 +187,13 @@ class TestEvaluateAll:
                 deviation_pct=0.05,
                 confirmation_strength=0.4,
             ),
-            (TrendFact, "trend"): TrendFact(
+            FactKey("trend"): TrendFact(
                 timestamp=BASE,
                 evidence=(),
                 direction=TrendDirection.BULLISH,
                 strength=0.7,
             ),
-            (ATRFact, "atr_14"): ATRFact(
+            FactKey("atr_14"): ATRFact(
                 timestamp=BASE,
                 evidence=(),
                 value=50.0,

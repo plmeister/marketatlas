@@ -5,6 +5,7 @@ from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.primitive import EMAFact
 
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
@@ -31,7 +32,7 @@ class TestEMAAnalyzer:
         assert EMAAnalyzer(20).requires() == ()
 
     def test_produces_ema_fact(self) -> None:
-        assert EMAAnalyzer(20).produces() == ((EMAFact, "ema_20"),)
+        assert EMAAnalyzer(20).produces() == (FactKey("ema_20"),)
 
     def test_period_1_returns_current_price(self) -> None:
         closes = [100.0, 101.0, 102.0, 103.0, 104.0]

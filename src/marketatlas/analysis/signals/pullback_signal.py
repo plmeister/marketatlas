@@ -1,3 +1,4 @@
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
@@ -21,11 +22,11 @@ class PullbackSignal(Signal):
         self._atr_key = atr_key
 
     def evaluate(
-        self, view: MarketView, facts: dict[tuple[type[Fact], str], Fact]
+        self, view: MarketView, facts: dict[FactKey, Fact]
     ) -> TradeSignal | None:
-        pullback = facts.get((PullbackFact, self._pullback_key))
-        trend = facts.get((TrendFact, self._trend_key))
-        atr = facts.get((ATRFact, self._atr_key))
+        pullback = facts.get(FactKey(self._pullback_key))
+        trend = facts.get(FactKey(self._trend_key))
+        atr = facts.get(FactKey(self._atr_key))
 
         if not isinstance(pullback, PullbackFact):
             return None

@@ -11,6 +11,7 @@ from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.base import Fact
 from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact
@@ -83,15 +84,12 @@ def _atr_fact(value: float = 50.0) -> ATRFact:
 
 def _keyed_facts(
     swing: SwingFact, trend: TrendFact, atr: ATRFact
-) -> dict[tuple[type[Fact], str], Fact]:
-    return cast(
-        dict[tuple[type[Fact], str], Fact],
-        {
-            (SwingFact, "swing"): swing,
-            (TrendFact, "trend"): trend,
-            (ATRFact, "atr_14"): atr,
-        },
-    )
+) -> dict[FactKey, Fact]:
+    return {
+        FactKey("swing"): swing,
+        FactKey("trend"): trend,
+        FactKey("atr_14"): atr,
+    }
 
 
 def _bullish_4swing_fact() -> SwingFact:
@@ -211,13 +209,13 @@ class TestFourSwingPullbackDetector:
     def test_requires_swing_trend_atr(self) -> None:
         detector = FourSwingPullbackDetector()
         reqs = detector.requires()
-        assert (SwingFact, "swing") in reqs
-        assert (TrendFact, "trend") in reqs
-        assert (ATRFact, "atr_14") in reqs
+        assert FactKey("swing") in reqs
+        assert FactKey("trend") in reqs
+        assert FactKey("atr_14") in reqs
 
     def test_produces_pullback_fact(self) -> None:
         detector = FourSwingPullbackDetector()
-        assert detector.produces() == ((PullbackFact, "four_swing_pullback"),)
+        assert detector.produces() == (FactKey("four_swing_pullback"),)
 
     def test_bullish_4swing_detected(self) -> None:
         candles = _bullish_linear_candles()
@@ -554,14 +552,11 @@ class TestFourSwingPullbackDetector:
         detector = FourSwingPullbackDetector(
             swing_key="my_swing", trend_key="my_trend", atr_key="my_atr",
         )
-        facts = cast(
-            dict[tuple[type[Fact], str], Fact],
-            {
-                (SwingFact, "my_swing"): _bullish_4swing_fact(),
-                (TrendFact, "my_trend"): _bullish_trend_fact(),
-                (ATRFact, "my_atr"): _atr_fact(50.0),
-            },
-        )
+        facts = {
+            FactKey("my_swing"): _bullish_4swing_fact(),
+            FactKey("my_trend"): _bullish_trend_fact(),
+            FactKey("my_atr"): _atr_fact(50.0),
+        }
         result = detector.analyze(view, facts)
         fact = cast(PullbackFact, result.facts[0])
         assert fact.status == PullbackStatus.DETECTED
@@ -612,7 +607,7 @@ class TestFourSwingPullbackDetector:
             FourSwingPullbackDetector(),
         ])
         facts = graph.run(view)
-        pullback = facts.get((PullbackFact, "four_swing_pullback"))
+        pullback = facts.get(FactKey("four_swing_pullback"))
         assert pullback is not None
         assert isinstance(pullback, PullbackFact)
 

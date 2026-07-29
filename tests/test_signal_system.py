@@ -1,12 +1,13 @@
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+
 
 from marketatlas.analysis.signals.pullback_signal import PullbackSignal
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.base import Fact
 from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact
@@ -150,14 +151,14 @@ def _keyed_facts(
     pullback: PullbackFact | None = None,
     trend: TrendFact | None = None,
     atr: ATRFact | None = None,
-) -> dict[tuple[type[Fact], str], Fact]:
-    facts: dict[tuple[type[Fact], str], Fact] = {}
+) -> dict[FactKey, Fact]:
+    facts: dict[FactKey, Fact] = {}
     if pullback is not None:
-        facts[(PullbackFact, "four_swing_pullback")] = pullback
+        facts[FactKey("four_swing_pullback")] = pullback
     if trend is not None:
-        facts[(TrendFact, "trend")] = trend
+        facts[FactKey("trend")] = trend
     if atr is not None:
-        facts[(ATRFact, "atr_14")] = atr
+        facts[FactKey("atr_14")] = atr
     return facts
 
 
@@ -359,14 +360,11 @@ class TestPullbackSignal:
         signal = PullbackSignal(
             pullback_key="my_pullback", trend_key="my_trend", atr_key="my_atr"
         )
-        facts = cast(
-            dict[tuple[type[Fact], str], Fact],
-            {
-                (PullbackFact, "my_pullback"): _confirmed_bullish_pullback_fact(),
-                (TrendFact, "my_trend"): _bullish_trend_fact(),
-                (ATRFact, "my_atr"): _atr_fact(50.0),
-            },
-        )
+        facts = {
+            FactKey("my_pullback"): _confirmed_bullish_pullback_fact(),
+            FactKey("my_trend"): _bullish_trend_fact(),
+            FactKey("my_atr"): _atr_fact(50.0),
+        }
         result = signal.evaluate(view, facts)
         assert result is not None
 

@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
@@ -56,9 +57,9 @@ def _make_frame(offset: int = 0) -> AnalysisFrame:
         timestamp=candle.timestamp,
         candle=candle,
         facts={
-            (EMAFact, "ema_20"): ema,
-            (ATRFact, "atr_14"): atr,
-            (TrendFact, "trend"): trend,
+            FactKey("ema_20"): ema,
+            FactKey("atr_14"): atr,
+            FactKey("trend"): trend,
         },
         evidence=(
             EvidenceEntry(
@@ -82,7 +83,7 @@ def _make_pullback_frame(offset: int) -> AnalysisFrame:
     return AnalysisFrame(
         timestamp=candle.timestamp,
         candle=candle,
-        facts={(PullbackFact, "pullback"): pullback},
+        facts={FactKey("pullback"): pullback},
         evidence=(),
     )
 
@@ -120,11 +121,11 @@ class TestExtractEMA:
         ema50 = EMAFact(timestamp=candle.timestamp, evidence=(), value=99.0, period=50)
         frame = AnalysisFrame(
             timestamp=candle.timestamp, candle=candle,
-            facts={(EMAFact, "ema_20"): ema20}, evidence=(),
+            facts={FactKey("ema_20"): ema20}, evidence=(),
         )
         frame2 = AnalysisFrame(
             timestamp=candle.timestamp, candle=candle,
-            facts={(EMAFact, "ema_50"): ema50}, evidence=(),
+            facts={FactKey("ema_50"): ema50}, evidence=(),
         )
         result = _extract_ema_lines([frame, frame2])
         assert "EMA20" in result
@@ -157,14 +158,14 @@ class TestExtractTrendMarkers:
         candle = _make_candle(0)
         bear_frame = AnalysisFrame(
             timestamp=candle.timestamp, candle=candle,
-            facts={(TrendFact, "trend"): TrendFact(
+            facts={FactKey("trend"): TrendFact(
                 timestamp=candle.timestamp, evidence=(),
                 direction=TrendDirection.BEARISH, strength=0.5,
             )}, evidence=(),
         )
         neut_frame = AnalysisFrame(
             timestamp=candle.timestamp, candle=candle,
-            facts={(TrendFact, "trend"): TrendFact(
+            facts={FactKey("trend"): TrendFact(
                 timestamp=candle.timestamp, evidence=(),
                 direction=TrendDirection.NEUTRAL, strength=0.1,
             )}, evidence=(),
@@ -195,7 +196,7 @@ class TestExtractPullbacks:
         )
         frame = AnalysisFrame(
             timestamp=candle.timestamp, candle=candle,
-            facts={(PullbackFact, "pullback"): pb}, evidence=(),
+            facts={FactKey("pullback"): pb}, evidence=(),
         )
         assert _extract_pullbacks([frame]) == []
 
