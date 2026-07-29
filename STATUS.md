@@ -38,4 +38,4 @@
 - [x] 037 — Builder API (fluent construction)
 - [x] 038 — AST validation (semantic checks)
 - [x] 039 — AST serialization (JSON)
-- [ ] 040 — Compiler adapter (AST to graph)
+- [x] 040 — Compiler adapter (AST to graph)
