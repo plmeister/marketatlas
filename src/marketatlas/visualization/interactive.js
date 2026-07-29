@@ -551,11 +551,6 @@ function scrollToFrame(idx) {
   if (idx < 0 || idx >= FRAMES.length) return;
   const time = FRAMES[idx].time;
   programmaticScroll = true;
-  if (futureVisibility === 'hide') {
-    chart.timeScale().scrollToTime(time);
-    return;
-  }
-  // Dim/show modes: animate with scrollToPosition
   const range = chart.timeScale().getVisibleLogicalRange();
   if (!range) { chart.timeScale().scrollToTime(time); return; }
   const candleIdx = CANDLES.findIndex(c => c.time === time);
