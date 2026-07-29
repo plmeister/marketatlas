@@ -1,0 +1,44 @@
+{
+  "name": "ema_trend",
+  "version": "1.0",
+  "definitions": [
+    {
+      "name": "ema20",
+      "provider": "EMAAnalyzer",
+      "parameters": [
+        {
+          "name": "period",
+          "value": 20
+        }
+      ]
+    },
+    {
+      "name": "ema50",
+      "provider": "EMAAnalyzer",
+      "parameters": [
+        {
+          "name": "period",
+          "value": 50
+        }
+      ]
+    },
+    {
+      "name": "trend",
+      "provider": "TrendAnalyzer"
+    }
+  ],
+  "providers": [
+    {
+      "name": "EMAAnalyzer",
+      "capability": "",
+      "category": "analyzer",
+      "impl": "EMAAnalyzer"
+    },
+    {
+      "name": "TrendAnalyzer",
+      "capability": "",
+      "category": "analyzer",
+      "impl": "TrendAnalyzer"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "execution_order": [
+    {
+      "type": "EMAAnalyzer",
+      "requires": [],
+      "produces": [
+        "ema_20"
+      ]
+    },
+    {
+      "type": "EMAAnalyzer",
+      "requires": [],
+      "produces": [
+        "ema_50"
+      ]
+    },
+    {
+      "type": "TrendAnalyzer",
+      "requires": [
+        "ema_20",
+        "ema_50"
+      ],
+      "produces": [
+        "trend"
+      ]
+    }
+  ]
+}

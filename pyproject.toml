@@ -26,6 +26,13 @@ ruff = "^0.5"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
+[dependency-groups]
+dev = [
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true
@@ -42,3 +49,6 @@ select = ["E", "F", "I", "N", "W", "UP"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+markers = [
+    "snapshot: tests that compare output against stored JSON snapshots",
+]

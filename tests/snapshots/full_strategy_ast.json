@@ -1,0 +1,140 @@
+{
+  "name": "full_strategy",
+  "version": "1.0",
+  "definitions": [
+    {
+      "name": "ema20",
+      "provider": "EMAAnalyzer",
+      "parameters": [
+        {
+          "name": "period",
+          "value": 20
+        }
+      ]
+    },
+    {
+      "name": "ema50",
+      "provider": "EMAAnalyzer",
+      "parameters": [
+        {
+          "name": "period",
+          "value": 50
+        }
+      ]
+    },
+    {
+      "name": "atr14",
+      "provider": "ATRAnalyzer",
+      "parameters": [
+        {
+          "name": "period",
+          "value": 14
+        }
+      ]
+    },
+    {
+      "name": "trend",
+      "provider": "TrendAnalyzer"
+    },
+    {
+      "name": "swing",
+      "provider": "SwingStructureAnalyzer",
+      "parameters": [
+        {
+          "name": "lookback",
+          "value": 100
+        }
+      ],
+      "bindings": [
+        {
+          "source": "atr14",
+          "output": "atr_14",
+          "target": "swing",
+          "input": "atr"
+        }
+      ]
+    },
+    {
+      "name": "signal",
+      "provider": "PullbackSignal",
+      "parameters": [
+        {
+          "name": "min_strength",
+          "value": 0.5
+        }
+      ],
+      "bindings": [
+        {
+          "source": "trend",
+          "output": "trend",
+          "target": "signal",
+          "input": "trend_key"
+        },
+        {
+          "source": "atr14",
+          "output": "atr_14",
+          "target": "signal",
+          "input": "atr_key"
+        },
+        {
+          "source": "swing",
+          "output": "four_swing_pullback",
+          "target": "signal",
+          "input": "pullback_key"
+        }
+      ]
+    },
+    {
+      "name": "risk",
+      "provider": "risk_based",
+      "parameters": [
+        {
+          "name": "risk_pct",
+          "value": 1.0
+        },
+        {
+          "name": "min_rr",
+          "value": 2.0
+        }
+      ]
+    }
+  ],
+  "providers": [
+    {
+      "name": "EMAAnalyzer",
+      "capability": "",
+      "category": "analyzer",
+      "impl": "EMAAnalyzer"
+    },
+    {
+      "name": "ATRAnalyzer",
+      "capability": "",
+      "category": "analyzer",
+      "impl": "ATRAnalyzer"
+    },
+    {
+      "name": "TrendAnalyzer",
+      "capability": "",
+      "category": "analyzer",
+      "impl": "TrendAnalyzer"
+    },
+    {
+      "name": "SwingStructureAnalyzer",
+      "capability": "",
+      "category": "analyzer",
+      "impl": "SwingStructureAnalyzer"
+    },
+    {
+      "name": "PullbackSignal",
+      "capability": "",
+      "category": "signal",
+      "impl": "PullbackSignal"
+    },
+    {
+      "name": "risk_based",
+      "capability": "",
+      "category": "risk",
+      "impl": "risk_based"
+    }
+  ]
+}

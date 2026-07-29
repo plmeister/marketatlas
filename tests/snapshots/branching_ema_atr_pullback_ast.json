@@ -1,0 +1,94 @@
+{
+  "name": "ema_atr_pullback",
+  "version": "1.0",
+  "definitions": [
+    {
+      "name": "ema20",
+      "provider": "EMAAnalyzer",
+      "parameters": [
+        {
+          "name": "period",
+          "value": 20
+        }
+      ]
+    },
+    {
+      "name": "ema50",
+      "provider": "EMAAnalyzer",
+      "parameters": [
+        {
+          "name": "period",
+          "value": 50
+        }
+      ]
+    },
+    {
+      "name": "atr14",
+      "provider": "ATRAnalyzer",
+      "parameters": [
+        {
+          "name": "period",
+          "value": 14
+        }
+      ]
+    },
+    {
+      "name": "trend",
+      "provider": "TrendAnalyzer"
+    },
+    {
+      "name": "swing",
+      "provider": "SwingStructureAnalyzer",
+      "parameters": [
+        {
+          "name": "lookback",
+          "value": 100
+        }
+      ],
+      "bindings": [
+        {
+          "source": "atr14",
+          "output": "atr_14",
+          "target": "swing",
+          "input": "atr"
+        }
+      ]
+    },
+    {
+      "name": "pullback",
+      "provider": "FourSwingPullbackDetector"
+    }
+  ],
+  "providers": [
+    {
+      "name": "EMAAnalyzer",
+      "capability": "",
+      "category": "analyzer",
+      "impl": "EMAAnalyzer"
+    },
+    {
+      "name": "ATRAnalyzer",
+      "capability": "",
+      "category": "analyzer",
+      "impl": "ATRAnalyzer"
+    },
+    {
+      "name": "TrendAnalyzer",
+      "capability": "",
+      "category": "analyzer",
+      "impl": "TrendAnalyzer"
+    },
+    {
+      "name": "SwingStructureAnalyzer",
+      "capability": "",
+      "category": "analyzer",
+      "impl": "SwingStructureAnalyzer"
+    },
+    {
+      "name": "FourSwingPullbackDetector",
+      "capability": "",
+      "category": "analyzer",
+      "impl": "FourSwingPullbackDetector"
+    }
+  ]
+}

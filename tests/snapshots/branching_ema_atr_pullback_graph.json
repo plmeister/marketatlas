@@ -1,0 +1,55 @@
+{
+  "execution_order": [
+    {
+      "type": "EMAAnalyzer",
+      "requires": [],
+      "produces": [
+        "ema_20"
+      ]
+    },
+    {
+      "type": "EMAAnalyzer",
+      "requires": [],
+      "produces": [
+        "ema_50"
+      ]
+    },
+    {
+      "type": "ATRAnalyzer",
+      "requires": [],
+      "produces": [
+        "atr_14"
+      ]
+    },
+    {
+      "type": "TrendAnalyzer",
+      "requires": [
+        "ema_20",
+        "ema_50"
+      ],
+      "produces": [
+        "trend"
+      ]
+    },
+    {
+      "type": "SwingStructureAnalyzer",
+      "requires": [
+        "atr_14"
+      ],
+      "produces": [
+        "swing"
+      ]
+    },
+    {
+      "type": "FourSwingPullbackDetector",
+      "requires": [
+        "atr_14",
+        "swing",
+        "trend"
+      ],
+      "produces": [
+        "four_swing_pullback"
+      ]
+    }
+  ]
+}

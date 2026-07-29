@@ -1,0 +1,24 @@
+{
+  "name": "ema20",
+  "version": "1.0",
+  "definitions": [
+    {
+      "name": "ema",
+      "provider": "EMAAnalyzer",
+      "parameters": [
+        {
+          "name": "period",
+          "value": 20
+        }
+      ]
+    }
+  ],
+  "providers": [
+    {
+      "name": "EMAAnalyzer",
+      "capability": "",
+      "category": "analyzer",
+      "impl": "EMAAnalyzer"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "execution_order": [
+    {
+      "type": "EMAAnalyzer",
+      "requires": [],
+      "produces": [
+        "ema_20"
+      ]
+    }
+  ]
+}
