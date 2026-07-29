@@ -48,3 +48,4 @@
 - **037** — Builder API: AnalysisBuilder fluent class with define/with_param/bind/build chainable methods. _DefinitionBuilder proxies parent methods for seamless chaining. Eager validation (duplicate names, unknown references). 13 tests. 544 total.
 - **039** — AST serialization: JSON serialization/deserialization for AST. to_dict/from_dict, to_json/from_json, pretty-print, round-trip, error handling for malformed/missing fields. 33 tests. 607 total.
 - **040** — Compiler adapter: ASTCompiler converts Analysis → StrategyConfig and AnalysisGraph. to_config extracts analyzer/signal/risk configs from AST definitions. compile builds AnalysisGraph reusing existing build_analyzers path. Signal requires derived from bindings. 16 tests. 623 total.
+- Scroll animation fix: removed `futureVisibility === 'hide'` early return in scrollToFrame. All visibility modes now use scrollToPosition with 150ms ease-out animation for consistent smooth scrolling.
