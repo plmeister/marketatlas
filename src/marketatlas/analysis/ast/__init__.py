@@ -9,6 +9,7 @@ from marketatlas.analysis.ast.models import (
     Parameter,
     Provider,
 )
+from marketatlas.analysis.ast.registry import ProviderNotFoundError, ProviderRegistry, create_default_registry
 from marketatlas.analysis.ast.serialization import from_dict, from_json, to_dict, to_json
 from marketatlas.analysis.ast.validation import (
     Diagnostic,
@@ -29,7 +30,10 @@ __all__ = [
     "DiagnosticSeverity",
     "Parameter",
     "Provider",
+    "ProviderNotFoundError",
+    "ProviderRegistry",
     "ValidationResult",
+    "create_default_registry",
     "from_dict",
     "from_json",
     "to_dict",
