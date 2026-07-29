@@ -6,6 +6,6 @@ __pycache__/
 dist/
 build/
 output/
-data/
+/data/
 .venv/
 strategy/
