@@ -1,7 +1,7 @@
 import pytest
 
 from marketatlas.analysis.ast.builder import AnalysisBuilder
-from marketatlas.analysis.ast.models import Binding, Parameter
+from marketatlas.analysis.ast.models import Binding, Parameter, Provider
 
 
 class TestAnalysisBuilder:
@@ -10,6 +10,7 @@ class TestAnalysisBuilder:
         assert analysis.name == "test"
         assert analysis.version == "1.0.0"
         assert analysis.definitions == ()
+        assert analysis.providers == ()
         assert analysis.metadata is None
 
     def test_single_definition(self) -> None:
@@ -21,10 +22,37 @@ class TestAnalysisBuilder:
         assert len(analysis.definitions) == 1
         d = analysis.definitions[0]
         assert d.name == "ema20"
-        assert d.type == "analyzer"
-        assert d.impl == "EMAAnalyzer"
+        assert d.provider == "EMAAnalyzer"
         assert d.parameters == ()
         assert d.bindings == ()
+
+    def test_auto_creates_providers(self) -> None:
+        analysis = (
+            AnalysisBuilder("test", "1.0.0")
+            .define("ema20", "analyzer", "EMAAnalyzer")
+            .define("atr14", "analyzer", "ATRAnalyzer")
+            .build()
+        )
+        assert len(analysis.providers) == 2
+        provider_names = {p.name for p in analysis.providers}
+        assert provider_names == {"EMAAnalyzer", "ATRAnalyzer"}
+        ema_prov = next(p for p in analysis.providers if p.name == "EMAAnalyzer")
+        assert ema_prov.category == "analyzer"
+        assert ema_prov.impl == "EMAAnalyzer"
+        assert ema_prov.capability == ""
+
+    def test_multiple_definitions_same_provider(self) -> None:
+        a = (
+            AnalysisBuilder("multi", "1.0.0")
+            .define("ema20", "analyzer", "EMAAnalyzer")
+            .with_param("period", 20)
+            .define("ema50", "analyzer", "EMAAnalyzer")
+            .with_param("period", 50)
+            .build()
+        )
+        assert len(a.definitions) == 2
+        assert len(a.providers) == 1
+        assert a.providers[0].name == "EMAAnalyzer"
 
     def test_multiple_definitions(self) -> None:
         a = (
@@ -135,6 +163,39 @@ class TestAnalysisBuilder:
         result = builder.with_metadata("k", "v")
         assert result is builder
 
+    def test_define_with_provider_only(self) -> None:
+        a = (
+            AnalysisBuilder("test", "1.0.0")
+            .define_provider("EMAAnalyzer", "compute_ema", "analyzer", "EMAAnalyzer")
+            .define("ema20", "EMAAnalyzer")
+            .with_param("period", 20)
+            .build()
+        )
+        assert len(a.definitions) == 1
+        assert a.definitions[0].name == "ema20"
+        assert a.definitions[0].provider == "EMAAnalyzer"
+        assert a.definitions[0].parameters[0].value == 20
+        ema_prov = next(p for p in a.providers if p.name == "EMAAnalyzer")
+        assert ema_prov.capability == "compute_ema"
+
+    def test_define_with_provider_only_unknown_raises(self) -> None:
+        builder = AnalysisBuilder("test", "1.0.0")
+        with pytest.raises(ValueError, match="Unknown provider: NoSuchProvider"):
+            builder.define("x", "NoSuchProvider")
+
+    def test_mixed_define_styles(self) -> None:
+        a = (
+            AnalysisBuilder("mixed", "1.0.0")
+            .define("ema20", "analyzer", "EMAAnalyzer")
+            .with_param("period", 20)
+            .define_provider("ATRAnalyzer", "compute_atr", "analyzer", "ATRAnalyzer")
+            .define("atr14", "ATRAnalyzer")
+            .with_param("period", 14)
+            .build()
+        )
+        assert len(a.definitions) == 2
+        assert len(a.providers) == 2
+
     def test_full_strategy_from_sketch(self) -> None:
         analysis = (
             AnalysisBuilder("pullback_4swing", "1.0.0")
@@ -158,20 +219,19 @@ class TestAnalysisBuilder:
         assert len(analysis.definitions) == 4
 
         ema20 = analysis.definitions[0]
-        assert ema20.impl == "EMAAnalyzer"
+        assert ema20.provider == "EMAAnalyzer"
         assert ema20.parameters[0].value == 20
 
         atr14 = analysis.definitions[1]
-        assert atr14.impl == "ATRAnalyzer"
+        assert atr14.provider == "ATRAnalyzer"
 
         swing = analysis.definitions[2]
-        assert swing.impl == "SwingStructureAnalyzer"
+        assert swing.provider == "SwingStructureAnalyzer"
         assert len(swing.bindings) == 1
         assert swing.bindings[0].source == "atr14"
 
         signal = analysis.definitions[3]
-        assert signal.type == "signal"
-        assert signal.impl == "PullbackSignal"
+        assert signal.provider == "PullbackSignal"
         assert len(signal.bindings) == 2
         assert signal.bindings[0].source == "swing"
         assert signal.bindings[1].source == "ema20"

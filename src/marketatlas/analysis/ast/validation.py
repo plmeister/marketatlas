@@ -6,8 +6,6 @@ from enum import Enum
 
 from marketatlas.analysis.ast.models import Analysis, Definition
 
-VALID_TYPES = frozenset({"analyzer", "signal", "risk", "transformer"})
-
 
 class DiagnosticSeverity(Enum):
     ERROR = "error"
@@ -80,6 +78,7 @@ def validate(analysis: Analysis) -> ValidationResult:
     errors: list[Diagnostic] = []
     warnings: list[Diagnostic] = []
 
+    provider_names = {p.name for p in analysis.providers}
     def_names = {d.name for d in analysis.definitions}
 
     seen_names: set[str] = set()
@@ -93,21 +92,30 @@ def validate(analysis: Analysis) -> ValidationResult:
                     message=f"Duplicate definition name: {d.name}",
                     severity=DiagnosticSeverity.ERROR,
                     node_name=d.name,
-                    node_type=d.type,
+                    node_type="definition",
                 )
             )
         seen_names.add(d.name)
         ref_counts.setdefault(d.name, 0)
 
-        if d.type not in VALID_TYPES:
-            valid_str = ", ".join(sorted(VALID_TYPES))
+        if not d.provider:
             errors.append(
                 Diagnostic(
-                    message=f"Unknown definition type: '{d.type}'. "
-                    f"Must be one of: {valid_str}",
+                    message="Definition has empty provider",
                     severity=DiagnosticSeverity.ERROR,
                     node_name=d.name,
-                    node_type=d.type,
+                    node_type="definition",
+                )
+            )
+        elif d.provider not in provider_names:
+            valid_str = ", ".join(sorted(provider_names)) if provider_names else "(none)"
+            errors.append(
+                Diagnostic(
+                    message=f"Unknown provider: '{d.provider}'. "
+                    f"Available providers: {valid_str}",
+                    severity=DiagnosticSeverity.ERROR,
+                    node_name=d.name,
+                    node_type="definition",
                 )
             )
 
@@ -119,7 +127,7 @@ def validate(analysis: Analysis) -> ValidationResult:
                         f"'{b.source}' binds to itself",
                         severity=DiagnosticSeverity.ERROR,
                         node_name=d.name,
-                        node_type=d.type,
+                        node_type="definition",
                     )
                 )
 
@@ -130,7 +138,7 @@ def validate(analysis: Analysis) -> ValidationResult:
                         f"'{b.source}'",
                         severity=DiagnosticSeverity.ERROR,
                         node_name=d.name,
-                        node_type=d.type,
+                        node_type="definition",
                     )
                 )
             else:
@@ -143,7 +151,7 @@ def validate(analysis: Analysis) -> ValidationResult:
                         f"'{b.target}'",
                         severity=DiagnosticSeverity.ERROR,
                         node_name=d.name,
-                        node_type=d.type,
+                        node_type="definition",
                     )
                 )
 
@@ -173,7 +181,7 @@ def validate(analysis: Analysis) -> ValidationResult:
                     f"is not referenced by any binding",
                     severity=DiagnosticSeverity.WARNING,
                     node_name=d.name,
-                    node_type=d.type,
+                    node_type="definition",
                 )
             )
 

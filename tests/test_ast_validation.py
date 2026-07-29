@@ -1,7 +1,16 @@
 import pytest
 
-from marketatlas.analysis.ast.models import Analysis, Binding, Definition, Parameter
+from marketatlas.analysis.ast.models import Analysis, Binding, Definition, Parameter, Provider
 from marketatlas.analysis.ast.validation import DiagnosticSeverity, ValidationResult, validate
+
+
+def _p(name: str) -> Provider:
+    """Quick provider factory for tests."""
+    return Provider(name=name, capability="", category="analyzer", impl=name)
+
+
+def _ps(*names: str) -> tuple[Provider, ...]:
+    return tuple(_p(n) for n in names)
 
 
 class TestValidationResult:
@@ -16,6 +25,18 @@ class TestValidationResult:
         assert not r.is_valid
 
 
+def _providers() -> tuple[Provider, ...]:
+    return (
+        Provider(name="EMAAnalyzer", capability="ema", category="analyzer", impl="EMAAnalyzer"),
+        Provider(name="ATRAnalyzer", capability="atr", category="analyzer", impl="ATRAnalyzer"),
+        Provider(name="TrendAnalyzer", capability="trend", category="analyzer", impl="TrendAnalyzer"),
+        Provider(name="SwingStructureAnalyzer", capability="swing", category="analyzer", impl="SwingStructureAnalyzer"),
+        Provider(name="PullbackSignal", capability="signal", category="signal", impl="PullbackSignal"),
+        Provider(name="RiskEngine", capability="risk", category="risk", impl="RiskEngine"),
+        Provider(name="Normalizer", capability="normalize", category="transformer", impl="Normalizer"),
+    )
+
+
 class TestValidAST:
     def test_minimal(self) -> None:
         a = Analysis(name="test", version="1.0.0")
@@ -28,8 +49,9 @@ class TestValidAST:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_providers(),
             definitions=(
-                Definition(name="ema20", type="analyzer", impl="EMAAnalyzer"),
+                Definition(name="ema20", provider="EMAAnalyzer"),
             ),
         )
         r = validate(a)
@@ -39,9 +61,10 @@ class TestValidAST:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_providers(),
             definitions=(
-                Definition(name="ema20", type="analyzer", impl="EMAAnalyzer"),
-                Definition(name="atr14", type="analyzer", impl="ATRAnalyzer"),
+                Definition(name="ema20", provider="EMAAnalyzer"),
+                Definition(name="atr14", provider="ATRAnalyzer"),
             ),
         )
         r = validate(a)
@@ -49,16 +72,16 @@ class TestValidAST:
 
     def test_with_bindings(self) -> None:
         atr = Definition(
-            name="atr14", type="analyzer", impl="ATRAnalyzer",
+            name="atr14", provider="ATRAnalyzer",
             parameters=(Parameter(name="period", value=14),),
         )
         swing = Definition(
-            name="swing", type="analyzer", impl="SwingStructureAnalyzer",
+            name="swing", provider="SwingStructureAnalyzer",
             bindings=(Binding(
                 source="atr14", output="atr_14", target="swing", input="atr"
             ),),
         )
-        a = Analysis(name="test", version="1.0.0", definitions=(atr, swing))
+        a = Analysis(name="test", version="1.0.0", providers=_providers(), definitions=(atr, swing))
         r = validate(a)
         assert r.is_valid
 
@@ -66,8 +89,9 @@ class TestValidAST:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_providers(),
             definitions=(
-                Definition(name="sig", type="signal", impl="PullbackSignal"),
+                Definition(name="sig", provider="PullbackSignal"),
             ),
         )
         r = validate(a)
@@ -77,8 +101,9 @@ class TestValidAST:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_providers(),
             definitions=(
-                Definition(name="risk", type="risk", impl="RiskEngine"),
+                Definition(name="risk", provider="RiskEngine"),
             ),
         )
         r = validate(a)
@@ -88,9 +113,10 @@ class TestValidAST:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_providers(),
             definitions=(
                 Definition(
-                    name="norm", type="transformer", impl="Normalizer"
+                    name="norm", provider="Normalizer"
                 ),
             ),
         )
@@ -101,9 +127,10 @@ class TestValidAST:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_providers(),
             definitions=(
                 Definition(
-                    name="ema20", type="analyzer", impl="EMAAnalyzer",
+                    name="ema20", provider="EMAAnalyzer",
                     metadata={"key": "val"},
                 ),
             ),
@@ -113,21 +140,21 @@ class TestValidAST:
 
     def test_full_strategy(self) -> None:
         ema = Definition(
-            name="ema20", type="analyzer", impl="EMAAnalyzer",
+            name="ema20", provider="EMAAnalyzer",
             parameters=(Parameter(name="period", value=20),),
         )
         atr = Definition(
-            name="atr14", type="analyzer", impl="ATRAnalyzer",
+            name="atr14", provider="ATRAnalyzer",
             parameters=(Parameter(name="period", value=14),),
         )
         swing = Definition(
-            name="swing", type="analyzer", impl="SwingStructureAnalyzer",
+            name="swing", provider="SwingStructureAnalyzer",
             bindings=(Binding(
                 source="atr14", output="atr_14", target="swing", input="atr"
             ),),
         )
         signal = Definition(
-            name="signal", type="signal", impl="PullbackSignal",
+            name="signal", provider="PullbackSignal",
             bindings=(
                 Binding(
                     source="swing", output="pullback",
@@ -141,6 +168,7 @@ class TestValidAST:
         )
         a = Analysis(
             name="pullback_4swing", version="1.0.0",
+            providers=_providers(),
             definitions=(ema, atr, swing, signal),
         )
         r = validate(a)
@@ -153,12 +181,13 @@ class TestDuplicateNames:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_providers(),
             definitions=(
                 Definition(
-                    name="dup", type="analyzer", impl="EMAAnalyzer"
+                    name="dup", provider="EMAAnalyzer"
                 ),
                 Definition(
-                    name="dup", type="analyzer", impl="ATRAnalyzer"
+                    name="dup", provider="ATRAnalyzer"
                 ),
             ),
         )
@@ -171,51 +200,51 @@ class TestDuplicateNames:
         assert r.errors[0].node_name == "dup"
 
 
-class TestUnknownType:
-    def test_unknown_type(self) -> None:
+class TestUnknownProvider:
+    def test_unknown_provider(self) -> None:
         a = Analysis(
             name="test",
             version="1.0.0",
             definitions=(
                 Definition(
-                    name="bad", type="watcher", impl="Something"
+                    name="bad", provider="NoSuchProvider"
                 ),
             ),
         )
         r = validate(a)
         assert not r.is_valid
         assert len(r.errors) == 1
-        assert "Unknown definition type" in r.errors[0].message
+        assert "Unknown provider" in r.errors[0].message
         assert r.errors[0].severity == DiagnosticSeverity.ERROR
         assert r.errors[0].node_name == "bad"
-        assert r.errors[0].node_type == "watcher"
 
-    def test_unknown_type_with_valid_def(self) -> None:
+    def test_unknown_provider_with_valid_one(self) -> None:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_providers(),
             definitions=(
                 Definition(
-                    name="good", type="analyzer", impl="EMAAnalyzer"
+                    name="good", provider="EMAAnalyzer"
                 ),
                 Definition(
-                    name="bad", type="invalid", impl="Something"
+                    name="bad", provider="NoSuchProvider"
                 ),
             ),
         )
         r = validate(a)
         assert not r.is_valid
-        type_errors = [
-            e for e in r.errors if "Unknown definition type" in e.message
+        provider_errors = [
+            e for e in r.errors if "Unknown provider" in e.message
         ]
-        assert len(type_errors) == 1
+        assert len(provider_errors) == 1
 
-    def test_empty_type_is_invalid(self) -> None:
+    def test_empty_provider_is_invalid(self) -> None:
         a = Analysis(
             name="test",
             version="1.0.0",
             definitions=(
-                Definition(name="x", type="", impl="A"),
+                Definition(name="x", provider=""),
             ),
         )
         r = validate(a)
@@ -227,9 +256,10 @@ class TestSelfReferencingBinding:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_ps("A"),
             definitions=(
                 Definition(
-                    name="a", type="analyzer", impl="A",
+                    name="a", provider="A",
                     bindings=(Binding(
                         source="a", output="x", target="a", input="y"
                     ),),
@@ -242,6 +272,27 @@ class TestSelfReferencingBinding:
         assert "Self-referencing" in r.errors[0].message
         assert r.errors[0].severity == DiagnosticSeverity.ERROR
 
+    def test_no_provider_needed_for_self_ref_check(self) -> None:
+        """Self-referencing binding check works alongside empty provider error."""
+        a = Analysis(
+            name="test",
+            version="1.0.0",
+            definitions=(
+                Definition(
+                    name="a", provider="",
+                    bindings=(Binding(
+                        source="a", output="x", target="a", input="y"
+                    ),),
+                ),
+            ),
+        )
+        r = validate(a)
+        assert not r.is_valid
+        self_ref = [e for e in r.errors if "Self-referencing" in e.message]
+        assert len(self_ref) == 1
+        empty_prov = [e for e in r.errors if "empty provider" in e.message]
+        assert len(empty_prov) == 1
+
 
 class TestUnknownReferences:
     def test_unknown_source(self) -> None:
@@ -250,7 +301,7 @@ class TestUnknownReferences:
             version="1.0.0",
             definitions=(
                 Definition(
-                    name="b", type="analyzer", impl="B",
+                    name="b", provider="B",
                     bindings=(Binding(
                         source="unknown", output="x",
                         target="b", input="y"
@@ -271,7 +322,7 @@ class TestUnknownReferences:
             version="1.0.0",
             definitions=(
                 Definition(
-                    name="a", type="analyzer", impl="A",
+                    name="a", provider="A",
                     bindings=(Binding(
                         source="a", output="x",
                         target="unknown", input="y"
@@ -290,9 +341,10 @@ class TestUnknownReferences:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_ps("C"),
             definitions=(
                 Definition(
-                    name="c", type="analyzer", impl="C",
+                    name="c", provider="C",
                     bindings=(Binding(
                         source="x", output="o",
                         target="y", input="i"
@@ -310,16 +362,17 @@ class TestCycleDetection:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_ps("A", "B"),
             definitions=(
                 Definition(
-                    name="a", type="analyzer", impl="A",
+                    name="a", provider="A",
                     bindings=(Binding(
                         source="b", output="x",
                         target="a", input="y"
                     ),),
                 ),
                 Definition(
-                    name="b", type="analyzer", impl="B",
+                    name="b", provider="B",
                     bindings=(Binding(
                         source="a", output="x",
                         target="b", input="y"
@@ -338,23 +391,24 @@ class TestCycleDetection:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_ps("A", "B", "C"),
             definitions=(
                 Definition(
-                    name="a", type="analyzer", impl="A",
+                    name="a", provider="A",
                     bindings=(Binding(
                         source="b", output="x",
                         target="a", input="y"
                     ),),
                 ),
                 Definition(
-                    name="b", type="analyzer", impl="B",
+                    name="b", provider="B",
                     bindings=(Binding(
                         source="c", output="x",
                         target="b", input="y"
                     ),),
                 ),
                 Definition(
-                    name="c", type="analyzer", impl="C",
+                    name="c", provider="C",
                     bindings=(Binding(
                         source="a", output="x",
                         target="c", input="y"
@@ -373,17 +427,18 @@ class TestCycleDetection:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_ps("A", "B", "C"),
             definitions=(
-                Definition(name="a", type="analyzer", impl="A"),
+                Definition(name="a", provider="A"),
                 Definition(
-                    name="b", type="analyzer", impl="B",
+                    name="b", provider="B",
                     bindings=(Binding(
                         source="a", output="x",
                         target="b", input="y"
                     ),),
                 ),
                 Definition(
-                    name="c", type="analyzer", impl="C",
+                    name="c", provider="C",
                     bindings=(Binding(
                         source="b", output="x",
                         target="c", input="y"
@@ -395,21 +450,22 @@ class TestCycleDetection:
         assert r.is_valid
 
     def test_fork_graph_no_cycle(self) -> None:
-        src = Definition(name="src", type="analyzer", impl="A")
+        src = Definition(name="src", provider="A")
         b1 = Definition(
-            name="b1", type="analyzer", impl="B1",
+            name="b1", provider="B1",
             bindings=(Binding(
                 source="src", output="x", target="b1", input="y"
             ),),
         )
         b2 = Definition(
-            name="b2", type="analyzer", impl="B2",
+            name="b2", provider="B2",
             bindings=(Binding(
                 source="src", output="x", target="b2", input="y"
             ),),
         )
         a = Analysis(
             name="test", version="1.0.0",
+            providers=_ps("A", "B1", "B2"),
             definitions=(src, b1, b2),
         )
         r = validate(a)
@@ -421,11 +477,12 @@ class TestUnusedDefinitions:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_ps("A", "B", "C"),
             definitions=(
-                Definition(name="used", type="analyzer", impl="A"),
-                Definition(name="unused", type="analyzer", impl="B"),
+                Definition(name="used", provider="A"),
+                Definition(name="unused", provider="B"),
                 Definition(
-                    name="ref", type="analyzer", impl="C",
+                    name="ref", provider="C",
                     bindings=(Binding(
                         source="used", output="x",
                         target="ref", input="y"
@@ -444,9 +501,10 @@ class TestUnusedDefinitions:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_ps("A", "B"),
             definitions=(
-                Definition(name="a", type="analyzer", impl="A"),
-                Definition(name="b", type="analyzer", impl="B"),
+                Definition(name="a", provider="A"),
+                Definition(name="b", provider="B"),
             ),
         )
         r = validate(a)
@@ -457,10 +515,11 @@ class TestUnusedDefinitions:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_ps("A", "B"),
             definitions=(
-                Definition(name="a", type="analyzer", impl="A"),
+                Definition(name="a", provider="A"),
                 Definition(
-                    name="b", type="analyzer", impl="B",
+                    name="b", provider="B",
                     bindings=(Binding(
                         source="a", output="x",
                         target="b", input="y"
@@ -476,8 +535,9 @@ class TestUnusedDefinitions:
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_ps("A"),
             definitions=(
-                Definition(name="only", type="analyzer", impl="A"),
+                Definition(name="only", provider="A"),
             ),
         )
         r = validate(a)
@@ -492,16 +552,16 @@ class TestMultipleErrors:
             version="1.0.0",
             definitions=(
                 Definition(
-                    name="bad_type", type="invalid", impl="X"
+                    name="bad_prov", provider="NoSuchProvider"
                 ),
                 Definition(
-                    name="dup", type="analyzer", impl="A"
+                    name="dup", provider="A"
                 ),
                 Definition(
-                    name="dup", type="analyzer", impl="B"
+                    name="dup", provider="B"
                 ),
                 Definition(
-                    name="self_ref", type="analyzer", impl="C",
+                    name="self_ref", provider="C",
                     bindings=(Binding(
                         source="self_ref", output="o",
                         target="self_ref", input="i"
@@ -519,10 +579,10 @@ class TestMultipleErrors:
             version="1.0.0",
             definitions=(
                 Definition(
-                    name="bad_type", type="invalid", impl="X"
+                    name="bad_prov", provider="NoSuchProvider"
                 ),
                 Definition(
-                    name="unused", type="analyzer", impl="A"
+                    name="unused", provider="A"
                 ),
             ),
         )
@@ -539,12 +599,12 @@ class TestDiagnostic:
             message="test error",
             severity=DiagnosticSeverity.ERROR,
             node_name="ema20",
-            node_type="analyzer",
+            node_type="definition",
         )
         assert d.message == "test error"
         assert d.severity == DiagnosticSeverity.ERROR
         assert d.node_name == "ema20"
-        assert d.node_type == "analyzer"
+        assert d.node_type == "definition"
 
     def test_diagnostic_frozen(self) -> None:
         from marketatlas.analysis.ast.validation import Diagnostic

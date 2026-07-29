@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 
-from marketatlas.analysis.ast.models import Analysis, Binding, Definition, Parameter
+from marketatlas.analysis.ast.models import (
+    Analysis,
+    Binding,
+    Definition,
+    Parameter,
+    Provider,
+)
 
 
 def _parameter_to_dict(p: Parameter) -> dict[str, object]:
@@ -14,11 +20,22 @@ def _binding_to_dict(b: Binding) -> dict[str, str]:
     return {"source": b.source, "output": b.output, "target": b.target, "input": b.input}
 
 
+def _provider_to_dict(p: Provider) -> dict[str, object]:
+    obj: dict[str, object] = {
+        "name": p.name,
+        "capability": p.capability,
+        "category": p.category,
+        "impl": p.impl,
+    }
+    if p.default_params:
+        obj["default_params"] = [_parameter_to_dict(pp) for pp in p.default_params]
+    return obj
+
+
 def _definition_to_dict(d: Definition) -> dict[str, object]:
     obj: dict[str, object] = {
         "name": d.name,
-        "type": d.type,
-        "impl": d.impl,
+        "provider": d.provider,
     }
     if d.parameters:
         obj["parameters"] = [_parameter_to_dict(p) for p in d.parameters]
@@ -38,6 +55,8 @@ def to_dict(analysis: Analysis) -> dict[str, object]:
     }
     if analysis.definitions:
         obj["definitions"] = [_definition_to_dict(d) for d in analysis.definitions]
+    if analysis.providers:
+        obj["providers"] = [_provider_to_dict(p) for p in analysis.providers]
     if analysis.id:
         obj["id"] = analysis.id
     if analysis.metadata:
@@ -70,8 +89,24 @@ def _dict_to_binding(d: Mapping[str, object]) -> Binding:
     )
 
 
+def _dict_to_provider(d: Mapping[str, object]) -> Provider:
+    for field in ("name", "capability", "category", "impl"):
+        if field not in d:
+            raise ValueError(f"Missing required field: {field}")
+    params_raw = d.get("default_params", ())
+    assert isinstance(params_raw, Sequence)
+    params = tuple(_dict_to_parameter(p) for p in params_raw)
+    return Provider(
+        name=d["name"],  # type: ignore[arg-type]
+        capability=d["capability"],  # type: ignore[arg-type]
+        category=d["category"],  # type: ignore[arg-type]
+        impl=d["impl"],  # type: ignore[arg-type]
+        default_params=params,
+    )
+
+
 def _dict_to_definition(d: Mapping[str, object]) -> Definition:
-    for field in ("name", "type", "impl"):
+    for field in ("name", "provider"):
         if field not in d:
             raise ValueError(f"Missing required field: {field}")
     params_raw = d.get("parameters", ())
@@ -82,8 +117,7 @@ def _dict_to_definition(d: Mapping[str, object]) -> Definition:
     bindings = tuple(_dict_to_binding(b) for b in bindings_raw)
     return Definition(
         name=d["name"],  # type: ignore[arg-type]
-        type=d["type"],  # type: ignore[arg-type]
-        impl=d["impl"],  # type: ignore[arg-type]
+        provider=d["provider"],  # type: ignore[arg-type]
         parameters=params,
         bindings=bindings,
         id=d.get("id", ""),  # type: ignore[arg-type]
@@ -98,10 +132,14 @@ def from_dict(data: Mapping[str, object]) -> Analysis:
     definitions_raw = data.get("definitions", ())
     definitions_list: Sequence[Mapping[str, object]] = definitions_raw  # type: ignore[assignment]
     definitions = tuple(_dict_to_definition(d) for d in definitions_list)
+    providers_raw = data.get("providers", ())
+    providers_list: Sequence[Mapping[str, object]] = providers_raw  # type: ignore[assignment]
+    providers = tuple(_dict_to_provider(p) for p in providers_list)
     return Analysis(
         name=data["name"],  # type: ignore[arg-type]
         version=data["version"],  # type: ignore[arg-type]
         definitions=definitions,
+        providers=providers,
         id=data.get("id", ""),  # type: ignore[arg-type]
         metadata=data.get("metadata", None),  # type: ignore[arg-type]
     )

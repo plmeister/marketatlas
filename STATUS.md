@@ -39,3 +39,4 @@
 - [x] 038 — AST validation (semantic checks)
 - [x] 039 — AST serialization (JSON)
 - [x] 040 — Compiler adapter (AST to graph)
+- [x] 041 — Capability, Provider, Definition separation

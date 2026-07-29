@@ -28,10 +28,25 @@ class Binding:
 
 
 @dataclass(frozen=True)
+class Capability:
+    id: str
+    description: str
+    required_params: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Provider:
+    name: str
+    capability: str
+    category: str
+    impl: str
+    default_params: tuple[Parameter, ...] = ()
+
+
+@dataclass(frozen=True)
 class Definition:
     name: str
-    type: str
-    impl: str
+    provider: str
     parameters: tuple[Parameter, ...] = ()
     bindings: tuple[Binding, ...] = ()
     id: str = ""
@@ -43,5 +58,6 @@ class Analysis:
     name: str
     version: str
     definitions: tuple[Definition, ...] = ()
+    providers: tuple[Provider, ...] = ()
     id: str = ""
     metadata: dict[str, str] | None = None

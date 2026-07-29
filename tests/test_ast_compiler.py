@@ -125,17 +125,6 @@ class TestToConfig:
         assert config.signals[0].requires == ("atr_14",)
         assert config.signals[1].requires == ("atr_14",)
 
-    def test_transformer_definitions_skipped(self) -> None:
-        a = (
-            AnalysisBuilder("test", "1.0")
-            .define("transform", "transformer", "SomeTransformer")
-            .build()
-        )
-        config = ASTCompiler.to_config(a)
-        assert config.analyzers == ()
-        assert config.signals == ()
-        assert config.risk == RiskConfig(algorithm="none")
-
 
 class TestCompile:
     def test_builds_graph_from_analyzers(self) -> None:
