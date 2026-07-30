@@ -9,6 +9,7 @@ from marketatlas.analysis.analyzers.atr import ATRAnalyzer
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.analyzers.sr import SupportResistanceAnalyzer
 from marketatlas.analysis.analyzers.swing import SwingStructureAnalyzer
+from marketatlas.analysis.analyzers.swing_basic import BasicSwingAnalyzer
 from marketatlas.analysis.analyzers.trend import TrendAnalyzer
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
@@ -21,6 +22,7 @@ ANALYZER_TYPES: dict[str, type[Analyzer]] = {
     "ATRAnalyzer": ATRAnalyzer,
     "TrendAnalyzer": TrendAnalyzer,
     "SwingStructureAnalyzer": SwingStructureAnalyzer,
+    "BasicSwingAnalyzer": BasicSwingAnalyzer,
     "SupportResistanceAnalyzer": SupportResistanceAnalyzer,
     "FourSwingPullbackDetector": FourSwingPullbackDetector,
 }
@@ -82,8 +84,7 @@ def validate_config(config: StrategyConfig) -> list[str]:
             needed = FactKey(req_key)
             if needed not in produces_keys:
                 errors.append(
-                    f"Signal '{sc.type}' at index {i} requires '{req_key}' "
-                    "not found in analyzers"
+                    f"Signal '{sc.type}' at index {i} requires '{req_key}' not found in analyzers"
                 )
     return errors
 
@@ -129,9 +130,7 @@ def _parse_signals(raw: Any) -> tuple[SignalConfig, ...]:
         rules = item.get("rules", {})
         if not isinstance(rules, dict):
             raise ConfigError(f"Signal at index {i} 'rules' must be a mapping")
-        configs.append(
-            SignalConfig(type=stype, requires=tuple(requires_raw), rules=rules)
-        )
+        configs.append(SignalConfig(type=stype, requires=tuple(requires_raw), rules=rules))
     return tuple(configs)
 
 
