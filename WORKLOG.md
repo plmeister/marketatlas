@@ -54,3 +54,4 @@
 - **033** — Instrument Registry: Instrument dataclass (canonical, asset_class, description, providers), InstrumentRegistry (load/save YAML, lookup by canonical, reverse resolve, CLI instruments list/add). YahooProvider supports optional registry for symbol resolution. 16 tests. 680 total.
 - **046** — Snapshot tests for compiled analyses: single/linear/branching/full strategy AST + graph snapshots. `--update-snapshots` flag, JSON snapshots in `tests/snapshots/`. 10 tests. 713 total.
 - **034 fix** — scrollToFrame now uses `candleSeries.data()` instead of CANDLES for index lookup, clamps targetPos ≥ 0, widens scroll threshold to 15% of visible bars. Prevents broken auto-scroll when future candles hidden.
+- Viz: breakeven count displayed in summary bar. JS tracks `breakevens` in `updateSummary()`, BE: stat in HTML template. `s-trades` shows total closed (incl. breakevens). Win rate uses win+loss only. 715 total.

@@ -302,6 +302,7 @@ _INTERACTIVE_TEMPLATE = """\
   <span class="stat">P&amp;L: <b id="s-pnl">0.00</b></span>
   <span class="stat">Return: <b id="s-return">0.0%</b></span>
   <span class="stat">Trades: <b id="s-trades">0</b></span>
+  <span class="stat">BE: <b id="s-breakevens">0</b></span>
   <span class="stat">W/L: <b id="s-winrate">0.0%</b></span>
   <span class="stat">PF: <b id="s-pf">0.0</b></span>
   <span class="stat">Avg W: <b id="s-avgwin">0.00</b></span>

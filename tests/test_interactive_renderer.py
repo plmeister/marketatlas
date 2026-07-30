@@ -545,6 +545,33 @@ class TestInteractiveRenderer:
         assert "s-pnl" in content
         assert "s-expectancy" in content
 
+    def test_breakeven_in_summary(self, tmp_path: object) -> None:
+        path = tmp_path / "be.html"  # type: ignore[operator]
+        store = _make_store(15)
+        frame_store = _make_frame_store(10)
+        from marketatlas.facts.structural import TrendDirection
+        from marketatlas.strategy.signals import TradeSignal
+        from marketatlas.strategy.trade import TradeCandidate
+        tb = TradeBook(initial_balance=1000.0)
+        signal = TradeSignal(
+            direction=TrendDirection.BULLISH, entry_zone=(100.0, 105.0),
+            confidence=0.8, source="test", evidence=(),
+        )
+        candidate = TradeCandidate(
+            direction=TrendDirection.BULLISH, entry=103.0, stop=98.0, target=118.0,
+            size=0.2, risk_amount=10.0, reward_amount=30.0,
+            rr_ratio=3.0, slippage_pct=0.1, source="test", evidence=(),
+        )
+        # Breakeven trade: entry == exit
+        tb.submit_order(candidate, signal, "test", BASE + timedelta(days=1))
+        tb.fill_order(103.0, BASE + timedelta(days=2))
+        tb.close_trade(103.0, BASE + timedelta(days=3))
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        InteractiveRenderer(ctx).render(path)
+        content = path.read_text()
+        assert '"breakeven"' in content
+        assert "s-breakevens" in content
+
     def test_swing_markers_in_output(self, tmp_path: object) -> None:
         path = tmp_path / "swings.html"  # type: ignore[operator]
         store = _make_store(10)

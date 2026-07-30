@@ -418,7 +418,7 @@ function updateEvidence(frameIdx) {
 // --- Summary bar ---
 function updateSummary(frameIdx) {
   let bal = INITIAL_BALANCE;
-  let wins = 0, losses = 0, pnl = 0;
+  let wins = 0, losses = 0, breakevens = 0, pnl = 0;
   let grossProfit = 0, grossLoss = 0;
   let peak = INITIAL_BALANCE, worst = 0;
   TRADES.forEach(t => {
@@ -426,7 +426,8 @@ function updateSummary(frameIdx) {
       bal += t.pnl;
       pnl += t.pnl;
       if (t.result === 'win') { wins++; grossProfit += t.pnl; }
-      if (t.result === 'loss') { losses++; grossLoss += Math.abs(t.pnl); }
+      else if (t.result === 'loss') { losses++; grossLoss += Math.abs(t.pnl); }
+      else if (t.result === 'breakeven') { breakevens++; }
     }
     if (bal > peak) peak = bal;
     const dd = peak > 0 ? (peak - bal) / peak : 0;
@@ -440,10 +441,12 @@ function updateSummary(frameIdx) {
   const retPct = INITIAL_BALANCE > 0 ? (pnl / INITIAL_BALANCE * 100) : 0;
   retEl.textContent = retPct.toFixed(1) + '%';
   retEl.className = retPct >= 0 ? 'pnl-pos' : 'pnl-neg';
-  document.getElementById('s-trades').textContent = String(wins + losses);
-  const total = wins + losses;
+  const totalClosed = wins + losses + breakevens;
+  document.getElementById('s-trades').textContent = String(totalClosed);
+  document.getElementById('s-breakevens').textContent = String(breakevens);
+  const winLossTotal = wins + losses;
   document.getElementById('s-winrate').textContent =
-      total > 0 ? (wins / total * 100).toFixed(0) + '%' : '0.0%';
+      winLossTotal > 0 ? (wins / winLossTotal * 100).toFixed(0) + '%' : '0.0%';
   const pf = grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? Infinity : 0);
   document.getElementById('s-pf').textContent =
       pf === Infinity ? '\u221e' : pf.toFixed(2);
@@ -451,7 +454,7 @@ function updateSummary(frameIdx) {
       wins > 0 ? (grossProfit / wins).toFixed(2) : '0.00';
   document.getElementById('s-avgloss').textContent =
       losses > 0 ? (-grossLoss / losses).toFixed(2) : '0.00';
-  const exp = total > 0 ? pnl / total : 0;
+  const exp = winLossTotal > 0 ? pnl / winLossTotal : 0;
   document.getElementById('s-expectancy').textContent = (exp >= 0 ? '$' : '-$') + Math.abs(exp).toFixed(2);
   document.getElementById('s-drawdown').textContent = (worst * 100).toFixed(1) + '%';
 }
