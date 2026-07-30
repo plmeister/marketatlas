@@ -6,6 +6,7 @@ from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
+from marketatlas.facts.base import Fact
 from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
@@ -76,7 +77,7 @@ def _atr_fact(value: float = 2.0) -> ATRFact:
 
 def _keyed_facts(
     trend: TrendFact, atr: ATRFact
-) -> dict[FactKey, object]:
+) -> dict[FactKey, Fact]:
     return {
         FactKey("trend"): trend,
         FactKey("atr_14"): atr,
