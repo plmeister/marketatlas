@@ -34,6 +34,7 @@
 - [x] 035 — Future candle visibility
 - [x] 033 — Instrument registry
 - [x] 046 — Multi-timeframe data fetching
+- [x] 045 — Multi-resolution MarketView
 
 ## AST Layer
 
