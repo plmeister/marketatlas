@@ -868,3 +868,19 @@ class TestInteractiveRenderer:
         content = path.read_text()  # type: ignore[union-attr]
         # Volume chart participates in time scale sync
         assert "volumeChart.timeScale()" in content
+
+    def test_candle_highlight_uses_update(self, tmp_path: object) -> None:
+        path = tmp_path / "hl.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "updateCandleHighlight" in content
+        assert "candleSeries.update" in content
+        assert "borderColor: '#facc15'" in content
+        assert "wickColor: '#facc15'" in content
+        # Old approach (line series with setData) should be gone
+        assert "candleHighlightLine" not in content
