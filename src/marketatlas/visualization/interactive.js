@@ -17,7 +17,6 @@ let playInterval = null;
 let autoScrollDisabled = false;
 let programmaticScroll = false;
 let futureVisibility = 'hide'; // 'hide' | 'dim' | 'show'
-let _visibilityNeedsReset = false;
 
 // --- Chart setup ---
 const chartContainer = document.getElementById('chart-container');
@@ -536,9 +535,8 @@ function updateCandles(frameIdx) {
       return c;
     });
     candleSeries.setData(dimmed);
-  } else if (_visibilityNeedsReset) {
+  } else {
     candleSeries.setData(CANDLES);
-    _visibilityNeedsReset = false;
   }
 }
 
@@ -546,7 +544,6 @@ const futureVisibilityLabels = { hide: '\u{1F441} Hide', dim: '\u{1F441}\uFE0F D
 function toggleFutureVisibility() {
   futureVisibility = futureVisibility === 'hide' ? 'dim' : futureVisibility === 'dim' ? 'show' : 'hide';
   document.getElementById('btn-visibility').innerHTML = futureVisibilityLabels[futureVisibility];
-  _visibilityNeedsReset = true;
   updateCandles(currentFrame);
 }
 
