@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
 from marketatlas.data.types import Symbol
 

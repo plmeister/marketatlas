@@ -3,13 +3,13 @@ from datetime import UTC, datetime
 import pytest
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.analyzers.trend import TrendAnalyzer
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
-from marketatlas.analysis.factkey import FactKey
-from marketatlas.facts.primitive import ATRFact, EMAFact
+from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
 
 BASE = datetime(2024, 1, 1, tzinfo=UTC)

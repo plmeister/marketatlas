@@ -18,7 +18,11 @@ from marketatlas.analysis.ast.pipeline import (
     RegistryResolutionPass,
     ValidationPass,
 )
-from marketatlas.analysis.ast.registry import ProviderNotFoundError, ProviderRegistry, create_default_registry
+from marketatlas.analysis.ast.registry import (
+    ProviderNotFoundError,
+    ProviderRegistry,
+    create_default_registry,
+)
 from marketatlas.analysis.ast.serialization import from_dict, from_json, to_dict, to_json
 from marketatlas.analysis.ast.validation import (
     Diagnostic,

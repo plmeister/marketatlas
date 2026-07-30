@@ -5,7 +5,6 @@ Proves every component only sees data available at or before the current candle.
 
 from datetime import datetime, timedelta
 
-from marketatlas.analysis.factkey import FactKey
 from marketatlas.backtesting.backtester import Backtester
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe

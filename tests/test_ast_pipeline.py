@@ -1,5 +1,4 @@
 import pytest
-
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.ast.builder import AnalysisBuilder
 from marketatlas.analysis.ast.models import Analysis, Definition, Parameter, Provider

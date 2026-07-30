@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
-
 from marketatlas.data.types import Candle
 from marketatlas.facts.structural import TrendDirection
 from marketatlas.strategy.signals import TradeSignal

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from marketatlas.analysis.ast.builder import AnalysisBuilder
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.ast.serialization import to_json
@@ -118,7 +117,9 @@ class TestLinearChain:
             .define("trend", "analyzer", "TrendAnalyzer")
             .build()
         )
-        assert _graph_structure_to_dict(ASTCompiler.compile(a1)) == _graph_structure_to_dict(ASTCompiler.compile(a2))
+        assert _graph_structure_to_dict(
+            ASTCompiler.compile(a1)
+        ) == _graph_structure_to_dict(ASTCompiler.compile(a2))
 
 
 class TestBranching:

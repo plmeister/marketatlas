@@ -1,11 +1,10 @@
 from datetime import UTC, datetime
 
-
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
-from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import (

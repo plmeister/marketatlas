@@ -35,7 +35,7 @@ class SwingStructureAnalyzer(Analyzer):
     ) -> AnalysisResult:
         atr_fact = facts.get(FactKey(self._atr_key))
         if not isinstance(atr_fact, ATRFact) or atr_fact.value <= 0:
-            evidence = (
+            evidence: tuple[EvidenceEntry, ...] = (
                 EvidenceEntry(
                     text="No swings detected — ATR unavailable or zero",
                     level=EvidenceLevel.INFO,

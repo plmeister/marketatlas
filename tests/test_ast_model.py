@@ -44,7 +44,9 @@ class TestParameter:
 
 class TestCapability:
     def test_construction(self) -> None:
-        c = Capability(id="compute_ema", description="EMA computation", required_params=("period", "source"))
+        c = Capability(
+            id="compute_ema", description="EMA computation", required_params=("period", "source")
+        )
         assert c.id == "compute_ema"
         assert c.description == "EMA computation"
         assert c.required_params == ("period", "source")
@@ -61,7 +63,9 @@ class TestCapability:
 
 class TestProvider:
     def test_construction(self) -> None:
-        p = Provider(name="EMAAnalyzer", capability="compute_ema", category="analyzer", impl="EMAAnalyzer")
+        p = Provider(
+            name="EMAAnalyzer", capability="compute_ema", category="analyzer", impl="EMAAnalyzer"
+        )
         assert p.name == "EMAAnalyzer"
         assert p.capability == "compute_ema"
         assert p.category == "analyzer"
@@ -159,10 +163,19 @@ class TestAnalysis:
 
     def test_with_definitions_and_providers(self) -> None:
         providers = (
-            Provider(name="EMAAnalyzer", capability="compute_ema", category="analyzer", impl="EMAAnalyzer"),
+            Provider(
+                name="EMAAnalyzer",
+                capability="compute_ema",
+                category="analyzer",
+                impl="EMAAnalyzer",
+            ),
         )
         defs = (
-            Definition(name="ema20", provider="EMAAnalyzer", parameters=(Parameter(name="period", value=20),)),
+            Definition(
+                name="ema20",
+                provider="EMAAnalyzer",
+                parameters=(Parameter(name="period", value=20),),
+            ),
         )
         a = Analysis(name="test", version="1.0", definitions=defs, providers=providers)
         assert len(a.definitions) == 1
@@ -206,9 +219,24 @@ class TestAnalysis:
 class TestComplexAnalysis:
     def test_full_strategy(self) -> None:
         providers = (
-            Provider(name="EMAAnalyzer", capability="compute_ema", category="analyzer", impl="EMAAnalyzer"),
-            Provider(name="ATRAnalyzer", capability="compute_atr", category="analyzer", impl="ATRAnalyzer"),
-            Provider(name="SwingStructureAnalyzer", capability="detect_swings", category="analyzer", impl="SwingStructureAnalyzer"),
+            Provider(
+                name="EMAAnalyzer",
+                capability="compute_ema",
+                category="analyzer",
+                impl="EMAAnalyzer",
+            ),
+            Provider(
+                name="ATRAnalyzer",
+                capability="compute_atr",
+                category="analyzer",
+                impl="ATRAnalyzer",
+            ),
+            Provider(
+                name="SwingStructureAnalyzer",
+                capability="detect_swings",
+                category="analyzer",
+                impl="SwingStructureAnalyzer",
+            ),
         )
         analysis = Analysis(
             name="pullback_4swing",
@@ -218,7 +246,10 @@ class TestComplexAnalysis:
                 Definition(
                     name="ema20",
                     provider="EMAAnalyzer",
-                    parameters=(Parameter(name="period", value=20), Parameter(name="source", value="close")),
+                    parameters=(
+                        Parameter(name="period", value=20),
+                        Parameter(name="source", value="close"),
+                    ),
                 ),
                 Definition(
                     name="atr14",
@@ -228,8 +259,13 @@ class TestComplexAnalysis:
                 Definition(
                     name="swing",
                     provider="SwingStructureAnalyzer",
-                    parameters=(Parameter(name="lookback", value=100), Parameter(name="min_separation_atr", value=1.5)),
-                    bindings=(Binding(source="atr14", output="atr_14", target="swing", input="atr"),),
+                    parameters=(
+                        Parameter(name="lookback", value=100),
+                        Parameter(name="min_separation_atr", value=1.5),
+                    ),
+                    bindings=(
+                        Binding(source="atr14", output="atr_14", target="swing", input="atr"),
+                    ),
                 ),
             ),
             metadata={"author": "Scott", "description": "4-swing pullback strategy"},

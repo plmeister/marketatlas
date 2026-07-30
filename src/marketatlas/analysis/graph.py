@@ -7,7 +7,7 @@ from marketatlas.data.view import MarketView
 from marketatlas.facts.base import Fact
 
 from .base import Analyzer
-from .factkey import FactKey
+from .factkey import FactKey as FactKey
 
 
 class CyclicDependencyError(Exception):

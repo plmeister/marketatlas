@@ -1,7 +1,10 @@
 import pytest
-
 from marketatlas.analysis.ast.models import Parameter, Provider
-from marketatlas.analysis.ast.registry import ProviderNotFoundError, ProviderRegistry, create_default_registry
+from marketatlas.analysis.ast.registry import (
+    ProviderNotFoundError,
+    ProviderRegistry,
+    create_default_registry,
+)
 
 
 class _DummyAnalyzer:
@@ -62,7 +65,9 @@ class TestProviderRegistry:
         assert len(caplog.records) == 1
         assert "Multiple providers" in caplog.records[0].message
 
-    def test_resolve_ambiguous_no_warning_with_single(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_resolve_ambiguous_no_warning_with_single(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         r = ProviderRegistry()
         r.register("compute_ema", _DummyAnalyzer)
         import logging

@@ -5,13 +5,13 @@ from marketatlas.analysis.analyzers.atr import ATRAnalyzer
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.analyzers.swing import SwingStructureAnalyzer
 from marketatlas.analysis.analyzers.trend import TrendAnalyzer
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.graph import AnalysisGraph
 from marketatlas.analysis.patterns.four_swing_pullback import FourSwingPullbackDetector
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
-from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.base import Fact
 from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact
@@ -884,7 +884,9 @@ class TestFourSwingPullbackDetector:
         )
         zero_vol_candles = [(o, h, lo, c, 0.0) for o, h, lo, c, _v in linear_candles]
         store = _make_store(zero_vol_candles)
-        view = MarketView(store, cursor=len(zero_vol_candles) - 1, window_size=len(zero_vol_candles))
+        view = MarketView(
+            store, cursor=len(zero_vol_candles) - 1, window_size=len(zero_vol_candles)
+        )
         detector = FourSwingPullbackDetector(
             confirmation_min_body_pct=0.0,
             confirmation_min_volume_ratio=0.0,

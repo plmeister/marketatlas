@@ -23,10 +23,14 @@ class _DefinitionBuilder:
         self._bindings.append(Binding(source=source, output=output, target=target, input=input))
         return self
 
-    def define(self, name: str, type_or_provider: str, impl: str | None = None) -> _DefinitionBuilder:
+    def define(
+        self, name: str, type_or_provider: str, impl: str | None = None
+    ) -> _DefinitionBuilder:
         return self._builder.define(name, type_or_provider, impl)
 
-    def define_provider(self, name: str, capability: str, category: str, impl: str, **default_params: object) -> _DefinitionBuilder:
+    def define_provider(
+        self, name: str, capability: str, category: str, impl: str, **default_params: object
+    ) -> _DefinitionBuilder:
         self._builder.define_provider(name, capability, category, impl, **default_params)
         return self
 
@@ -58,7 +62,9 @@ class AnalysisBuilder:
         self._metadata[key] = value
         return self
 
-    def define(self, name: str, type_or_provider: str, impl: str | None = None) -> _DefinitionBuilder:
+    def define(
+        self, name: str, type_or_provider: str, impl: str | None = None
+    ) -> _DefinitionBuilder:
         if name in self._definitions:
             raise ValueError(f"Duplicate definition name: {name}")
 
@@ -82,7 +88,9 @@ class AnalysisBuilder:
         self._definitions[name] = db
         return db
 
-    def define_provider(self, name: str, capability: str, category: str, impl: str, **default_params: object) -> AnalysisBuilder:
+    def define_provider(
+        self, name: str, capability: str, category: str, impl: str, **default_params: object
+    ) -> AnalysisBuilder:
         params = tuple(
             Parameter(name=k, value=v) for k, v in default_params.items()
         )

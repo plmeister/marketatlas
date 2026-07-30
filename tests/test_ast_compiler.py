@@ -1,9 +1,6 @@
 import pytest
-
 from marketatlas.analysis.analyzers.atr import ATRAnalyzer
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
-from marketatlas.analysis.analyzers.swing import SwingStructureAnalyzer
-from marketatlas.analysis.analyzers.trend import TrendAnalyzer
 from marketatlas.analysis.ast.builder import AnalysisBuilder
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.graph import AnalysisGraph
@@ -219,7 +216,11 @@ class TestCompile:
                 AnalyzerConfig(type="SwingStructureAnalyzer", params={"lookback": 100}),
             ),
             signals=(
-                SignalConfig(type="PullbackSignal", requires=("trend", "atr_14", "four_swing_pullback"), rules={"min_strength": 0.5}),
+                SignalConfig(
+                    type="PullbackSignal",
+                    requires=("trend", "atr_14", "four_swing_pullback"),
+                    rules={"min_strength": 0.5},
+                ),
             ),
             risk=RiskConfig(algorithm="risk_based", params={"risk_pct": 1.0}),
         )

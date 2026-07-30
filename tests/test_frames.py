@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta
 
 import pytest
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.types import Candle
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
-from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.primitive import EMAFact
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.frames.store import FrameStore

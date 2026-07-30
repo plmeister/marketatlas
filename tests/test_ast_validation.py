@@ -1,5 +1,4 @@
 import pytest
-
 from marketatlas.analysis.ast.models import Analysis, Binding, Definition, Parameter, Provider
 from marketatlas.analysis.ast.validation import DiagnosticSeverity, ValidationResult, validate
 
@@ -27,13 +26,30 @@ class TestValidationResult:
 
 def _providers() -> tuple[Provider, ...]:
     return (
-        Provider(name="EMAAnalyzer", capability="ema", category="analyzer", impl="EMAAnalyzer"),
-        Provider(name="ATRAnalyzer", capability="atr", category="analyzer", impl="ATRAnalyzer"),
-        Provider(name="TrendAnalyzer", capability="trend", category="analyzer", impl="TrendAnalyzer"),
-        Provider(name="SwingStructureAnalyzer", capability="swing", category="analyzer", impl="SwingStructureAnalyzer"),
-        Provider(name="PullbackSignal", capability="signal", category="signal", impl="PullbackSignal"),
-        Provider(name="RiskEngine", capability="risk", category="risk", impl="RiskEngine"),
-        Provider(name="Normalizer", capability="normalize", category="transformer", impl="Normalizer"),
+        Provider(
+            name="EMAAnalyzer", capability="ema", category="analyzer", impl="EMAAnalyzer"
+        ),
+        Provider(
+            name="ATRAnalyzer", capability="atr", category="analyzer", impl="ATRAnalyzer"
+        ),
+        Provider(
+            name="TrendAnalyzer", capability="trend", category="analyzer", impl="TrendAnalyzer"
+        ),
+        Provider(
+            name="SwingStructureAnalyzer",
+            capability="swing",
+            category="analyzer",
+            impl="SwingStructureAnalyzer",
+        ),
+        Provider(
+            name="PullbackSignal", capability="signal", category="signal", impl="PullbackSignal"
+        ),
+        Provider(
+            name="RiskEngine", capability="risk", category="risk", impl="RiskEngine"
+        ),
+        Provider(
+            name="Normalizer", capability="normalize", category="transformer", impl="Normalizer"
+        ),
     )
 
 

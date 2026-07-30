@@ -1,9 +1,9 @@
 from datetime import UTC, datetime
 
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
-from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.base import Fact
 from marketatlas.strategy.bundle import StrategyBundle
 from marketatlas.strategy.config import AnalyzerConfig, SignalConfig, StrategyConfig

@@ -27,8 +27,8 @@ def fetch_command(args: argparse.Namespace) -> None:
         print(f"Error fetching data: {e}", file=sys.stderr)
         sys.exit(1)
 
-    import pyarrow as pa
-    import pyarrow.parquet as pq
+    import pyarrow as pa  # type: ignore[import-untyped]
+    import pyarrow.parquet as pq  # type: ignore[import-untyped]
 
     table = pa.table(
         {
@@ -42,7 +42,7 @@ def fetch_command(args: argparse.Namespace) -> None:
     )
 
     output_path = output_dir / f"{symbol.name}.{timeframe.value}.parquet"
-    pq.write_table(table, output_path)  # type: ignore[no-untyped-call]
+    pq.write_table(table, output_path)
     print(f"Saved {len(market_data.candles)} candles to {output_path}")
 
 

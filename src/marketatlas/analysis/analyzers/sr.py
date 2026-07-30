@@ -39,7 +39,7 @@ class SupportResistanceAnalyzer(Analyzer):
         atr_fact = facts.get(FactKey(self._atr_key))
 
         if not isinstance(swing_fact, SwingFact) or not swing_fact.swings:
-            evidence = (
+            evidence: tuple[EvidenceEntry, ...] = (
                 EvidenceEntry(
                     text="No S/R levels — no swings available",
                     level=EvidenceLevel.INFO,

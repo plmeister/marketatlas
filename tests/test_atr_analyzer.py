@@ -2,10 +2,10 @@ from datetime import UTC, datetime
 
 import pytest
 from marketatlas.analysis.analyzers.atr import ATRAnalyzer
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
-from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.primitive import ATRFact
 
 BASE = datetime(2024, 1, 1, tzinfo=UTC)

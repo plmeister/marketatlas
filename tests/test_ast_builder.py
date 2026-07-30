@@ -1,7 +1,6 @@
 import pytest
-
 from marketatlas.analysis.ast.builder import AnalysisBuilder
-from marketatlas.analysis.ast.models import Binding, Parameter, Provider
+from marketatlas.analysis.ast.models import Binding, Parameter
 
 
 class TestAnalysisBuilder:

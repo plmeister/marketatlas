@@ -325,7 +325,8 @@ _INTERACTIVE_TEMPLATE = """\
     <option value="100">10 fps</option>
   </select>
   <button id="btn-visibility" title="Toggle future candle visibility (V)">&#128065; Hide</button>
-  <button id="btn-autoscroll" class="active" title="Toggle auto-scroll (A)">&#128268; Scroll</button>
+  <button id="btn-autoscroll" class="active"
+    title="Toggle auto-scroll (A)">&#128268; Scroll</button>
 </div>
 <div id="main-area">
   <div id="chart-col">

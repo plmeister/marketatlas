@@ -1,11 +1,9 @@
 import json
 
 import pytest
-
 from marketatlas.analysis.ast.models import (
     Analysis,
     Binding,
-    Capability,
     Definition,
     Parameter,
     Provider,
@@ -15,9 +13,18 @@ from marketatlas.analysis.ast.serialization import from_dict, from_json, to_dict
 
 def _providers() -> tuple[Provider, ...]:
     return (
-        Provider(name="EMAAnalyzer", capability="compute_ema", category="analyzer", impl="EMAAnalyzer"),
-        Provider(name="ATRAnalyzer", capability="compute_atr", category="analyzer", impl="ATRAnalyzer"),
-        Provider(name="SwingStructureAnalyzer", capability="detect_swings", category="analyzer", impl="SwingStructureAnalyzer"),
+        Provider(
+            name="EMAAnalyzer", capability="compute_ema", category="analyzer", impl="EMAAnalyzer"
+        ),
+        Provider(
+            name="ATRAnalyzer", capability="compute_atr", category="analyzer", impl="ATRAnalyzer"
+        ),
+        Provider(
+            name="SwingStructureAnalyzer",
+            capability="detect_swings",
+            category="analyzer",
+            impl="SwingStructureAnalyzer",
+        ),
     )
 
 
@@ -48,7 +55,10 @@ class TestToDict:
                 Definition(
                     name="ema20",
                     provider="EMAAnalyzer",
-                    parameters=(Parameter(name="period", value=20), Parameter(name="source", value="close")),
+                    parameters=(
+                        Parameter(name="period", value=20),
+                        Parameter(name="source", value="close"),
+                    ),
                 ),
             ),
         )
@@ -64,13 +74,17 @@ class TestToDict:
                 Definition(
                     name="swing",
                     provider="SwingStructureAnalyzer",
-                    bindings=(Binding(source="atr14", output="atr_14", target="swing", input="atr"),),
+                    bindings=(
+                        Binding(source="atr14", output="atr_14", target="swing", input="atr"),
+                    ),
                 ),
             ),
         )
         d = to_dict(a)
         bindings = d["definitions"][0]["bindings"]
-        assert bindings == [{"source": "atr14", "output": "atr_14", "target": "swing", "input": "atr"}]
+        assert bindings == [
+            {"source": "atr14", "output": "atr_14", "target": "swing", "input": "atr"}
+        ]
 
     def test_with_providers(self) -> None:
         a = Analysis(
@@ -145,9 +159,24 @@ class TestFromDict:
             "name": "pullback_4swing",
             "version": "1.0.0",
             "providers": [
-                {"name": "EMAAnalyzer", "capability": "compute_ema", "category": "analyzer", "impl": "EMAAnalyzer"},
-                {"name": "ATRAnalyzer", "capability": "compute_atr", "category": "analyzer", "impl": "ATRAnalyzer"},
-                {"name": "SwingStructureAnalyzer", "capability": "detect_swings", "category": "analyzer", "impl": "SwingStructureAnalyzer"},
+                {
+                    "name": "EMAAnalyzer",
+                    "capability": "compute_ema",
+                    "category": "analyzer",
+                    "impl": "EMAAnalyzer",
+                },
+                {
+                    "name": "ATRAnalyzer",
+                    "capability": "compute_atr",
+                    "category": "analyzer",
+                    "impl": "ATRAnalyzer",
+                },
+                {
+                    "name": "SwingStructureAnalyzer",
+                    "capability": "detect_swings",
+                    "category": "analyzer",
+                    "impl": "SwingStructureAnalyzer",
+                },
             ],
             "definitions": [
                 {
@@ -213,7 +242,13 @@ class TestFromDict:
         with pytest.raises(ValueError, match="Missing required field"):
             from_dict({
                 "name": "test", "version": "1.0",
-                "definitions": [{"name": "d", "provider": "P", "bindings": [{"source": "a", "output": "x", "target": "b"}]}],
+                "definitions": [
+                    {
+                        "name": "d",
+                        "provider": "P",
+                        "bindings": [{"source": "a", "output": "x", "target": "b"}],
+                    }
+                ],
             })
 
     def test_provider_missing_field_raises(self) -> None:
@@ -232,7 +267,10 @@ class TestFromDict:
                 Definition(
                     name="ema20",
                     provider="EMAAnalyzer",
-                    parameters=(Parameter(name="period", value=20), Parameter(name="source", value="close")),
+                    parameters=(
+                        Parameter(name="period", value=20),
+                        Parameter(name="source", value="close"),
+                    ),
                 ),
                 Definition(
                     name="atr14",
@@ -243,7 +281,9 @@ class TestFromDict:
                     name="swing",
                     provider="SwingStructureAnalyzer",
                     parameters=(Parameter(name="lookback", value=100),),
-                    bindings=(Binding(source="atr14", output="atr_14", target="swing", input="atr"),),
+                    bindings=(
+                        Binding(source="atr14", output="atr_14", target="swing", input="atr"),
+                    ),
                 ),
             ),
             metadata={"author": "Scott", "description": "4-swing pullback strategy"},
@@ -333,7 +373,10 @@ class TestFromJson:
                 Definition(
                     name="ema20",
                     provider="EMAAnalyzer",
-                    parameters=(Parameter(name="period", value=20), Parameter(name="source", value="close")),
+                    parameters=(
+                        Parameter(name="period", value=20),
+                        Parameter(name="source", value="close"),
+                    ),
                     id="def_ema20",
                     metadata={"label": "Fast EMA"},
                 ),
@@ -341,7 +384,9 @@ class TestFromJson:
                     name="atr14",
                     provider="ATRAnalyzer",
                     parameters=(Parameter(name="period", value=14),),
-                    bindings=(Binding(source="ema20", output="ema_20", target="atr14", input="trend"),),
+                    bindings=(
+                        Binding(source="ema20", output="ema_20", target="atr14", input="trend"),
+                    ),
                 ),
             ),
             id="analysis_v2",

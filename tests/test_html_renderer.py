@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta
 
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
-from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import TrendDirection, TrendFact

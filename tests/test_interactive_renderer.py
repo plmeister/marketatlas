@@ -1,9 +1,9 @@
 from datetime import UTC, datetime, timedelta
 
+from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
-from marketatlas.analysis.factkey import FactKey
 from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import (
@@ -769,7 +769,8 @@ class TestInteractiveRenderer:
         content = path.read_text()  # type: ignore[union-attr]
         assert "!autoScrollDisabled" in content
         # Ensure no futureVisibility === 'hide' guard on auto-scroll
-        assert "futureVisibility === 'hide'" not in content.split("Auto-scroll chart")[1].split("}")[0]
+        segment = content.split("Auto-scroll chart")[1].split("}")[0]
+        assert "futureVisibility === 'hide'" not in segment
 
     def test_keyboard_shortcut_a_in_js(self, tmp_path: object) -> None:
         path = tmp_path / "kb_a.html"  # type: ignore[operator]
