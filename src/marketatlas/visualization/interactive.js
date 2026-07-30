@@ -176,25 +176,20 @@ function updateTradeLines(frameIdx) {
 }
 
 // --- Candle highlight ---
-const candleHighlightLine = chart.addLineSeries({
-  color: '#facc15',
-  lineWidth: 2,
-  priceLineVisible: false,
-  lastValueVisible: false,
-  crosshairMarkerVisible: false,
-});
 function updateCandleHighlight(frameIdx) {
-  if (frameIdx >= FRAMES.length) { candleHighlightLine.setData([]); return; }
+  if (frameIdx >= FRAMES.length) return;
   const time = FRAMES[frameIdx].time;
   const candle = CANDLES.find(c => c.time === time);
   if (candle) {
-    const pad = (candle.high - candle.low) * 0.15;
-    candleHighlightLine.setData([
-      { time, value: candle.low - pad },
-      { time, value: candle.high + pad },
-    ]);
-  } else {
-    candleHighlightLine.setData([]);
+    candleSeries.update({
+      time: candle.time,
+      open: candle.open,
+      high: candle.high,
+      low: candle.low,
+      close: candle.close,
+      borderColor: '#facc15',
+      wickColor: '#facc15',
+    });
   }
 }
 
