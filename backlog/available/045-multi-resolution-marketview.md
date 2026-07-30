@@ -1,7 +1,7 @@
 # 045: Multi-Resolution MarketView
 
 **Status:** pending
-**Epic:** core
+**Epic:** data
 **Priority:** medium
 
 ## Description
@@ -31,7 +31,7 @@
 - Swings typically `visible_on={source_tf}` (weekly swings hidden on daily candles)
 - SR levels typically `visible_on={"*"}` (levels from weekly swings still relevant on daily view)
 - Visualization layer iterates facts and filters by current resolution + `visible_on`
-- Execution order: higher-res (lower TF number) runs first since it covers less data per tick; lower-res (higher TF) sees the full picture
+- Execution order: is determined topologically by analyser dependencies
 - Missing data for requested TF is valid: analyzer returns empty result or error evidence
 
 ## Related
