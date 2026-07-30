@@ -59,3 +59,4 @@
 - Fix: candle highlight now uses `candleSeries.update()` per-frame to set yellow border/wick on current candle. Replaced broken `LineSeries.setData()` approach (duplicate timestamps deduped by lightweight-charts, only showed one dot). 1 test. 716 total.
 - **032** — Dukascopy data provider: DukascopyProvider fetches BI5 from Dukascopy datafeed, decompresses zlib, parses binary format, caches locally. 12 tests. 727 total.
 - **035 fix** — Dim mode sets borderColor/wickColor on future candles (was leaving green/red borders). Show mode uses `_visibilityNeedsReset` flag to call setData only on toggle, not every frame. 3 tests. 730 total.
+- **046** — Multi-timeframe data fetching: resample module (H1→D1, H1→H4, D1→W1, etc.), MarketStore multi-series storage (`dict[Timeframe, MarketData]`), StrategyConfig.timeframes field, CLI fetches all required TFs with native+resample fallback. 8 new tests. 767 total.

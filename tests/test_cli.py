@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
 
@@ -464,6 +465,133 @@ class TestRunCommand:
         end_dt = fetch_args[0][3]
         assert start_dt < datetime.now()
         assert end_dt.date() == datetime.now().date()
+
+    @patch("marketatlas.visualization.interactive.InteractiveRenderer")
+    @patch("marketatlas.backtesting.backtester.Backtester")
+    @patch("marketatlas.strategy.bundle.StrategyBundle")
+    @patch("marketatlas.strategy.strategy.Strategy")
+    @patch("marketatlas.strategy.loader.load_strategy")
+    @patch("marketatlas.cli.YahooProvider")
+    def test_run_multi_timeframe(
+        self,
+        mock_yahoo_cls: MagicMock,
+        mock_load: MagicMock,
+        mock_strategy_cls: MagicMock,
+        mock_bundle_cls: MagicMock,
+        mock_bt_cls: MagicMock,
+        mock_renderer_cls: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        strategy_file = tmp_path / "multi_tf.yaml"
+        strategy_file.write_text("strategy:\n  name: multi_tf\n  timeframes:\n    - 1d\n    - 1w\n")
+
+        config = MagicMock()
+        config.name = "multi_tf"
+        config.version = "1.0"
+        config.analyzers = []
+        config.signals = []
+        config.timeframes = ("1d", "1w")
+        mock_load.return_value = config
+
+        mock_provider = MagicMock()
+        mock_provider.fetch.side_effect = [
+            _make_market_data(n=200),  # D1 fetch succeeds
+            _make_market_data(n=200),  # W1 fetch also succeeds
+        ]
+        mock_yahoo_cls.return_value = mock_provider
+
+        mock_strategy_cls.return_value = MagicMock()
+        mock_bundle_cls.return_value = MagicMock()
+
+        mock_bt = MagicMock()
+        mock_bt.frame_count = 100
+        mock_bt._max_hold_days = 10
+        mock_tradebook = MagicMock()
+        mock_tradebook.summary = {
+            "initial_balance": 1000.0, "final_balance": 1000.0,
+            "total_pnl": 0.0, "total_return_pct": 0.0,
+            "total_trades": 0, "wins": 0, "losses": 0, "breakevens": 0,
+            "win_rate": 0.0, "max_drawdown": 0.0, "profit_factor": 0.0,
+            "expectancy": 0.0, "by_strategy": {},
+        }
+        mock_tradebook.trades = []
+        mock_bt.run_with_progress.return_value = (MagicMock(), mock_tradebook)
+        mock_bt_cls.return_value = mock_bt
+
+        output_html = tmp_path / "multi.html"
+        _run_main(
+            "run",
+            "--strategy", str(strategy_file),
+            "--interval", "1d",
+            "--output", str(output_html),
+        )
+
+        assert mock_provider.fetch.call_count == 2
+
+    @patch("marketatlas.visualization.interactive.InteractiveRenderer")
+    @patch("marketatlas.backtesting.backtester.Backtester")
+    @patch("marketatlas.strategy.bundle.StrategyBundle")
+    @patch("marketatlas.strategy.strategy.Strategy")
+    @patch("marketatlas.strategy.loader.load_strategy")
+    @patch("marketatlas.cli.YahooProvider")
+    def test_run_multi_timeframe_resample_fallback(
+        self,
+        mock_yahoo_cls: MagicMock,
+        mock_load: MagicMock,
+        mock_strategy_cls: MagicMock,
+        mock_bundle_cls: MagicMock,
+        mock_bt_cls: MagicMock,
+        mock_renderer_cls: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        strategy_file = tmp_path / "resample.yaml"
+        strategy_file.write_text(
+            "strategy:\n  name: resample_test\n  timeframes:\n    - 1d\n    - 1w\n"
+        )
+
+        config = MagicMock()
+        config.name = "resample_test"
+        config.version = "1.0"
+        config.analyzers = []
+        config.signals = []
+        config.timeframes = ("1d", "1w")
+        mock_load.return_value = config
+
+        mock_provider = MagicMock()
+        # D1 succeeds, W1 raises ValueError (unsupported)
+        mock_provider.fetch.side_effect = [
+            _make_market_data(n=200),
+            ValueError("Unsupported timeframe: Timeframe.W1"),
+        ]
+        mock_yahoo_cls.return_value = mock_provider
+
+        mock_strategy_cls.return_value = MagicMock()
+        mock_bundle_cls.return_value = MagicMock()
+
+        mock_bt = MagicMock()
+        mock_bt.frame_count = 100
+        mock_bt._max_hold_days = 10
+        mock_tradebook = MagicMock()
+        mock_tradebook.summary = {
+            "initial_balance": 1000.0, "final_balance": 1000.0,
+            "total_pnl": 0.0, "total_return_pct": 0.0,
+            "total_trades": 0, "wins": 0, "losses": 0, "breakevens": 0,
+            "win_rate": 0.0, "max_drawdown": 0.0, "profit_factor": 0.0,
+            "expectancy": 0.0, "by_strategy": {},
+        }
+        mock_tradebook.trades = []
+        mock_bt.run_with_progress.return_value = (MagicMock(), mock_tradebook)
+        mock_bt_cls.return_value = mock_bt
+
+        output_html = tmp_path / "resample.html"
+        _run_main(
+            "run",
+            "--strategy", str(strategy_file),
+            "--interval", "1d",
+            "--output", str(output_html),
+        )
+
+        assert mock_provider.fetch.call_count == 2
 
     @patch("marketatlas.visualization.interactive.InteractiveRenderer")
     @patch("marketatlas.backtesting.backtester.Backtester")

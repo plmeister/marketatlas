@@ -7,7 +7,24 @@ from pathlib import Path
 
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
 from marketatlas.data.providers.yahoo import YahooProvider
-from marketatlas.data.types import Symbol, Timeframe
+from marketatlas.data.types import MarketData, Symbol, Timeframe
+
+
+def _find_resample_source(
+    target: Timeframe,
+    fetched: dict[Timeframe, MarketData],
+) -> Timeframe | None:
+    from marketatlas.data.resample import tf_minutes
+
+    target_mins = tf_minutes(target)
+    candidates = [
+        (tf, tf_minutes(tf))
+        for tf in fetched
+        if tf_minutes(tf) < target_mins
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda x: x[1])[0]
 
 
 def fetch_command(args: argparse.Namespace) -> None:
@@ -48,6 +65,7 @@ def fetch_command(args: argparse.Namespace) -> None:
 
 def run_command(args: argparse.Namespace) -> None:
     from marketatlas.backtesting.backtester import Backtester
+    from marketatlas.data.resample import CannotResampleError, resample, tf_minutes
     from marketatlas.data.store import MarketStore
     from marketatlas.strategy.bundle import StrategyBundle
     from marketatlas.strategy.loader import load_strategy
@@ -74,21 +92,57 @@ def run_command(args: argparse.Namespace) -> None:
     print(f"Signals: {len(config.signals)}")
 
     symbol = Symbol(args.symbol)
-    timeframe = Timeframe(args.interval)
+    base_tf = Timeframe(args.interval)
     default_start = datetime.now() - timedelta(days=730)
     start = datetime.fromisoformat(args.start) if args.start else default_start
     end = datetime.fromisoformat(args.end) if args.end else datetime.now()
 
-    print(f"\nFetching {symbol.name} {timeframe.value} data ({start.date()} to {end.date()})...")
+    config_tfs = [Timeframe(tf) for tf in config.timeframes]
+    all_tfs = sorted(
+        set([base_tf] + config_tfs), key=lambda tf: tf_minutes(tf)
+    )
+    print(f"\nFetching {len(all_tfs)} timeframe(s): {', '.join(tf.value for tf in all_tfs)}")
+    print(f"Range: {start.date()} to {end.date()}")
     provider = YahooProvider()
-    try:
-        market_data = provider.fetch(symbol, timeframe, start, end)
-    except Exception as e:
-        print(f"Error fetching data: {e}", file=sys.stderr)
+
+    fetched: dict[Timeframe, MarketData] = {}
+    resampled: list[tuple[Timeframe, Timeframe]] = []
+
+    for tf in all_tfs:
+        # Try native fetch first
+        try:
+            md = provider.fetch(symbol, tf, start, end)
+            fetched[tf] = md
+            print(f"  {tf.value}: fetched natively ({len(md.candles)} candles)")
+            continue
+        except ValueError:
+            pass
+        except Exception as e:
+            print(f"  {tf.value}: fetch error — {e}", file=sys.stderr)
+            continue
+
+        # Native not supported — try resample from nearest higher-res
+        source_tf = _find_resample_source(tf, fetched)
+        if source_tf is None:
+            print(f"  {tf.value}: cannot fetch or resample (no source data)")
+            continue
+
+        try:
+            candles = resample(fetched[source_tf].candles, source_tf, tf)
+            fetched[tf] = MarketData(symbol=symbol, timeframe=tf, candles=candles)
+            resampled.append((tf, source_tf))
+            print(f"  {tf.value}: resampled from {source_tf.value} ({len(candles)} candles)")
+        except CannotResampleError as e:
+            print(f"  {tf.value}: cannot resample — {e}")
+
+    if base_tf not in fetched:
+        print(f"Error: primary timeframe {base_tf.value} not available", file=sys.stderr)
         sys.exit(1)
 
-    store = MarketStore(market_data)
-    print(f"Data: {len(store)} candles")
+    store = MarketStore(fetched)
+    print(f"Data: {len(store)} candles ({store.timeframe.value})")
+    print(f"Timeframes: {', '.join(tf.value for tf in store.available_timeframes)}")
+    print(f"Resampled: {', '.join(f'{tf.value}←{src.value}' for tf, src in resampled) or 'none'}")
     print(f"Range: {store[0].timestamp.date()} to {store[-1].timestamp.date()}")
     print(f"Price: ${store[0].close:.2f} -> ${store[-1].close:.2f}")
 

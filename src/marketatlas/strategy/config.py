@@ -27,6 +27,7 @@ class RiskConfig:
 class StrategyConfig:
     name: str
     version: str
+    timeframes: tuple[str, ...] = ("1d",)
     analyzers: tuple[AnalyzerConfig, ...] = ()
     signals: tuple[SignalConfig, ...] = ()
     risk: RiskConfig = field(default_factory=lambda: RiskConfig(algorithm="none"))

@@ -33,6 +33,7 @@
 - [x] 034 — Frame stepper candle visibility
 - [x] 035 — Future candle visibility
 - [x] 033 — Instrument registry
+- [x] 046 — Multi-timeframe data fetching
 
 ## AST Layer
 
