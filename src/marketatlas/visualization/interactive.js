@@ -175,8 +175,30 @@ function updateTradeLines(frameIdx) {
   });
 }
 
-// --- Markers management ---
-let currentMarkers = [];
+// --- Candle highlight ---
+const candleHighlightLine = chart.addLineSeries({
+  color: '#facc15',
+  lineWidth: 2,
+  priceLineVisible: false,
+  lastValueVisible: false,
+  crosshairMarkerVisible: false,
+});
+function updateCandleHighlight(frameIdx) {
+  if (frameIdx >= FRAMES.length) { candleHighlightLine.setData([]); return; }
+  const time = FRAMES[frameIdx].time;
+  const candle = CANDLES.find(c => c.time === time);
+  if (candle) {
+    const pad = (candle.high - candle.low) * 0.15;
+    candleHighlightLine.setData([
+      { time, value: candle.low - pad },
+      { time, value: candle.high + pad },
+    ]);
+  } else {
+    candleHighlightLine.setData([]);
+  }
+}
+
+// --- Zigzag management ---
 function updateZigzag(frameIdx) {
   zigzagBull.applyOptions({ lineVisible: false });
   zigzagBear.applyOptions({ lineVisible: false });
@@ -598,6 +620,7 @@ function updateFrame(idx) {
 
   // Update candle visibility (hide/dim future candles)
   updateCandles(idx);
+  updateCandleHighlight(idx);
   updateVolume(idx);
 
   // Update S/R, trades, markers, zigzag
