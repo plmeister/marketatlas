@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+from marketatlas.data.types import Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.facts.base import Fact
 
@@ -11,6 +12,10 @@ class Analyzer(ABC):
     @property
     def instance_key(self) -> str:
         return type(self).__name__
+
+    @property
+    def timeframe(self) -> Timeframe | None:
+        return None
 
     @abstractmethod
     def requires(self) -> tuple[FactKey, ...]: ...

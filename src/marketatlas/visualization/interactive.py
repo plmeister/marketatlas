@@ -218,6 +218,8 @@ def _build_candle_evidence_map(
 _JS_TEMPLATE_PATH = Path(__file__).parent / "interactive.js"
 _JS_PLACEHOLDERS = [
     "CANDLES",
+    "CANDLES_BY_TF",
+    "AVAILABLE_TFS",
     "FRAMES",
     "EMA_SERIES",
     "ATR_DATA",
@@ -342,6 +344,9 @@ _INTERACTIVE_TEMPLATE = """\
     <option value="200">5 fps</option>
     <option value="100">10 fps</option>
   </select>
+  <select id="tf-select" title="Resolution">
+    {tf_options}
+  </select>
   <button id="btn-visibility" title="Toggle future candle visibility (V)">&#128065; Hide</button>
   <button id="btn-autoscroll" class="active"
     title="Toggle auto-scroll (A)">&#128268; Scroll</button>
@@ -390,6 +395,14 @@ class InteractiveRenderer:
         evidence_map = _build_candle_evidence_map(frames)
         trades_json = _extract_trades_json(ctx.tradebook)
 
+        candles_by_tf: dict[str, list[dict[str, Any]]] = {}
+        for tf in ctx.store.available_timeframes:
+            tf_candles = ctx.store.get_candles(tf)
+            if tf_candles:
+                candles_by_tf[tf.value] = [_candle_to_dict(c) for c in tf_candles]
+
+        available_tfs = [tf.value for tf in ctx.store.available_timeframes]
+
         summary = ctx.tradebook.summary
         summary_json = {
             "initial_balance": summary["initial_balance"],
@@ -410,8 +423,15 @@ class InteractiveRenderer:
         )
 
         js_template = _JS_TEMPLATE_PATH.read_text(encoding="utf-8")
+        primary_tf = ctx.store.timeframe.value
+        tf_options = "".join(
+            f'<option value="{tf}"{" selected" if tf == primary_tf else ""}>{tf}</option>'
+            for tf in available_tfs
+        )
         data_map = {
             "CANDLES": json.dumps(candles),
+            "CANDLES_BY_TF": json.dumps(candles_by_tf),
+            "AVAILABLE_TFS": json.dumps(available_tfs),
             "FRAMES": json.dumps(frames_json),
             "EMA_SERIES": json.dumps(ema_json),
             "ATR_DATA": json.dumps(atr_json),
@@ -424,13 +444,14 @@ class InteractiveRenderer:
             "INITIAL_BALANCE": json.dumps(ctx.tradebook.initial_balance),
             "MIN_TOUCHES": json.dumps(ctx.min_touches),
         }
-        for name in _JS_PLACEHOLDERS:
+        for name in sorted(_JS_PLACEHOLDERS, key=len, reverse=True):
             js_template = js_template.replace(f"null; // @data:{name}", data_map[name])
 
         html = _INTERACTIVE_TEMPLATE.format(
             title=title,
             meta=meta,
             initial_balance=ctx.tradebook.initial_balance,
+            tf_options=tf_options,
             js_content="<script>\n" + js_template + "\n</script>",
         )
 

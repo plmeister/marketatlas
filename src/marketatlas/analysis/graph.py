@@ -84,7 +84,11 @@ class AnalysisGraph:
     def run(self, view: MarketView) -> dict[FactKey, Fact]:
         facts: dict[FactKey, Fact] = {}
         for analyzer in self._execution_order:
-            result = analyzer.analyze(view, facts)
+            if analyzer.timeframe is not None and analyzer.timeframe != view.store.timeframe:
+                analyzer_view = view.select(analyzer.timeframe)
+            else:
+                analyzer_view = view
+            result = analyzer.analyze(analyzer_view, facts)
             produces = analyzer.produces()
             for i, fact in enumerate(result.facts):
                 facts[produces[i]] = fact

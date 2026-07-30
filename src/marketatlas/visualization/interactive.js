@@ -1,4 +1,6 @@
 const CANDLES = null; // @data:CANDLES
+const CANDLES_BY_TF = null; // @data:CANDLES_BY_TF
+const AVAILABLE_TFS = null; // @data:AVAILABLE_TFS
 const FRAMES = null; // @data:FRAMES
 const EMA_SERIES = null; // @data:EMA_SERIES
 const ATR_DATA = null; // @data:ATR_DATA
@@ -10,6 +12,10 @@ const EVIDENCE_MAP = null; // @data:EVIDENCE_MAP
 const SUMMARY = null; // @data:SUMMARY
 const INITIAL_BALANCE = null; // @data:INITIAL_BALANCE
 const MIN_TOUCHES = null; // @data:MIN_TOUCHES
+
+// Active candle data (switched by resolution selector)
+let activeCandles = CANDLES;
+let activeTF = AVAILABLE_TFS && AVAILABLE_TFS.length > 0 ? AVAILABLE_TFS[0] : null;
 
 let currentFrame = 0;
 let playing = false;
@@ -180,7 +186,7 @@ function updateTradeLines(frameIdx) {
 function updateCandleHighlight(frameIdx) {
   if (frameIdx >= FRAMES.length) return;
   const time = FRAMES[frameIdx].time;
-  const candle = CANDLES.find(c => c.time === time);
+  const candle = activeCandles.find(c => c.time === time);
   if (candle) {
     candleSeries.update({
       time: candle.time,
@@ -207,7 +213,7 @@ function updateZigzag(frameIdx) {
     const prices = val.swing_pattern || [];
     if (indices.length < 2) return;
     const lineData = indices.map((idx, i) => ({
-      time: CANDLES[idx] ? CANDLES[idx].time : null,
+      time: activeCandles[idx] ? activeCandles[idx].time : null,
       value: prices[i],
     })).filter(p => p.time !== null);
     if (lineData.length < 2) return;
@@ -243,7 +249,7 @@ function updateMarkers(frameIdx) {
   Object.values(facts).forEach(val => {
     if (val.type === 'swing' && val.swings) {
       val.swings.forEach(sw => {
-        const candleTime = CANDLES[sw.index] ? CANDLES[sw.index].time : null;
+        const candleTime = activeCandles[sw.index] ? activeCandles[sw.index].time : null;
         if (candleTime === null) return;
         const isHigh = sw.type === 'high';
         markers.push({
@@ -297,12 +303,12 @@ function updateInfoPanel(frameIdx) {
           d.toISOString().slice(0, 10) + '</span></div>';
 
   // Remaining candles
-  const remaining = CANDLES.filter(c => c.time > frame.time).length;
+  const remaining = activeCandles.filter(c => c.time > frame.time).length;
   html += '<div class="row"><span class="label">Remaining</span><span class="value">' +
           remaining + ' candles</span></div>';
 
   // Find candle OHLCV from candles
-  const candle = CANDLES.find(c => c.time === frame.time);
+  const candle = activeCandles.find(c => c.time === frame.time);
   if (candle) {
     html += '<div class="row"><span class="label">O</span><span class="value">' +
             candle.open.toFixed(2) + '</span></div>';
@@ -488,9 +494,9 @@ function updateSummary(frameIdx) {
 // --- Trade timeline ---
 function buildTimeline() {
   const bar = document.getElementById('timeline-bar');
-  if (CANDLES.length === 0) { bar.innerHTML = ''; return; }
-  const minTime = CANDLES[0].time;
-  const maxTime = CANDLES[CANDLES.length - 1].time;
+  if (activeCandles.length === 0) { bar.innerHTML = ''; return; }
+  const minTime = activeCandles[0].time;
+  const maxTime = activeCandles[activeCandles.length - 1].time;
   const span = maxTime - minTime || 1;
   let html = '';
   TRADES.forEach((t, i) => {
@@ -512,10 +518,10 @@ function buildTimeline() {
 }
 function updateTimelineCursor(frameIdx) {
   const cursor = document.getElementById('timeline-cursor');
-  if (!cursor || CANDLES.length === 0) return;
+  if (!cursor || activeCandles.length === 0) return;
   if (frameIdx >= FRAMES.length) return;
-  const minTime = CANDLES[0].time;
-  const maxTime = CANDLES[CANDLES.length - 1].time;
+  const minTime = activeCandles[0].time;
+  const maxTime = activeCandles[activeCandles.length - 1].time;
   const span = maxTime - minTime || 1;
   const pct = ((FRAMES[frameIdx].time - minTime) / span * 100).toFixed(2);
   cursor.style.left = pct + '%';
@@ -523,13 +529,14 @@ function updateTimelineCursor(frameIdx) {
 
 // --- Future candle visibility ---
 function updateCandles(frameIdx) {
+  const allCandles = activeCandles;
   if (futureVisibility === 'hide') {
     const cutoff = FRAMES[frameIdx].time;
-    const visible = CANDLES.filter(c => c.time <= cutoff);
+    const visible = allCandles.filter(c => c.time <= cutoff);
     candleSeries.setData(visible);
   } else if (futureVisibility === 'dim') {
     const cutoff = FRAMES[frameIdx].time;
-    const dimmed = CANDLES.map(c => {
+    const dimmed = allCandles.map(c => {
       if (c.time > cutoff) {
         return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close, color: 'rgba(128,128,128,0.3)', borderColor: 'rgba(128,128,128,0.3)', wickColor: 'rgba(128,128,128,0.3)' };
       }
@@ -537,7 +544,7 @@ function updateCandles(frameIdx) {
     });
     candleSeries.setData(dimmed);
   } else if (_visibilityNeedsReset) {
-    candleSeries.setData(CANDLES);
+    candleSeries.setData(allCandles);
     _visibilityNeedsReset = false;
   }
 }
@@ -550,17 +557,45 @@ function toggleFutureVisibility() {
   updateCandles(currentFrame);
 }
 
+// --- Resolution switching ---
+function switchResolution(tf) {
+  if (!CANDLES_BY_TF || !CANDLES_BY_TF[tf]) return;
+  activeTF = tf;
+  activeCandles = CANDLES_BY_TF[tf];
+  candleSeries.setData(activeCandles);
+  volumeSeries.setData(activeCandles.map(c => ({
+    time: c.time, value: c.volume,
+    color: c.close >= c.open ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)',
+  })));
+  buildTimeline();
+  if (currentFrame < FRAMES.length) {
+    updateFrame(currentFrame);
+  }
+}
+document.addEventListener('DOMContentLoaded', function() {
+  const tfSelect = document.getElementById('tf-select');
+  if (tfSelect) {
+    tfSelect.addEventListener('change', function(e) {
+      stopPlay();
+      autoScrollDisabled = false;
+      document.getElementById('btn-autoscroll').classList.add('active');
+      switchResolution(e.target.value);
+    });
+  }
+});
+
 // --- Volume histogram ---
 function updateVolume(frameIdx) {
+  const allCandles = activeCandles;
   const cutoff = FRAMES[frameIdx].time;
   if (futureVisibility === 'hide') {
-    const visible = CANDLES.filter(c => c.time <= cutoff).map(c => ({
+    const visible = allCandles.filter(c => c.time <= cutoff).map(c => ({
       time: c.time, value: c.volume,
       color: c.close >= c.open ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)',
     }));
     volumeSeries.setData(visible);
   } else if (futureVisibility === 'dim') {
-    const data = CANDLES.map(c => {
+    const data = allCandles.map(c => {
       if (c.time > cutoff) {
         return { time: c.time, value: c.volume, color: 'rgba(128,128,128,0.2)' };
       }
@@ -569,7 +604,7 @@ function updateVolume(frameIdx) {
     });
     volumeSeries.setData(data);
   } else {
-    const data = CANDLES.map(c => ({
+    const data = allCandles.map(c => ({
       time: c.time, value: c.volume,
       color: c.close >= c.open ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)',
     }));
@@ -635,7 +670,7 @@ function updateFrame(idx) {
   document.getElementById('frame-num').textContent = String(idx + 1);
 
   // Snap crosshair to current candle
-  const currentCandle = CANDLES.find(c => c.time === FRAMES[idx].time);
+  const currentCandle = activeCandles.find(c => c.time === FRAMES[idx].time);
   if (currentCandle) {
     chart.setCrosshairPosition(currentCandle.close, currentCandle.time, candleSeries);
   }

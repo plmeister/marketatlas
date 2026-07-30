@@ -423,3 +423,198 @@ class TestAnalyzerRegistry:
         registry.register(ProduceXAnalyzer)
         graph = registry.resolve(set())
         assert len(graph.execution_order()) == 0
+
+
+class TestFactKeyTimeframe:
+    def test_default_timeframe_none(self) -> None:
+        fk = FactKey("ema_20")
+        assert fk.timeframe is None
+
+    def test_with_timeframe(self) -> None:
+        fk = FactKey("swing", timeframe=Timeframe.W1)
+        assert fk.timeframe == Timeframe.W1
+
+    def test_str_with_timeframe(self) -> None:
+        fk = FactKey("swing", timeframe=Timeframe.W1)
+        assert "tf_1w" in str(fk)
+
+    def test_str_with_params_and_timeframe(self) -> None:
+        fk = FactKey.from_params("ema", period=20, timeframe=Timeframe.D1)
+        assert "ema" in str(fk)
+        assert "period_20" in str(fk)
+        assert "tf_1d" in str(fk)
+
+    def test_equality_respects_timeframe(self) -> None:
+        fk1 = FactKey("swing", timeframe=Timeframe.W1)
+        fk2 = FactKey("swing", timeframe=Timeframe.D1)
+        assert fk1 != fk2
+
+    def test_from_params_accepts_timeframe(self) -> None:
+        fk = FactKey.from_params("atr", period=14, timeframe=Timeframe.D1)
+        assert fk.timeframe == Timeframe.D1
+
+
+class TestFactVisibleOn:
+    def test_default_visible_on_none(self) -> None:
+        fact = Fact(timestamp=BASE, evidence=())
+        assert fact.visible_on is None
+
+    def test_visible_on_restricts_resolution(self) -> None:
+        fact = Fact(
+            timestamp=BASE,
+            evidence=(),
+            visible_on=frozenset({Timeframe.W1}),
+        )
+        assert fact.visible_on is not None
+        assert Timeframe.W1 in fact.visible_on
+        assert Timeframe.D1 not in fact.visible_on
+
+    def test_visible_on_all_resolutions(self) -> None:
+        fact = Fact(timestamp=BASE, evidence=(), visible_on=None)
+        assert fact.visible_on is None
+
+
+class TestAnalyzerTimeframe:
+    def test_default_timeframe_none(self) -> None:
+        analyzer = ProduceXAnalyzer()
+        assert analyzer.timeframe is None
+
+    def test_concrete_timeframe(self) -> None:
+        class WeeklyAnalyzer(Analyzer):
+            @property
+            def timeframe(self) -> Timeframe:
+                return Timeframe.W1
+
+            def requires(self) -> tuple[FactKey, ...]:
+                return ()
+
+            def produces(self) -> tuple[FactKey, ...]:
+                return (FactKey("weekly_indicator"),)
+
+            def analyze(
+                self, view: MarketView, facts: dict[FactKey, Fact]
+            ) -> AnalysisResult:
+                return AnalysisResult(facts=(), evidence=())
+
+        analyzer = WeeklyAnalyzer()
+        assert analyzer.timeframe == Timeframe.W1
+
+
+class TestCrossResolutionGraph:
+    @pytest.fixture()
+    def multi_tf_store(self) -> MarketStore:
+        from datetime import timedelta
+
+        base = datetime(2024, 1, 1, tzinfo=UTC)
+        daily = tuple(
+            Candle(
+                timestamp=base + timedelta(days=i),
+                open=100.0 + i, high=105.0 + i,
+                low=99.0 + i, close=103.0 + i, volume=1000.0,
+            )
+            for i in range(100)
+        )
+        weekly = tuple(
+            Candle(
+                timestamp=base + timedelta(weeks=i),
+                open=100.0 + i * 5, high=110.0 + i * 5,
+                low=95.0 + i * 5, close=105.0 + i * 5, volume=5000.0,
+            )
+            for i in range(15)
+        )
+        dd = MarketData(symbol=Symbol("TEST"), timeframe=Timeframe.D1, candles=daily)
+        ww = MarketData(symbol=Symbol("TEST"), timeframe=Timeframe.W1, candles=weekly)
+        return MarketStore({Timeframe.D1: dd, Timeframe.W1: ww})
+
+    def test_weekly_analyzer_gets_correct_data(
+        self, multi_tf_store: MarketStore
+    ) -> None:
+        class WeeklyHighAnalyzer(Analyzer):
+            @property
+            def timeframe(self) -> Timeframe:
+                return Timeframe.W1
+
+            def requires(self) -> tuple[FactKey, ...]:
+                return ()
+
+            def produces(self) -> tuple[FactKey, ...]:
+                return (FactKey("weekly_high", timeframe=Timeframe.W1),)
+
+            def analyze(
+                self, view: MarketView, facts: dict[FactKey, Fact]
+            ) -> AnalysisResult:
+                weekly_high = max(view.highs[-5:]) if view.highs else 0.0
+                return AnalysisResult(
+                    facts=(
+                        Fact(
+                            timestamp=view.current.timestamp,
+                            evidence=(),
+                            visible_on=frozenset({Timeframe.W1}),
+                        ),
+                    ),
+                    evidence=(),
+                )
+
+        view = MarketView(multi_tf_store, cursor=99, window_size=50)
+        graph = AnalysisGraph([WeeklyHighAnalyzer()])
+        facts = graph.run(view)
+        weekly_key = FactKey("weekly_high", timeframe=Timeframe.W1)
+        assert weekly_key in facts
+        assert facts[weekly_key].visible_on == frozenset({Timeframe.W1})
+
+    def test_mixed_resolution_graph(
+        self, multi_tf_store: MarketStore
+    ) -> None:
+        class DailyEMAAnalyzer(Analyzer):
+            def requires(self) -> tuple[FactKey, ...]:
+                return ()
+
+            def produces(self) -> tuple[FactKey, ...]:
+                return (FactKey("ema_20"),)
+
+            def analyze(
+                self, view: MarketView, facts: dict[FactKey, Fact]
+            ) -> AnalysisResult:
+                return AnalysisResult(
+                    facts=(
+                        EMAFact(
+                            timestamp=view.current.timestamp,
+                            evidence=(),
+                            value=100.0, period=20,
+                        ),
+                    ),
+                    evidence=(),
+                )
+
+        class WeeklyConsumer(Analyzer):
+            @property
+            def timeframe(self) -> Timeframe:
+                return Timeframe.W1
+
+            def requires(self) -> tuple[FactKey, ...]:
+                return (FactKey("ema_20"),)
+
+            def produces(self) -> tuple[FactKey, ...]:
+                return (FactKey("weekly_signal", timeframe=Timeframe.W1),)
+
+            def analyze(
+                self, view: MarketView, facts: dict[FactKey, Fact]
+            ) -> AnalysisResult:
+                ema = facts[FactKey("ema_20")]
+                assert isinstance(ema, EMAFact)
+                return AnalysisResult(
+                    facts=(
+                        Fact(
+                            timestamp=view.current.timestamp,
+                            evidence=(),
+                            visible_on=frozenset({Timeframe.W1}),
+                        ),
+                    ),
+                    evidence=(),
+                )
+
+        view = MarketView(multi_tf_store, cursor=99, window_size=50)
+        graph = AnalysisGraph([DailyEMAAnalyzer(), WeeklyConsumer()])
+        facts = graph.run(view)
+        assert FactKey("ema_20") in facts
+        assert FactKey("weekly_signal", timeframe=Timeframe.W1) in facts
