@@ -1,7 +1,7 @@
 # 045: Multi-Timeframe Analysis
 
 **Status:** pending
-**Epic:** core
+**Epic:** data
 **Priority:** medium
 
 ## Description
