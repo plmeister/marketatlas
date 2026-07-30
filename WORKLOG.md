@@ -57,3 +57,4 @@
 - Viz: breakeven count displayed in summary bar. JS tracks `breakevens` in `updateSummary()`, BE: stat in HTML template. `s-trades` shows total closed (incl. breakevens). Win rate uses win+loss only. 715 total.
 - Viz: OHLCV values in info panel. Replaced single Close with Open/High/Low/Close/Volume rows. 1 test. 716 total.
 - Fix: candle highlight now uses `candleSeries.update()` per-frame to set yellow border/wick on current candle. Replaced broken `LineSeries.setData()` approach (duplicate timestamps deduped by lightweight-charts, only showed one dot). 1 test. 716 total.
+- **032** — Dukascopy data provider: DukascopyProvider fetches BI5 from Dukascopy datafeed, decompresses zlib, parses binary format, caches locally. 12 tests. 727 total.
