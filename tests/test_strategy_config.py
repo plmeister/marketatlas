@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+
 from marketatlas.analysis.analyzers.atr import ATRAnalyzer
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.analyzers.trend import TrendAnalyzer
@@ -130,6 +131,34 @@ class TestLoadStrategy:
         path = _write_yaml(tmp_path, yaml_str)
         config = load_strategy(path)
         assert config.version == "1.0"
+
+    def test_default_timeframes(self, tmp_path: Path) -> None:
+        yaml_str = "strategy:\n  name: test\n"
+        path = _write_yaml(tmp_path, yaml_str)
+        config = load_strategy(path)
+        assert config.timeframes == ("1d",)
+
+    def test_custom_timeframes(self, tmp_path: Path) -> None:
+        yaml_str = "strategy:\n  name: test\n  timeframes:\n    - 1d\n    - 1w\n"
+        path = _write_yaml(tmp_path, yaml_str)
+        config = load_strategy(path)
+        assert config.timeframes == ("1d", "1w")
+
+    def test_single_timeframe(self, tmp_path: Path) -> None:
+        yaml_str = "strategy:\n  name: test\n  timeframes:\n    - 1h\n"
+        path = _write_yaml(tmp_path, yaml_str)
+        config = load_strategy(path)
+        assert config.timeframes == ("1h",)
+
+    def test_timeframes_not_a_list(self, tmp_path: Path) -> None:
+        yaml_str = "strategy:\n  name: test\n  timeframes: not_a_list\n"
+        path = _write_yaml(tmp_path, yaml_str)
+        with pytest.raises(ConfigError, match="'strategy.timeframes' must be a list"):
+            load_strategy(path)
+
+    def test_timeframes_in_config_object(self) -> None:
+        config = StrategyConfig(name="test", version="1.0", timeframes=("1d", "1w"))
+        assert config.timeframes == ("1d", "1w")
 
     def test_risk_missing_algorithm(self, tmp_path: Path) -> None:
         yaml_str = "strategy:\n  name: test\nrisk:\n  params: {x: 1}\n"

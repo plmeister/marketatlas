@@ -44,6 +44,7 @@ def load_strategy(path: Path) -> StrategyConfig:
     if not name:
         raise ConfigError("Missing 'strategy.name'")
 
+    timeframes = _parse_timeframes(strategy_block.get("timeframes"))
     analyzers = _parse_analyzers(raw.get("analyzers", []))
     signals = _parse_signals(raw.get("signals", []))
     risk = _parse_risk(raw.get("risk"))
@@ -51,6 +52,7 @@ def load_strategy(path: Path) -> StrategyConfig:
     return StrategyConfig(
         name=name,
         version=str(version),
+        timeframes=timeframes,
         analyzers=analyzers,
         signals=signals,
         risk=risk,
@@ -84,6 +86,14 @@ def validate_config(config: StrategyConfig) -> list[str]:
                     "not found in analyzers"
                 )
     return errors
+
+
+def _parse_timeframes(raw: Any) -> tuple[str, ...]:
+    if raw is None:
+        return ("1d",)
+    if isinstance(raw, list):
+        return tuple(str(tf) for tf in raw)
+    raise ConfigError("'strategy.timeframes' must be a list")
 
 
 def _parse_analyzers(raw: Any) -> tuple[AnalyzerConfig, ...]:
