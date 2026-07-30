@@ -718,6 +718,22 @@ class TestInteractiveRenderer:
         assert "btn-autoscroll" in content
         assert "autoScrollDisabled" in content
 
+    def test_candle_ohlcv_in_info_panel(self, tmp_path: object) -> None:
+        path = tmp_path / "ohlcv.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        # First candle open is 100.0, so O/H/L/C/Vol labels + values present
+        assert 'class="label">O<' in content
+        assert 'class="label">H<' in content
+        assert 'class="label">L<' in content
+        assert 'class="label">C<' in content
+        assert 'class="label">Vol<' in content
+
     def test_crosshair_snap_in_js(self, tmp_path: object) -> None:
         path = tmp_path / "crosshair.html"  # type: ignore[operator]
         store = _make_store(10)

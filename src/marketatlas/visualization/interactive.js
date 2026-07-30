@@ -283,11 +283,19 @@ function updateInfoPanel(frameIdx) {
   html += '<div class="row"><span class="label">Remaining</span><span class="value">' +
           remaining + ' candles</span></div>';
 
-  // Find close price from candles
+  // Find candle OHLCV from candles
   const candle = CANDLES.find(c => c.time === frame.time);
   if (candle) {
-    html += '<div class="row"><span class="label">Close</span><span class="value">' +
+    html += '<div class="row"><span class="label">O</span><span class="value">' +
+            candle.open.toFixed(2) + '</span></div>';
+    html += '<div class="row"><span class="label">H</span><span class="value">' +
+            candle.high.toFixed(2) + '</span></div>';
+    html += '<div class="row"><span class="label">L</span><span class="value">' +
+            candle.low.toFixed(2) + '</span></div>';
+    html += '<div class="row"><span class="label">C</span><span class="value">' +
             candle.close.toFixed(2) + '</span></div>';
+    html += '<div class="row"><span class="label">Vol</span><span class="value">' +
+            candle.volume.toFixed(0) + '</span></div>';
   }
 
   // Balance from summary (cumulative)
