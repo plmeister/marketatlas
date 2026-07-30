@@ -36,5 +36,5 @@ poetry run mypy src/
 ## Backtest
 
 ```bash
-poetry run python backtest_run.py
+poetry run marketatlas run -s strategies/pullback_4swing.yaml
 ```
