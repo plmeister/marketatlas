@@ -55,3 +55,4 @@
 - **046** — Snapshot tests for compiled analyses: single/linear/branching/full strategy AST + graph snapshots. `--update-snapshots` flag, JSON snapshots in `tests/snapshots/`. 10 tests. 713 total.
 - **034 fix** — scrollToFrame now uses `candleSeries.data()` instead of CANDLES for index lookup, clamps targetPos ≥ 0, widens scroll threshold to 15% of visible bars. Prevents broken auto-scroll when future candles hidden.
 - Viz: breakeven count displayed in summary bar. JS tracks `breakevens` in `updateSummary()`, BE: stat in HTML template. `s-trades` shows total closed (incl. breakevens). Win rate uses win+loss only. 715 total.
+- Viz: OHLCV values in info panel. Replaced single Close with Open/High/Low/Close/Volume rows. 1 test. 716 total.
