@@ -22,6 +22,13 @@
       ]
     },
     {
+      "type": "SwingStructureAnalyzer",
+      "requires": [],
+      "produces": [
+        "swing"
+      ]
+    },
+    {
       "type": "TrendAnalyzer",
       "requires": [
         "ema_20",
@@ -29,15 +36,6 @@
       ],
       "produces": [
         "trend"
-      ]
-    },
-    {
-      "type": "SwingStructureAnalyzer",
-      "requires": [
-        "atr_14"
-      ],
-      "produces": [
-        "swing"
       ]
     }
   ]

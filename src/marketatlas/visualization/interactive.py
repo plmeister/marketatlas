@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pickle
 from pathlib import Path
 from typing import Any
 
@@ -434,3 +435,12 @@ class InteractiveRenderer:
         )
 
         output_path.write_text(html, encoding="utf-8")
+
+        debug_path = output_path.with_suffix(".pkl")
+        debug_data = {
+            "store": ctx.store,
+            "frames": list(ctx.frames),
+            "window_size": ctx.window_size,
+            "max_hold_days": ctx.max_hold_days,
+        }
+        debug_path.write_bytes(pickle.dumps(debug_data))

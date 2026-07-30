@@ -152,6 +152,7 @@ def run_command(args: argparse.Namespace) -> None:
             store=store,
             tradebook=tradebook,
             max_hold_days=bt._max_hold_days,
+            window_size=bt._window_size,
         )
         renderer = InteractiveRenderer(ctx)
         renderer.render(output_path)

@@ -13,5 +13,6 @@ class RenderContext:
     store: MarketStore
     tradebook: TradeBook
     max_hold_days: int = 10
+    window_size: int = 100
     title: str = ""
     min_touches: int = 2

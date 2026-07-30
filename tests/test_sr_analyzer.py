@@ -256,7 +256,7 @@ class TestSupportResistanceAnalyzer:
         analyzer = SupportResistanceAnalyzer(swing_key="swing_custom", atr_key="atr_custom")
         sf = _swings_fact(_make_swings([(95.0, SwingType.LOW)]))
         atr = _atr_fact(2.0)
-        facts = {FactKey("swing_custom"): sf, FactKey("atr_custom"): atr}
+        facts: dict[FactKey, Fact] = {FactKey("swing_custom"): sf, FactKey("atr_custom"): atr}
         result = analyzer.analyze(view, facts)
         fact = result.facts[0]
         assert isinstance(fact, SRFact)
@@ -278,7 +278,7 @@ class TestSupportResistanceAnalyzer:
         view = MarketView(store, cursor=4, window_size=4)
         analyzer = SupportResistanceAnalyzer()
         sf = _swings_fact(_make_swings([(95.0, SwingType.LOW)]))
-        facts = {FactKey("swing"): sf}
+        facts: dict[FactKey, Fact] = {FactKey("swing"): sf}
         result = analyzer.analyze(view, facts)
         fact = result.facts[0]
         assert isinstance(fact, SRFact)

@@ -5,7 +5,6 @@ from marketatlas.data.types import Candle
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
-from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import SwingFact, SwingPoint, SwingType
 
 
@@ -15,47 +14,29 @@ class SwingStructureAnalyzer(Analyzer):
         lookback: int = 20,
         min_swing_atr: float = 0.3,
         atr_key: str = "atr_14",
+        left_bars: int = 2,
+        right_bars: int = 1,
     ) -> None:
         self._lookback = lookback
         self._min_swing_atr = min_swing_atr
         self._atr_key = atr_key
+        self._left_bars = left_bars
+        self._right_bars = right_bars
 
     @property
     def instance_key(self) -> str:
         return "swing"
 
     def requires(self) -> tuple[FactKey, ...]:
-        return (FactKey(self._atr_key),)
+        return ()
 
     def produces(self) -> tuple[FactKey, ...]:
         return (FactKey(self.instance_key),)
 
     def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
-        atr_fact = facts.get(FactKey(self._atr_key))
-        if not isinstance(atr_fact, ATRFact) or atr_fact.value <= 0:
-            evidence: tuple[EvidenceEntry, ...] = (
-                EvidenceEntry(
-                    text="No swings detected — ATR unavailable or zero",
-                    level=EvidenceLevel.INFO,
-                    source="SwingStructureAnalyzer",
-                ),
-            )
-            return AnalysisResult(
-                facts=(
-                    SwingFact(
-                        timestamp=view.current.timestamp,
-                        evidence=evidence,
-                        swings=(),
-                    ),
-                ),
-                evidence=evidence,
-            )
+        all_candles: tuple[Candle, ...] = tuple(view.store.slice(0, view.cursor)) + (view.current,)
 
-        all_candles: tuple[Candle, ...] = view.history + (view.current,)
-        lookback = min(self._lookback, len(all_candles))
-        window = all_candles[-lookback:]
-
-        if len(window) < 3:
+        if len(all_candles) < self._left_bars + self._right_bars + 1:
             evidence = (
                 EvidenceEntry(
                     text="Insufficient candles for swing detection",
@@ -74,20 +55,15 @@ class SwingStructureAnalyzer(Analyzer):
                 evidence=evidence,
             )
 
-        raw = self._find_raw_swings(window, view.cursor - lookback)
-        filtered = self._filter_alternating(raw)
-        separated = self._filter_atr_separation(filtered, atr_fact.value)
-        separated = self._filter_alternating(separated)
+        swings = self._find_raw_swings(all_candles, 0, self._left_bars, self._right_bars)
 
-        high_count = sum(1 for s in separated if s.type == SwingType.HIGH)
-        low_count = sum(1 for s in separated if s.type == SwingType.LOW)
-        filtered_count = len(raw) - len(filtered)
-        atr_filtered = len(filtered) - len(separated)
+        high_count = sum(1 for s in swings if s.type == SwingType.HIGH)
+        low_count = sum(1 for s in swings if s.type == SwingType.LOW)
 
         evidence_list: list[EvidenceEntry] = [
             EvidenceEntry(
                 text=(
-                    f"Detected {len(separated)} swing points in window "
+                    f"Detected {len(swings)} swing points in window "
                     f"({high_count} highs, {low_count} lows)"
                 ),
                 level=EvidenceLevel.INFO,
@@ -95,29 +71,8 @@ class SwingStructureAnalyzer(Analyzer):
             ),
         ]
 
-        if filtered_count > 0:
-            evidence_list.append(
-                EvidenceEntry(
-                    text=f"Removed {filtered_count} consecutive same-type swings",
-                    level=EvidenceLevel.INFO,
-                    source="SwingStructureAnalyzer",
-                ),
-            )
-
-        if atr_filtered > 0:
-            evidence_list.append(
-                EvidenceEntry(
-                    text=(
-                        f"Filtered {atr_filtered} swings below minimum "
-                        f"{self._min_swing_atr} ATR separation"
-                    ),
-                    level=EvidenceLevel.INFO,
-                    source="SwingStructureAnalyzer",
-                ),
-            )
-
-        if separated:
-            prices = [s.price for s in separated]
+        if swings:
+            prices = [s.price for s in swings]
             evidence_list.append(
                 EvidenceEntry(
                     text=f"Swing range: {min(prices):.2f} to {max(prices):.2f}",
@@ -132,29 +87,52 @@ class SwingStructureAnalyzer(Analyzer):
                 SwingFact(
                     timestamp=view.current.timestamp,
                     evidence=evidence,
-                    swings=tuple(separated),
+                    swings=tuple(swings),
                 ),
             ),
             evidence=evidence,
         )
 
     @staticmethod
-    def _find_raw_swings(candles: tuple[Candle, ...], base_index: int) -> list[SwingPoint]:
+    def _find_raw_swings(
+        candles: tuple[Candle, ...],
+        base_index: int,
+        left_bars: int = 2,
+        right_bars: int = 1,
+    ) -> list[SwingPoint]:
         raw: list[SwingPoint] = []
-        for i in range(1, len(candles) - 1):
-            if candles[i].high > candles[i - 1].high and candles[i].high > candles[i + 1].high:
+        n = len(candles)
+        for i in range(left_bars, n - right_bars):
+            high_i = candles[i].high
+            low_i = candles[i].low
+
+            is_peak = all(
+                high_i > candles[i - j].high for j in range(1, left_bars + 1)
+            ) and all(
+                high_i > candles[i + j].high for j in range(1, right_bars + 1)
+            )
+
+            if is_peak:
                 raw.append(
                     SwingPoint(
-                        price=candles[i].high,
+                        price=high_i,
                         index=base_index + i,
                         type=SwingType.HIGH,
                         timestamp=candles[i].timestamp,
                     )
                 )
-            elif candles[i].low < candles[i - 1].low and candles[i].low < candles[i + 1].low:
+                continue
+
+            is_trough = all(
+                low_i < candles[i - j].low for j in range(1, left_bars + 1)
+            ) and all(
+                low_i < candles[i + j].low for j in range(1, right_bars + 1)
+            )
+
+            if is_trough:
                 raw.append(
                     SwingPoint(
-                        price=candles[i].low,
+                        price=low_i,
                         index=base_index + i,
                         type=SwingType.LOW,
                         timestamp=candles[i].timestamp,
@@ -162,44 +140,6 @@ class SwingStructureAnalyzer(Analyzer):
                 )
         return raw
 
-    @staticmethod
-    def _filter_alternating(swings: list[SwingPoint]) -> list[SwingPoint]:
-        if not swings:
-            return []
-        result: list[SwingPoint] = []
-        last_type: SwingType | None = None
-        for swing in swings:
-            if last_type is None:
-                result.append(swing)
-                last_type = swing.type
-            elif swing.type != last_type:
-                result.append(swing)
-                last_type = swing.type
-            else:
-                if swing.type == SwingType.HIGH:
-                    if swing.price > result[-1].price:
-                        result[-1] = swing
-                else:
-                    if swing.price < result[-1].price:
-                        result[-1] = swing
-        return result
 
-    def _filter_atr_separation(self, swings: list[SwingPoint], atr: float) -> list[SwingPoint]:
-        if not swings:
-            return []
-        min_sep = self._min_swing_atr * atr
-        result: list[SwingPoint] = []
-        last_high_price: float | None = None
-        last_low_price: float | None = None
-        for swing in swings:
-            if swing.type == SwingType.HIGH:
-                if last_high_price is not None and abs(swing.price - last_high_price) < min_sep:
-                    continue
-                result.append(swing)
-                last_high_price = swing.price
-            else:
-                if last_low_price is not None and abs(swing.price - last_low_price) < min_sep:
-                    continue
-                result.append(swing)
-                last_low_price = swing.price
-        return result
+
+

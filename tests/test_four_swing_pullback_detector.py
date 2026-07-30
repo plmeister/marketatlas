@@ -575,7 +575,7 @@ class TestFourSwingPullbackDetector:
             trend_key="my_trend",
             atr_key="my_atr",
         )
-        facts = {
+        facts: dict[FactKey, Fact] = {
             FactKey("my_swing"): _bullish_4swing_fact(),
             FactKey("my_trend"): _bullish_trend_fact(),
             FactKey("my_atr"): _atr_fact(50.0),
