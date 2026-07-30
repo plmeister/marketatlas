@@ -17,6 +17,7 @@ let playInterval = null;
 let autoScrollDisabled = false;
 let programmaticScroll = false;
 let futureVisibility = 'hide'; // 'hide' | 'dim' | 'show'
+let _visibilityNeedsReset = false;
 
 // --- Chart setup ---
 const chartContainer = document.getElementById('chart-container');
@@ -530,13 +531,14 @@ function updateCandles(frameIdx) {
     const cutoff = FRAMES[frameIdx].time;
     const dimmed = CANDLES.map(c => {
       if (c.time > cutoff) {
-        return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close, color: 'rgba(128,128,128,0.3)' };
+        return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close, color: 'rgba(128,128,128,0.3)', borderColor: 'rgba(128,128,128,0.3)', wickColor: 'rgba(128,128,128,0.3)' };
       }
       return c;
     });
     candleSeries.setData(dimmed);
-  } else {
+  } else if (_visibilityNeedsReset) {
     candleSeries.setData(CANDLES);
+    _visibilityNeedsReset = false;
   }
 }
 
@@ -544,6 +546,7 @@ const futureVisibilityLabels = { hide: '\u{1F441} Hide', dim: '\u{1F441}\uFE0F D
 function toggleFutureVisibility() {
   futureVisibility = futureVisibility === 'hide' ? 'dim' : futureVisibility === 'dim' ? 'show' : 'hide';
   document.getElementById('btn-visibility').innerHTML = futureVisibilityLabels[futureVisibility];
+  _visibilityNeedsReset = true;
   updateCandles(currentFrame);
 }
 

@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime, timedelta
 
 from marketatlas.analysis.factkey import FactKey
@@ -882,5 +883,46 @@ class TestInteractiveRenderer:
         assert "candleSeries.update" in content
         assert "borderColor: '#facc15'" in content
         assert "wickColor: '#facc15'" in content
-        # Old approach (line series with setData) should be gone
         assert "candleHighlightLine" not in content
+
+    def test_visibility_button_in_output(self, tmp_path: object) -> None:
+        path = tmp_path / "vis.html"
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)
+        content = path.read_text()
+        assert "btn-visibility" in content
+        assert "toggleFutureVisibility" in content
+        assert "futureVisibility" in content
+
+    def test_dim_mode_candle_colors_in_js(self, tmp_path: object) -> None:
+        path = tmp_path / "dim.html"
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)
+        content = path.read_text()
+        # JS dim mode should set borderColor and wickColor for dimmed candles
+        assert "borderColor: 'rgba(128,128,128,0.3)'" in content
+        assert "wickColor: 'rgba(128,128,128,0.3)'" in content
+
+    def test_future_visibility_toggle_cycle(self, tmp_path: object) -> None:
+        path = tmp_path / "toggle.html"
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        renderer = InteractiveRenderer(ctx)
+        renderer.render(path)
+        content = path.read_text()
+        # Must cycle hide -> dim -> show
+        btn_vis = re.search(r'id="btn-visibility".*?</button>', content)
+        assert btn_vis is not None
+        assert "futureVisibility" in content
+        assert "futureVisibilityLabels" in content
+        assert "updateCandles" in content
