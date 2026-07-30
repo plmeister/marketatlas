@@ -11,9 +11,7 @@ from marketatlas.facts.primitive import ATRFact
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
 
 
-def _make_store(
-    highs: list[float], lows: list[float], closes: list[float]
-) -> MarketStore:
+def _make_store(highs: list[float], lows: list[float], closes: list[float]) -> MarketStore:
     candles = tuple(
         Candle(
             timestamp=BASE,

@@ -63,9 +63,7 @@ def _make_swings(
     )
 
 
-def _keyed_facts(
-    swings: SwingFact, atr: ATRFact
-) -> dict[FactKey, Fact]:
+def _keyed_facts(swings: SwingFact, atr: ATRFact) -> dict[FactKey, Fact]:
     return {FactKey("swing"): swings, FactKey("atr_14"): atr}
 
 
@@ -100,12 +98,8 @@ class TestSupportResistanceAnalyzer:
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         analyzer = SupportResistanceAnalyzer()
-        sf = _swings_fact(
-            _make_swings([(100.0, SwingType.HIGH), (90.0, SwingType.LOW)])
-        )
-        bad_atr = ATRFact(
-            timestamp=BASE, evidence=(), value=0.0, period=14
-        )
+        sf = _swings_fact(_make_swings([(100.0, SwingType.HIGH), (90.0, SwingType.LOW)]))
+        bad_atr = ATRFact(timestamp=BASE, evidence=(), value=0.0, period=14)
         result = analyzer.analyze(view, _keyed_facts(sf, bad_atr))
         fact = result.facts[0]
         assert isinstance(fact, SRFact)
@@ -133,11 +127,13 @@ class TestSupportResistanceAnalyzer:
         # Two swings at 100.0 and 100.5 → within tolerance → cluster
         analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5)
         sf = _swings_fact(
-            _make_swings([
-                (100.0, SwingType.HIGH),
-                (100.5, SwingType.HIGH),
-                (90.0, SwingType.LOW),
-            ])
+            _make_swings(
+                [
+                    (100.0, SwingType.HIGH),
+                    (100.5, SwingType.HIGH),
+                    (90.0, SwingType.LOW),
+                ]
+            )
         )
         result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact(2.0)))
         fact = result.facts[0]
@@ -156,10 +152,12 @@ class TestSupportResistanceAnalyzer:
         # current close = 100.0
         analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5)
         sf = _swings_fact(
-            _make_swings([
-                (95.0, SwingType.LOW),
-                (105.0, SwingType.HIGH),
-            ])
+            _make_swings(
+                [
+                    (95.0, SwingType.LOW),
+                    (105.0, SwingType.HIGH),
+                ]
+            )
         )
         result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact(2.0)))
         fact = result.facts[0]
@@ -177,12 +175,14 @@ class TestSupportResistanceAnalyzer:
         view = MarketView(store, cursor=4, window_size=4)
         analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5)
         sf = _swings_fact(
-            _make_swings([
-                (110.0, SwingType.HIGH),
-                (80.0, SwingType.LOW),
-                (95.0, SwingType.LOW),
-                (105.0, SwingType.HIGH),
-            ])
+            _make_swings(
+                [
+                    (110.0, SwingType.HIGH),
+                    (80.0, SwingType.LOW),
+                    (95.0, SwingType.LOW),
+                    (105.0, SwingType.HIGH),
+                ]
+            )
         )
         result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact(2.0)))
         fact = result.facts[0]
@@ -196,10 +196,12 @@ class TestSupportResistanceAnalyzer:
         view = MarketView(store, cursor=4, window_size=4)
         analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5)
         sf = _swings_fact(
-            _make_swings([
-                (95.0, SwingType.LOW),
-                (105.0, SwingType.HIGH),
-            ])
+            _make_swings(
+                [
+                    (95.0, SwingType.LOW),
+                    (105.0, SwingType.HIGH),
+                ]
+            )
         )
         result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact(2.0)))
         assert any("2 S/R levels" in e.text for e in result.evidence)
@@ -210,11 +212,13 @@ class TestSupportResistanceAnalyzer:
         view = MarketView(store, cursor=4, window_size=4)
         analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5)
         sf = _swings_fact(
-            _make_swings([
-                (80.0, SwingType.LOW),
-                (95.0, SwingType.LOW),
-                (105.0, SwingType.HIGH),
-            ])
+            _make_swings(
+                [
+                    (80.0, SwingType.LOW),
+                    (95.0, SwingType.LOW),
+                    (105.0, SwingType.HIGH),
+                ]
+            )
         )
         result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact(2.0)))
         assert any("Nearest support" in e.text for e in result.evidence)
@@ -225,11 +229,13 @@ class TestSupportResistanceAnalyzer:
         view = MarketView(store, cursor=4, window_size=4)
         analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5)
         sf = _swings_fact(
-            _make_swings([
-                (95.0, SwingType.LOW),
-                (105.0, SwingType.HIGH),
-                (115.0, SwingType.HIGH),
-            ])
+            _make_swings(
+                [
+                    (95.0, SwingType.LOW),
+                    (105.0, SwingType.HIGH),
+                    (115.0, SwingType.HIGH),
+                ]
+            )
         )
         result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact(2.0)))
         assert any("Nearest resistance" in e.text for e in result.evidence)
@@ -247,9 +253,7 @@ class TestSupportResistanceAnalyzer:
         candles = [(100.0, 101.0, 99.0, 100.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
-        analyzer = SupportResistanceAnalyzer(
-            swing_key="swing_custom", atr_key="atr_custom"
-        )
+        analyzer = SupportResistanceAnalyzer(swing_key="swing_custom", atr_key="atr_custom")
         sf = _swings_fact(_make_swings([(95.0, SwingType.LOW)]))
         atr = _atr_fact(2.0)
         facts = {FactKey("swing_custom"): sf, FactKey("atr_custom"): atr}

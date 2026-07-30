@@ -43,9 +43,7 @@ def _flat_closes(n: int, value: float = 100.0) -> list[float]:
     return [value] * n
 
 
-def _make_ema_facts(
-    view: MarketView, fast_period: int, slow_period: int
-) -> dict[FactKey, object]:
+def _make_ema_facts(view: MarketView, fast_period: int, slow_period: int) -> dict[FactKey, object]:
     fast = EMAAnalyzer(fast_period)
     slow = EMAAnalyzer(slow_period)
     fast_result = fast.analyze(view, {})
@@ -182,9 +180,7 @@ class TestTrendAnalyzer:
         store = _make_store(closes)
         view = MarketView(store, cursor=2, window_size=2)
         facts = _make_ema_facts(view, 2, 3)
-        result = TrendAnalyzer(
-            fast_key="ema_2", slow_key="ema_3"
-        ).analyze(view, facts)
+        result = TrendAnalyzer(fast_key="ema_2", slow_key="ema_3").analyze(view, facts)
         assert isinstance(result.facts[0], TrendFact)
 
     def test_strength_bounded_0_to_1(self) -> None:
@@ -208,7 +204,5 @@ class TestTrendAnalyzer:
         store = _make_store(closes)
         view = MarketView(store, cursor=59, window_size=59)
         facts = _make_ema_facts(view, 10, 30)
-        result = TrendAnalyzer(
-            fast_key="ema_10", slow_key="ema_30"
-        ).analyze(view, facts)
+        result = TrendAnalyzer(fast_key="ema_10", slow_key="ema_30").analyze(view, facts)
         assert isinstance(result.facts[0], TrendFact)

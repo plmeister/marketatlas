@@ -30,9 +30,7 @@ class SwingStructureAnalyzer(Analyzer):
     def produces(self) -> tuple[FactKey, ...]:
         return (FactKey(self.instance_key),)
 
-    def analyze(
-        self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> AnalysisResult:
+    def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         atr_fact = facts.get(FactKey(self._atr_key))
         if not isinstance(atr_fact, ATRFact) or atr_fact.value <= 0:
             evidence: tuple[EvidenceEntry, ...] = (
@@ -141,15 +139,10 @@ class SwingStructureAnalyzer(Analyzer):
         )
 
     @staticmethod
-    def _find_raw_swings(
-        candles: tuple[Candle, ...], base_index: int
-    ) -> list[SwingPoint]:
+    def _find_raw_swings(candles: tuple[Candle, ...], base_index: int) -> list[SwingPoint]:
         raw: list[SwingPoint] = []
         for i in range(1, len(candles) - 1):
-            if (
-                candles[i].high > candles[i - 1].high
-                and candles[i].high > candles[i + 1].high
-            ):
+            if candles[i].high > candles[i - 1].high and candles[i].high > candles[i + 1].high:
                 raw.append(
                     SwingPoint(
                         price=candles[i].high,
@@ -158,10 +151,7 @@ class SwingStructureAnalyzer(Analyzer):
                         timestamp=candles[i].timestamp,
                     )
                 )
-            elif (
-                candles[i].low < candles[i - 1].low
-                and candles[i].low < candles[i + 1].low
-            ):
+            elif candles[i].low < candles[i - 1].low and candles[i].low < candles[i + 1].low:
                 raw.append(
                     SwingPoint(
                         price=candles[i].low,
@@ -194,9 +184,7 @@ class SwingStructureAnalyzer(Analyzer):
                         result[-1] = swing
         return result
 
-    def _filter_atr_separation(
-        self, swings: list[SwingPoint], atr: float
-    ) -> list[SwingPoint]:
+    def _filter_atr_separation(self, swings: list[SwingPoint], atr: float) -> list[SwingPoint]:
         if not swings:
             return []
         min_sep = self._min_swing_atr * atr

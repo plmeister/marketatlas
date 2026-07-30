@@ -17,9 +17,7 @@ def _make_candles(n: int = 5, base_price: float = 100.0) -> tuple[Candle, ...]:
         ts = base + timedelta(days=i)
         p = base_price + i
         candles.append(
-            Candle(
-                timestamp=ts, open=p, high=p + 2, low=p - 1, close=p + 1, volume=1000.0 + i
-            )
+            Candle(timestamp=ts, open=p, high=p + 2, low=p - 1, close=p + 1, volume=1000.0 + i)
         )
     return tuple(candles)
 
@@ -52,20 +50,23 @@ class TestFetchCommand:
     @patch("marketatlas.cli.YahooProvider")
     def test_fetch_success(self, mock_yahoo_cls: MagicMock, tmp_path: Path) -> None:
         candles = _make_candles(3)
-        market_data = MarketData(
-            symbol=Symbol("BTC-USD"), timeframe=Timeframe.D1, candles=candles
-        )
+        market_data = MarketData(symbol=Symbol("BTC-USD"), timeframe=Timeframe.D1, candles=candles)
         mock_provider = MagicMock()
         mock_provider.fetch.return_value = market_data
         mock_yahoo_cls.return_value = mock_provider
 
         _run_main(
             "fetch",
-            "--symbol", "BTC-USD",
-            "--timeframe", "1d",
-            "--start", "2024-01-01",
-            "--end", "2024-02-01",
-            "--output", str(tmp_path),
+            "--symbol",
+            "BTC-USD",
+            "--timeframe",
+            "1d",
+            "--start",
+            "2024-01-01",
+            "--end",
+            "2024-02-01",
+            "--output",
+            str(tmp_path),
         )
 
         mock_provider.fetch.assert_called_once()
@@ -83,11 +84,16 @@ class TestFetchCommand:
         out_dir = tmp_path / "nested" / "dir"
         _run_main(
             "fetch",
-            "--symbol", "X",
-            "--timeframe", "1d",
-            "--start", "2024-01-01",
-            "--end", "2024-01-02",
-            "--output", str(out_dir),
+            "--symbol",
+            "X",
+            "--timeframe",
+            "1d",
+            "--start",
+            "2024-01-01",
+            "--end",
+            "2024-01-02",
+            "--output",
+            str(out_dir),
         )
 
         assert out_dir.exists()
@@ -101,11 +107,16 @@ class TestFetchCommand:
         with pytest.raises(SystemExit) as exc_info:
             _run_main(
                 "fetch",
-                "--symbol", "BAD",
-                "--timeframe", "1d",
-                "--start", "2024-01-01",
-                "--end", "2024-01-02",
-                "--output", str(tmp_path),
+                "--symbol",
+                "BAD",
+                "--timeframe",
+                "1d",
+                "--start",
+                "2024-01-01",
+                "--end",
+                "2024-01-02",
+                "--output",
+                str(tmp_path),
             )
         assert exc_info.value.code == 1
 
@@ -170,14 +181,22 @@ class TestRunCommand:
         output_html = tmp_path / "out.html"
         _run_main(
             "run",
-            "--strategy", str(strategy_file),
-            "--symbol", "BTC-USD",
-            "--interval", "1d",
-            "--start", "2024-01-01",
-            "--end", "2025-01-01",
-            "--output", str(output_html),
-            "--balance", "5000",
-            "--max-hold-days", "5",
+            "--strategy",
+            str(strategy_file),
+            "--symbol",
+            "BTC-USD",
+            "--interval",
+            "1d",
+            "--start",
+            "2024-01-01",
+            "--end",
+            "2025-01-01",
+            "--output",
+            str(output_html),
+            "--balance",
+            "5000",
+            "--max-hold-days",
+            "5",
         )
 
         mock_load.assert_called_once_with(strategy_file)
@@ -192,9 +211,7 @@ class TestRunCommand:
         assert exc_info.value.code == 1
 
     @patch("marketatlas.strategy.loader.load_strategy")
-    def test_run_strategy_load_error(
-        self, mock_load: MagicMock, tmp_path: Path
-    ) -> None:
+    def test_run_strategy_load_error(self, mock_load: MagicMock, tmp_path: Path) -> None:
         strategy_file = tmp_path / "bad.yaml"
         strategy_file.write_text("invalid")
         mock_load.side_effect = ValueError("bad config")
@@ -288,8 +305,10 @@ class TestRunCommand:
         output_html = tmp_path / "output.html"
         _run_main(
             "run",
-            "--strategy", str(strategy_file),
-            "--output", str(output_html),
+            "--strategy",
+            str(strategy_file),
+            "--output",
+            str(output_html),
         )
 
         mock_renderer_cls.assert_called_once()
@@ -370,8 +389,10 @@ class TestRunCommand:
 
         _run_main(
             "run",
-            "--strategy", str(strategy_file),
-            "--output", "",
+            "--strategy",
+            str(strategy_file),
+            "--output",
+            "",
         )
 
     @patch("marketatlas.visualization.interactive.InteractiveRenderer")
@@ -432,8 +453,10 @@ class TestRunCommand:
 
         _run_main(
             "run",
-            "--strategy", str(strategy_file),
-            "--output", "",
+            "--strategy",
+            str(strategy_file),
+            "--output",
+            "",
         )
 
         fetch_args = mock_provider.fetch.call_args
@@ -504,8 +527,10 @@ class TestRunCommand:
 
         _run_main(
             "run",
-            "--strategy", str(strategy_file),
-            "--output", "",
+            "--strategy",
+            str(strategy_file),
+            "--output",
+            "",
         )
 
         captured = capsys.readouterr()

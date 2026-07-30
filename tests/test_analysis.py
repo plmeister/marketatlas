@@ -50,9 +50,7 @@ class ProduceXAnalyzer(Analyzer):
     def produces(self) -> tuple[FactKey, ...]:
         return (FactKey("ema_20"),)
 
-    def analyze(
-        self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> AnalysisResult:
+    def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         return AnalysisResult(
             facts=(
                 EMAFact(
@@ -85,9 +83,7 @@ class RequireXProduceYAnalyzer(Analyzer):
     def produces(self) -> tuple[FactKey, ...]:
         return (FactKey("trend"),)
 
-    def analyze(
-        self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> AnalysisResult:
+    def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         _ema = facts[FactKey("ema_20")]
         return AnalysisResult(
             facts=(
@@ -121,9 +117,7 @@ class RequireBothAnalyzer(Analyzer):
     def produces(self) -> tuple[FactKey, ...]:
         return (FactKey("atr_14"),)
 
-    def analyze(
-        self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> AnalysisResult:
+    def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         return AnalysisResult(
             facts=(
                 ATRFact(
@@ -175,9 +169,7 @@ class TestAnalyzerBase:
             def produces(self) -> tuple[FactKey, ...]:
                 return ()
 
-            def analyze(
-                self, view: MarketView, facts: dict[FactKey, Fact]
-            ) -> AnalysisResult:
+            def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
                 return AnalysisResult(facts=(), evidence=())
 
         analyzer = MyAnalyzer()
@@ -238,9 +230,7 @@ class TestAnalysisGraphErrors:
             def produces(self) -> tuple[FactKey, ...]:
                 return (FactKey("ema_20"),)
 
-            def analyze(
-                self, view: MarketView, facts: dict[FactKey, Fact]
-            ) -> AnalysisResult:
+            def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
                 return AnalysisResult(facts=(), evidence=())
 
         class CyclicB(Analyzer):
@@ -250,9 +240,7 @@ class TestAnalysisGraphErrors:
             def produces(self) -> tuple[FactKey, ...]:
                 return (FactKey("trend"),)
 
-            def analyze(
-                self, view: MarketView, facts: dict[FactKey, Fact]
-            ) -> AnalysisResult:
+            def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
                 return AnalysisResult(facts=(), evidence=())
 
         with pytest.raises(CyclicDependencyError):
@@ -266,9 +254,7 @@ class TestAnalysisGraphErrors:
             def produces(self) -> tuple[FactKey, ...]:
                 return (FactKey("trend"),)
 
-            def analyze(
-                self, view: MarketView, facts: dict[FactKey, Fact]
-            ) -> AnalysisResult:
+            def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
                 return AnalysisResult(facts=(), evidence=())
 
         with pytest.raises(UnsatisfiedDependencyError):
@@ -290,11 +276,13 @@ class TestAnalysisGraphRun:
         assert trend.direction == TrendDirection.BULLISH
 
     def test_run_three_chain(self, view: MarketView) -> None:
-        graph = AnalysisGraph([
-            ProduceXAnalyzer(),
-            RequireXProduceYAnalyzer(),
-            RequireBothAnalyzer(),
-        ])
+        graph = AnalysisGraph(
+            [
+                ProduceXAnalyzer(),
+                RequireXProduceYAnalyzer(),
+                RequireBothAnalyzer(),
+            ]
+        )
         facts = graph.run(view)
         assert len(facts) == 3
         assert FactKey("atr_14") in facts
@@ -312,9 +300,7 @@ class TestAnalysisGraphRun:
             def produces(self) -> tuple[FactKey, ...]:
                 return (FactKey("atr_14"),)
 
-            def analyze(
-                self, view: MarketView, facts: dict[FactKey, Fact]
-            ) -> AnalysisResult:
+            def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
                 return AnalysisResult(
                     facts=(
                         ATRFact(
@@ -347,9 +333,7 @@ class TestAnalysisGraphDuplicateProducer:
             def produces(self) -> tuple[FactKey, ...]:
                 return (FactKey("ema_20"),)
 
-            def analyze(
-                self, view: MarketView, facts: dict[FactKey, Fact]
-            ) -> AnalysisResult:
+            def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
                 return AnalysisResult(facts=(), evidence=())
 
         class DupB(Analyzer):
@@ -359,9 +343,7 @@ class TestAnalysisGraphDuplicateProducer:
             def produces(self) -> tuple[FactKey, ...]:
                 return (FactKey("ema_20"),)
 
-            def analyze(
-                self, view: MarketView, facts: dict[FactKey, Fact]
-            ) -> AnalysisResult:
+            def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
                 return AnalysisResult(facts=(), evidence=())
 
         with pytest.raises(CyclicDependencyError):
@@ -399,9 +381,7 @@ class TestAnalyzerRegistry:
             def produces(self) -> tuple[FactKey, ...]:
                 return (FactKey(f"ema_{self._period}"),)
 
-            def analyze(
-                self, view: MarketView, facts: dict[FactKey, Fact]
-            ) -> AnalysisResult:
+            def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
                 return AnalysisResult(facts=(), evidence=())
 
         registry = AnalyzerRegistry()

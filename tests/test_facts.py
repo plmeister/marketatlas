@@ -97,9 +97,7 @@ class TestTrendFact:
         assert TrendDirection.NEUTRAL.value == "neutral"
 
     def test_frozen(self) -> None:
-        f = TrendFact(
-            timestamp=TS, evidence=(), direction=TrendDirection.BEARISH, strength=0.5
-        )
+        f = TrendFact(timestamp=TS, evidence=(), direction=TrendDirection.BEARISH, strength=0.5)
         with pytest.raises(AttributeError):
             f.direction = TrendDirection.NEUTRAL  # type: ignore[misc]
 
@@ -140,9 +138,7 @@ class TestFactInheritance:
         assert isinstance(f, Fact)
 
     def test_trendfact_is_fact(self) -> None:
-        f = TrendFact(
-            timestamp=TS, evidence=(), direction=TrendDirection.BULLISH, strength=0.8
-        )
+        f = TrendFact(timestamp=TS, evidence=(), direction=TrendDirection.BULLISH, strength=0.8)
         assert isinstance(f, Fact)
 
     def test_pullbackfact_is_fact(self) -> None:

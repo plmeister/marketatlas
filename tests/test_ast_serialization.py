@@ -38,9 +38,7 @@ class TestToDict:
         a = Analysis(
             name="test",
             version="1.0.0",
-            definitions=(
-                Definition(name="ema20", provider="EMAAnalyzer"),
-            ),
+            definitions=(Definition(name="ema20", provider="EMAAnalyzer"),),
         )
         d = to_dict(a)
         assert d["name"] == "test"
@@ -103,7 +101,9 @@ class TestToDict:
 
     def test_with_provider_default_params(self) -> None:
         p = Provider(
-            name="EMAAnalyzer", capability="compute_ema", category="analyzer",
+            name="EMAAnalyzer",
+            capability="compute_ema",
+            category="analyzer",
             impl="EMAAnalyzer",
             default_params=(Parameter(name="period", value=20),),
         )
@@ -233,30 +233,39 @@ class TestFromDict:
 
     def test_parameter_missing_name_raises(self) -> None:
         with pytest.raises(ValueError, match="Missing required field: name"):
-            from_dict({
-                "name": "test", "version": "1.0",
-                "definitions": [{"name": "d", "provider": "P", "parameters": [{"value": 20}]}],
-            })
+            from_dict(
+                {
+                    "name": "test",
+                    "version": "1.0",
+                    "definitions": [{"name": "d", "provider": "P", "parameters": [{"value": 20}]}],
+                }
+            )
 
     def test_binding_missing_field_raises(self) -> None:
         with pytest.raises(ValueError, match="Missing required field"):
-            from_dict({
-                "name": "test", "version": "1.0",
-                "definitions": [
-                    {
-                        "name": "d",
-                        "provider": "P",
-                        "bindings": [{"source": "a", "output": "x", "target": "b"}],
-                    }
-                ],
-            })
+            from_dict(
+                {
+                    "name": "test",
+                    "version": "1.0",
+                    "definitions": [
+                        {
+                            "name": "d",
+                            "provider": "P",
+                            "bindings": [{"source": "a", "output": "x", "target": "b"}],
+                        }
+                    ],
+                }
+            )
 
     def test_provider_missing_field_raises(self) -> None:
         with pytest.raises(ValueError, match="Missing required field"):
-            from_dict({
-                "name": "test", "version": "1.0",
-                "providers": [{"name": "P", "capability": "c", "category": "a"}],
-            })
+            from_dict(
+                {
+                    "name": "test",
+                    "version": "1.0",
+                    "providers": [{"name": "P", "capability": "c", "category": "a"}],
+                }
+            )
 
     def test_round_trip(self) -> None:
         original = Analysis(

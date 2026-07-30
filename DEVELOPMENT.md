@@ -31,6 +31,7 @@ poetry run pytest tests/test_swing_structure_analyzer.py -v
 ```bash
 poetry run ruff check src/ tests/
 poetry run ruff check src/ tests/ --fix   # safe auto-fix, do before agent edits
+poetry run ruff format src/ tests/        # format source
 poetry run mypy src/
 ```
 

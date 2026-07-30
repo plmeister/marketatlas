@@ -74,8 +74,11 @@ class TestProvider:
     def test_with_default_params(self) -> None:
         params = (Parameter(name="period", value=20),)
         p = Provider(
-            name="EMAAnalyzer", capability="compute_ema", category="analyzer",
-            impl="EMAAnalyzer", default_params=params,
+            name="EMAAnalyzer",
+            capability="compute_ema",
+            category="analyzer",
+            impl="EMAAnalyzer",
+            default_params=params,
         )
         assert p.default_params == params
 
@@ -207,10 +210,7 @@ class TestAnalysis:
         assert restored.bindings[0].source == "a"
 
     def test_multiple_definitions(self) -> None:
-        defs = tuple(
-            Definition(name=f"d{i}", provider="Analyzer")
-            for i in range(5)
-        )
+        defs = tuple(Definition(name=f"d{i}", provider="Analyzer") for i in range(5))
         a = Analysis(name="multi", version="1.0", definitions=defs)
         assert len(a.definitions) == 5
         assert [d.name for d in a.definitions] == ["d0", "d1", "d2", "d3", "d4"]

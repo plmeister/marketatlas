@@ -82,9 +82,7 @@ def _atr_fact(value: float = 50.0) -> ATRFact:
     )
 
 
-def _keyed_facts(
-    swing: SwingFact, trend: TrendFact, atr: ATRFact
-) -> dict[FactKey, Fact]:
+def _keyed_facts(swing: SwingFact, trend: TrendFact, atr: ATRFact) -> dict[FactKey, Fact]:
     return {
         FactKey("swing"): swing,
         FactKey("trend"): trend,
@@ -283,8 +281,10 @@ class TestFourSwingPullbackDetector:
         view = MarketView(store, cursor=49, window_size=50)
         detector = FourSwingPullbackDetector()
         neutral = TrendFact(
-            timestamp=BASE, evidence=(),
-            direction=TrendDirection.NEUTRAL, strength=0.0,
+            timestamp=BASE,
+            evidence=(),
+            direction=TrendDirection.NEUTRAL,
+            strength=0.0,
         )
         result = detector.analyze(
             view,
@@ -332,26 +332,47 @@ class TestFourSwingPullbackDetector:
                 candles_data.append((100.0 + i, 101.0 + i, 99.0 + i, 100.0 + i, 1000.0))
             elif i < 15:
                 offset = (i - 5) * 0.5
-                candles_data.append((
-                    105.0 + offset, 106.0 + offset,
-                    104.0 + offset, 105.0 + offset, 1000.0,
-                ))
+                candles_data.append(
+                    (
+                        105.0 + offset,
+                        106.0 + offset,
+                        104.0 + offset,
+                        105.0 + offset,
+                        1000.0,
+                    )
+                )
             elif i < 20:
-                candles_data.append((
-                    110.0, 130.0, 109.0, 110.0, 1000.0,
-                ))  # big spike
+                candles_data.append(
+                    (
+                        110.0,
+                        130.0,
+                        109.0,
+                        110.0,
+                        1000.0,
+                    )
+                )  # big spike
             elif i < 25:
                 offset = (i - 20) * 0.5
-                candles_data.append((
-                    110.0 - offset, 111.0 - offset,
-                    109.0 - offset, 110.0 - offset, 1000.0,
-                ))
+                candles_data.append(
+                    (
+                        110.0 - offset,
+                        111.0 - offset,
+                        109.0 - offset,
+                        110.0 - offset,
+                        1000.0,
+                    )
+                )
             elif i < 35:
                 offset = (i - 25) * 0.5
-                candles_data.append((
-                    103.0 + offset, 104.0 + offset,
-                    102.0 + offset, 103.0 + offset, 1000.0,
-                ))
+                candles_data.append(
+                    (
+                        103.0 + offset,
+                        104.0 + offset,
+                        102.0 + offset,
+                        103.0 + offset,
+                        1000.0,
+                    )
+                )
             else:
                 candles_data.append((108.0, 109.0, 107.0, 108.0, 1000.0))
 
@@ -550,7 +571,9 @@ class TestFourSwingPullbackDetector:
         store = _make_store(candles)
         view = MarketView(store, cursor=len(candles) - 1, window_size=len(candles))
         detector = FourSwingPullbackDetector(
-            swing_key="my_swing", trend_key="my_trend", atr_key="my_atr",
+            swing_key="my_swing",
+            trend_key="my_trend",
+            atr_key="my_atr",
         )
         facts = {
             FactKey("my_swing"): _bullish_4swing_fact(),
@@ -598,14 +621,16 @@ class TestFourSwingPullbackDetector:
         store = _make_store(candles_data)
         view = MarketView(store, cursor=49, window_size=50)
 
-        graph = AnalysisGraph([
-            EMAAnalyzer(period=20),
-            EMAAnalyzer(period=50),
-            ATRAnalyzer(),
-            TrendAnalyzer(),
-            SwingStructureAnalyzer(lookback=50, min_swing_atr=0.3),
-            FourSwingPullbackDetector(),
-        ])
+        graph = AnalysisGraph(
+            [
+                EMAAnalyzer(period=20),
+                EMAAnalyzer(period=50),
+                ATRAnalyzer(),
+                TrendAnalyzer(),
+                SwingStructureAnalyzer(lookback=50, min_swing_atr=0.3),
+                FourSwingPullbackDetector(),
+            ]
+        )
         facts = graph.run(view)
         pullback = facts.get(FactKey("four_swing_pullback"))
         assert pullback is not None

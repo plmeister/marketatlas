@@ -37,7 +37,12 @@ def _make_candle(offset: int = 0, base_price: float = 100.0) -> Candle:
     ts = BASE + timedelta(days=offset)
     p = base_price + offset
     return Candle(
-        timestamp=ts, open=p, high=p + 5, low=p - 5, close=p + 2, volume=1000.0,
+        timestamp=ts,
+        open=p,
+        high=p + 5,
+        low=p - 5,
+        close=p + 2,
+        volume=1000.0,
     )
 
 
@@ -53,8 +58,10 @@ def _make_frame(offset: int = 0) -> AnalysisFrame:
     ema = EMAFact(timestamp=candle.timestamp, evidence=(), value=102.0 + offset, period=20)
     atr = ATRFact(timestamp=candle.timestamp, evidence=(), value=3.5, period=14)
     trend = TrendFact(
-        timestamp=candle.timestamp, evidence=(),
-        direction=TrendDirection.BULLISH, strength=0.7,
+        timestamp=candle.timestamp,
+        evidence=(),
+        direction=TrendDirection.BULLISH,
+        strength=0.7,
     )
     return AnalysisFrame(
         timestamp=candle.timestamp,
@@ -64,16 +71,15 @@ def _make_frame(offset: int = 0) -> AnalysisFrame:
             FactKey("atr_14"): atr,
             FactKey("trend"): trend,
         },
-        evidence=(
-            EvidenceEntry(text=f"frame {offset}", level=EvidenceLevel.INFO, source="test"),
-        ),
+        evidence=(EvidenceEntry(text=f"frame {offset}", level=EvidenceLevel.INFO, source="test"),),
     )
 
 
 def _make_sr_frame(offset: int = 0) -> AnalysisFrame:
     candle = _make_candle(offset)
     sr = SRFact(
-        timestamp=candle.timestamp, evidence=(),
+        timestamp=candle.timestamp,
+        evidence=(),
         levels=(
             SRLevel(price=90.0, strength=2, type="support"),
             SRLevel(price=110.0, strength=3, type="resistance"),
@@ -90,7 +96,8 @@ def _make_sr_frame(offset: int = 0) -> AnalysisFrame:
 def _make_pullback_frame(offset: int = 0) -> AnalysisFrame:
     candle = _make_candle(offset)
     pb = PullbackFact(
-        timestamp=candle.timestamp, evidence=(),
+        timestamp=candle.timestamp,
+        evidence=(),
         status=PullbackStatus.DETECTED,
         retracement_atr=1.2,
         direction=TrendDirection.BULLISH,
@@ -253,13 +260,17 @@ class TestExtractPullbacks:
     def test_ignores_invalidated(self) -> None:
         candle = _make_candle(0)
         pb = PullbackFact(
-            timestamp=candle.timestamp, evidence=(),
+            timestamp=candle.timestamp,
+            evidence=(),
             status=PullbackStatus.INVALIDATED,
-            retracement_atr=1.0, direction=TrendDirection.BEARISH,
+            retracement_atr=1.0,
+            direction=TrendDirection.BEARISH,
         )
         frame = AnalysisFrame(
-            timestamp=candle.timestamp, candle=candle,
-            facts={FactKey("pullback"): pb}, evidence=(),
+            timestamp=candle.timestamp,
+            candle=candle,
+            facts={FactKey("pullback"): pb},
+            evidence=(),
         )
         result = _extract_pullbacks_per_frame([frame])
         assert result[0] is None
@@ -303,7 +314,8 @@ class TestExtractFactsPerFrame:
         candle = _make_candle(5)
         ts = candle.timestamp
         swing_fact = SwingFact(
-            timestamp=ts, evidence=(),
+            timestamp=ts,
+            evidence=(),
             swings=(
                 SwingPoint(price=95.0, index=1, type=SwingType.LOW, timestamp=ts),
                 SwingPoint(price=110.0, index=3, type=SwingType.HIGH, timestamp=ts),
@@ -312,14 +324,16 @@ class TestExtractFactsPerFrame:
             ),
         )
         pullback = PullbackFact(
-            timestamp=candle.timestamp, evidence=(),
+            timestamp=candle.timestamp,
+            evidence=(),
             status=PullbackStatus.DETECTED,
             retracement_atr=1.5,
             direction=TrendDirection.BULLISH,
             swing_pattern=(95.0, 110.0, 97.0, 112.0),
         )
         frame = AnalysisFrame(
-            timestamp=candle.timestamp, candle=candle,
+            timestamp=candle.timestamp,
+            candle=candle,
             facts={
                 FactKey("swing"): swing_fact,
                 FactKey("pullback"): pullback,
@@ -335,15 +349,18 @@ class TestExtractFactsPerFrame:
         candle = _make_candle(0)
         ts = candle.timestamp
         swing = SwingFact(
-            timestamp=ts, evidence=(),
+            timestamp=ts,
+            evidence=(),
             swings=(
                 SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=ts),
                 SwingPoint(price=105.0, index=2, type=SwingType.HIGH, timestamp=ts),
             ),
         )
         frame = AnalysisFrame(
-            timestamp=candle.timestamp, candle=candle,
-            facts={FactKey("swing"): swing}, evidence=(),
+            timestamp=candle.timestamp,
+            candle=candle,
+            facts={FactKey("swing"): swing},
+            evidence=(),
         )
         result = _extract_facts_per_frame([frame])
         assert "swing" in result[0]
@@ -437,9 +454,7 @@ class TestInteractiveRenderer:
         store = _make_store(10)
         frame_store = _make_frame_store(5)
         tb = TradeBook()
-        ctx = RenderContext(
-            frames=frame_store, store=store, tradebook=tb, title="Test Strategy"
-        )
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb, title="Test Strategy")
         renderer = InteractiveRenderer(ctx)
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
@@ -552,15 +567,27 @@ class TestInteractiveRenderer:
         from marketatlas.facts.structural import TrendDirection
         from marketatlas.strategy.signals import TradeSignal
         from marketatlas.strategy.trade import TradeCandidate
+
         tb = TradeBook(initial_balance=1000.0)
         signal = TradeSignal(
-            direction=TrendDirection.BULLISH, entry_zone=(100.0, 105.0),
-            confidence=0.8, source="test", evidence=(),
+            direction=TrendDirection.BULLISH,
+            entry_zone=(100.0, 105.0),
+            confidence=0.8,
+            source="test",
+            evidence=(),
         )
         candidate = TradeCandidate(
-            direction=TrendDirection.BULLISH, entry=103.0, stop=98.0, target=118.0,
-            size=0.2, risk_amount=10.0, reward_amount=30.0,
-            rr_ratio=3.0, slippage_pct=0.1, source="test", evidence=(),
+            direction=TrendDirection.BULLISH,
+            entry=103.0,
+            stop=98.0,
+            target=118.0,
+            size=0.2,
+            risk_amount=10.0,
+            reward_amount=30.0,
+            rr_ratio=3.0,
+            slippage_pct=0.1,
+            source="test",
+            evidence=(),
         )
         # Breakeven trade: entry == exit
         tb.submit_order(candidate, signal, "test", BASE + timedelta(days=1))
@@ -579,14 +606,16 @@ class TestInteractiveRenderer:
         t2 = _make_candle(2).timestamp
         t4 = _make_candle(4).timestamp
         swing1 = SwingFact(
-            timestamp=t0, evidence=(),
+            timestamp=t0,
+            evidence=(),
             swings=(
                 SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=t0),
                 SwingPoint(price=107.0, index=2, type=SwingType.HIGH, timestamp=t2),
             ),
         )
         swing2 = SwingFact(
-            timestamp=_make_candle(1).timestamp, evidence=(),
+            timestamp=_make_candle(1).timestamp,
+            evidence=(),
             swings=(
                 SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=t0),
                 SwingPoint(price=107.0, index=2, type=SwingType.HIGH, timestamp=t2),
@@ -594,12 +623,16 @@ class TestInteractiveRenderer:
             ),
         )
         frame0 = AnalysisFrame(
-            timestamp=_make_candle(0).timestamp, candle=_make_candle(0),
-            facts={FactKey("swing"): swing1}, evidence=(),
+            timestamp=_make_candle(0).timestamp,
+            candle=_make_candle(0),
+            facts={FactKey("swing"): swing1},
+            evidence=(),
         )
         frame1 = AnalysisFrame(
-            timestamp=_make_candle(1).timestamp, candle=_make_candle(1),
-            facts={FactKey("swing"): swing2}, evidence=(),
+            timestamp=_make_candle(1).timestamp,
+            candle=_make_candle(1),
+            facts={FactKey("swing"): swing2},
+            evidence=(),
         )
         frame_store = FrameStore()
         frame_store.append(frame0)
@@ -622,7 +655,8 @@ class TestInteractiveRenderer:
         t5 = _make_candle(5).timestamp
         t7 = _make_candle(7).timestamp
         swing_fact = SwingFact(
-            timestamp=t5, evidence=(),
+            timestamp=t5,
+            evidence=(),
             swings=(
                 SwingPoint(price=95.0, index=1, type=SwingType.LOW, timestamp=t1),
                 SwingPoint(price=110.0, index=3, type=SwingType.HIGH, timestamp=t3),
@@ -631,14 +665,16 @@ class TestInteractiveRenderer:
             ),
         )
         pullback = PullbackFact(
-            timestamp=_make_candle(5).timestamp, evidence=(),
+            timestamp=_make_candle(5).timestamp,
+            evidence=(),
             status=PullbackStatus.DETECTED,
             retracement_atr=1.5,
             direction=TrendDirection.BULLISH,
             swing_pattern=(95.0, 110.0, 97.0, 112.0),
         )
         frame = AnalysisFrame(
-            timestamp=_make_candle(5).timestamp, candle=_make_candle(5),
+            timestamp=_make_candle(5).timestamp,
+            candle=_make_candle(5),
             facts={
                 FactKey("swing"): swing_fact,
                 FactKey("pullback"): pullback,
@@ -674,7 +710,8 @@ class TestInteractiveRenderer:
         frame_store = FrameStore()
         candle = _make_candle(0)
         sr = SRFact(
-            timestamp=candle.timestamp, evidence=(),
+            timestamp=candle.timestamp,
+            evidence=(),
             levels=(
                 SRLevel(price=90.0, strength=1, type="support"),
                 SRLevel(price=95.0, strength=2, type="support"),
@@ -682,8 +719,10 @@ class TestInteractiveRenderer:
             ),
         )
         frame = AnalysisFrame(
-            timestamp=candle.timestamp, candle=candle,
-            facts={FactKey("sr"): sr}, evidence=(),
+            timestamp=candle.timestamp,
+            candle=candle,
+            facts={FactKey("sr"): sr},
+            evidence=(),
         )
         frame_store.append(frame)
         tb = TradeBook()

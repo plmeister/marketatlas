@@ -14,21 +14,25 @@ def _graph_structure_to_dict(graph) -> dict:
     order = graph.execution_order()
     nodes = []
     for a in order:
-        nodes.append({
-            "type": type(a).__name__,
-            "requires": sorted(str(k) for k in a.requires()),
-            "produces": sorted(str(k) for k in a.produces()),
-        })
+        nodes.append(
+            {
+                "type": type(a).__name__,
+                "requires": sorted(str(k) for k in a.requires()),
+                "produces": sorted(str(k) for k in a.produces()),
+            }
+        )
     return {"execution_order": nodes}
 
 
 def assert_ast_snapshot(name: str, analysis, request: pytest.FixtureRequest) -> None:
     from tests.conftest import assert_snapshot as _assert
+
     _assert(f"{name}_ast", to_json(analysis, pretty=True), request)
 
 
 def assert_graph_snapshot(name: str, analysis, request: pytest.FixtureRequest) -> None:
     from tests.conftest import assert_snapshot as _assert
+
     graph = ASTCompiler.compile(analysis)
     graph_dict = _graph_structure_to_dict(graph)
     _assert(f"{name}_graph", json.dumps(graph_dict, indent=2), request)
@@ -117,9 +121,9 @@ class TestLinearChain:
             .define("trend", "analyzer", "TrendAnalyzer")
             .build()
         )
-        assert _graph_structure_to_dict(
-            ASTCompiler.compile(a1)
-        ) == _graph_structure_to_dict(ASTCompiler.compile(a2))
+        assert _graph_structure_to_dict(ASTCompiler.compile(a1)) == _graph_structure_to_dict(
+            ASTCompiler.compile(a2)
+        )
 
 
 class TestBranching:

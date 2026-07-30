@@ -35,9 +35,7 @@ def _make_store(
         )
         for o, h, lo, c, v in candles_data
     )
-    data = MarketData(
-        symbol=Symbol("BTCUSDT"), timeframe=Timeframe.D1, candles=candles
-    )
+    data = MarketData(symbol=Symbol("BTCUSDT"), timeframe=Timeframe.D1, candles=candles)
     return MarketStore(data)
 
 
@@ -196,9 +194,7 @@ class TestRiskEngine:
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(slippage_pct=0.0)
-        sr = _sr_fact(
-            (SRLevel(price=103.0, strength=2, type="resistance"),)
-        )
+        sr = _sr_fact((SRLevel(price=103.0, strength=2, type="resistance"),))
         candidate, evidence = engine.evaluate(
             _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
         )
@@ -210,9 +206,7 @@ class TestRiskEngine:
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(slippage_pct=0.0)
-        sr = _sr_fact(
-            (SRLevel(price=99.0, strength=2, type="support"),)
-        )
+        sr = _sr_fact((SRLevel(price=99.0, strength=2, type="support"),))
         candidate, evidence = engine.evaluate(
             _bearish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
         )
@@ -224,9 +218,7 @@ class TestRiskEngine:
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(slippage_pct=0.0)
-        candidate, evidence = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0)), view
-        )
+        candidate, evidence = engine.evaluate(_bullish_signal(), _facts(atr=_atr_fact(2.0)), view)
         assert candidate is None
         assert any("no SR fact" in e.text for e in evidence)
 
@@ -328,9 +320,7 @@ class TestRiskEngine:
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(avoid_srxing=False, slippage_pct=0.0)
-        sr = _sr_fact(
-            (SRLevel(price=103.0, strength=2, type="resistance"),)
-        )
+        sr = _sr_fact((SRLevel(price=103.0, strength=2, type="resistance"),))
         candidate, _evidence = engine.evaluate(
             _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
         )
@@ -362,9 +352,7 @@ class TestRiskEngine:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
-        engine = RiskEngine(
-            atr_key="atr_custom", sr_key="sr_custom", swing_key="swing_custom"
-        )
+        engine = RiskEngine(atr_key="atr_custom", sr_key="sr_custom", swing_key="swing_custom")
         atr = ATRFact(timestamp=BASE, evidence=(), value=2.0, period=14)
         swings = _swings_fact(
             (SwingPoint(price=96.0, index=0, type=SwingType.LOW, timestamp=BASE),)
@@ -514,19 +502,11 @@ class TestRiskEngine:
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
 
-        sr = _sr_fact(
-            (SRLevel(price=103.0, strength=3, type="resistance"),)
-        )
-        engine = RiskEngine(
-            avoid_srxing=True, min_rr=2.0, max_rr=4.0, slippage_pct=0.0
-        )
-        candidate, _ = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
-        )
+        sr = _sr_fact((SRLevel(price=103.0, strength=3, type="resistance"),))
+        engine = RiskEngine(avoid_srxing=True, min_rr=2.0, max_rr=4.0, slippage_pct=0.0)
+        candidate, _ = engine.evaluate(_bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view)
         if candidate is not None:
-            lo, hi = min(candidate.entry, candidate.target), max(
-                candidate.entry, candidate.target
-            )
+            lo, hi = min(candidate.entry, candidate.target), max(candidate.entry, candidate.target)
             for lv in sr.levels:
                 assert not (lo < lv.price < hi), (
                     "candidate target should not cross S/R — "

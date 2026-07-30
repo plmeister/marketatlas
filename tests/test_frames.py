@@ -13,8 +13,12 @@ def _make_candle(offset: int = 0) -> Candle:
     ts = datetime(2024, 1, 1) + timedelta(hours=offset)
     base = 100.0 + offset
     return Candle(
-        timestamp=ts, open=base, high=base + 5,
-        low=base - 5, close=base + 2, volume=1000.0,
+        timestamp=ts,
+        open=base,
+        high=base + 5,
+        low=base - 5,
+        close=base + 2,
+        volume=1000.0,
     )
 
 
@@ -29,7 +33,8 @@ def _make_frame(offset: int = 0) -> AnalysisFrame:
                 source="EMAAnalyzer",
             ),
         ),
-        value=102.0, period=20,
+        value=102.0,
+        period=20,
     )
     return AnalysisFrame(
         timestamp=candle.timestamp,
@@ -56,7 +61,10 @@ class TestAnalysisFrame:
     def test_default_annotations(self) -> None:
         candle = _make_candle()
         ema = EMAFact(
-            timestamp=candle.timestamp, evidence=(), value=100.0, period=20,
+            timestamp=candle.timestamp,
+            evidence=(),
+            value=100.0,
+            period=20,
         )
         frame = AnalysisFrame(
             timestamp=candle.timestamp,

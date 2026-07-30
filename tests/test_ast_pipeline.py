@@ -38,7 +38,8 @@ class TestValidationPass:
 
     def test_raises_on_duplicate_definitions(self) -> None:
         a = Analysis(
-            name="bad", version="1.0",
+            name="bad",
+            version="1.0",
             definitions=(
                 Definition(name="dup", provider="EMAAnalyzer"),
                 Definition(name="dup", provider="ATRAnalyzer"),
@@ -53,7 +54,8 @@ class TestValidationPass:
 
     def test_raises_on_unknown_provider(self) -> None:
         a = Analysis(
-            name="bad", version="1.0",
+            name="bad",
+            version="1.0",
             definitions=(Definition(name="fake", provider="NoSuchProvider"),),
             providers=(),
         )
@@ -62,7 +64,8 @@ class TestValidationPass:
 
     def test_passes_valid_analysis_with_providers(self) -> None:
         a = Analysis(
-            name="valid", version="1.0",
+            name="valid",
+            version="1.0",
             definitions=(Definition(name="ema20", provider="EMAAnalyzer"),),
             providers=(_p(name="EMAAnalyzer", capability="compute_ema", impl="EMAAnalyzer"),),
         )
@@ -73,7 +76,8 @@ class TestRegistryResolutionPass:
     def test_resolves_provider_names_via_registry(self) -> None:
         registry = create_default_registry()
         a = Analysis(
-            name="test", version="1.0",
+            name="test",
+            version="1.0",
             definitions=(Definition(name="ema20", provider="compute_ema"),),
             providers=(_p(name="compute_ema", capability="compute_ema", impl="EMAAnalyzer"),),
         )
@@ -84,7 +88,8 @@ class TestRegistryResolutionPass:
     def test_raises_on_missing_provider(self) -> None:
         registry = create_default_registry()
         a = Analysis(
-            name="test", version="1.0",
+            name="test",
+            version="1.0",
             definitions=(Definition(name="bad", provider="no_such_provider"),),
             providers=(),
         )
@@ -95,7 +100,8 @@ class TestRegistryResolutionPass:
         registry = ProviderRegistry()
         registry.register("compute_ema", EMAAnalyzer, default_params={"period": 20})
         a = Analysis(
-            name="test", version="1.0",
+            name="test",
+            version="1.0",
             definitions=(Definition(name="ema20", provider="compute_ema"),),
             providers=(_p(name="compute_ema", capability="compute_ema", impl="EMAAnalyzer"),),
         )
@@ -107,10 +113,12 @@ class TestRegistryResolutionPass:
         registry = ProviderRegistry()
         registry.register("compute_ema", EMAAnalyzer, default_params={"period": 20})
         a = Analysis(
-            name="test", version="1.0",
+            name="test",
+            version="1.0",
             definitions=(
                 Definition(
-                    name="ema50", provider="compute_ema",
+                    name="ema50",
+                    provider="compute_ema",
                     parameters=(Parameter(name="period", value=50),),
                 ),
             ),
@@ -126,12 +134,15 @@ class TestDefinitionExpansionPass:
         registry = ProviderRegistry()
         registry.register("compute_ema", EMAAnalyzer, default_params={"period": 20})
         a = Analysis(
-            name="test", version="1.0",
+            name="test",
+            version="1.0",
             definitions=(Definition(name="ema20", provider="EMAAnalyzer"),),
             providers=(
                 Provider(
-                    name="EMAAnalyzer", capability="compute_ema",
-                    category="analyzer", impl="EMAAnalyzer",
+                    name="EMAAnalyzer",
+                    capability="compute_ema",
+                    category="analyzer",
+                    impl="EMAAnalyzer",
                     default_params=(Parameter(name="period", value=20),),
                 ),
             ),
@@ -144,17 +155,21 @@ class TestDefinitionExpansionPass:
         registry = ProviderRegistry()
         registry.register("compute_ema", EMAAnalyzer, default_params={"period": 20})
         a = Analysis(
-            name="test", version="1.0",
+            name="test",
+            version="1.0",
             definitions=(
                 Definition(
-                    name="ema50", provider="EMAAnalyzer",
+                    name="ema50",
+                    provider="EMAAnalyzer",
                     parameters=(Parameter(name="period", value=50),),
                 ),
             ),
             providers=(
                 Provider(
-                    name="EMAAnalyzer", capability="compute_ema",
-                    category="analyzer", impl="EMAAnalyzer",
+                    name="EMAAnalyzer",
+                    capability="compute_ema",
+                    category="analyzer",
+                    impl="EMAAnalyzer",
                     default_params=(Parameter(name="period", value=20),),
                 ),
             ),
@@ -199,11 +214,7 @@ class TestGraphGenerationPass:
         assert graph.execution_order() == []
 
     def test_unknown_analyzer_raises(self) -> None:
-        a = (
-            AnalysisBuilder("bad", "1.0")
-            .define("fake", "analyzer", "NoSuchAnalyzer")
-            .build()
-        )
+        a = AnalysisBuilder("bad", "1.0").define("fake", "analyzer", "NoSuchAnalyzer").build()
         with pytest.raises(Exception, match="Unknown analyzer type"):
             GraphGenerationPass().run(a)
 
@@ -262,18 +273,15 @@ class TestPipeline:
         assert isinstance(ast_result, Analysis)
 
     def test_pipeline_without_graph_pass_raises(self) -> None:
-        a = (
-            AnalysisBuilder("test", "1.0")
-            .define("ema20", "analyzer", "EMAAnalyzer")
-            .build()
-        )
+        a = AnalysisBuilder("test", "1.0").define("ema20", "analyzer", "EMAAnalyzer").build()
         pipeline = Pipeline().add_pass(ValidationPass())
         with pytest.raises(CompilationError, match="without producing"):
             pipeline.run(a)
 
     def test_validation_failure_stops_pipeline(self) -> None:
         a = Analysis(
-            name="bad", version="1.0",
+            name="bad",
+            version="1.0",
             definitions=(
                 Definition(name="dup", provider="EMAAnalyzer"),
                 Definition(name="dup", provider="ATRAnalyzer"),
@@ -283,11 +291,7 @@ class TestPipeline:
                 _p(name="ATRAnalyzer", capability="compute_atr", impl="ATRAnalyzer"),
             ),
         )
-        pipeline = (
-            Pipeline()
-            .add_pass(ValidationPass())
-            .add_pass(GraphGenerationPass())
-        )
+        pipeline = Pipeline().add_pass(ValidationPass()).add_pass(GraphGenerationPass())
         with pytest.raises(CompilationError, match="Duplicate definition name"):
             pipeline.run(a)
 
@@ -327,7 +331,8 @@ class TestAstToConfig:
         )
         config = _ast_to_config(a)
         assert config == StrategyConfig(
-            name="test", version="1.0",
+            name="test",
+            version="1.0",
             analyzers=(AnalyzerConfig(type="EMAAnalyzer", params={"period": 20}),),
         )
 
@@ -347,7 +352,8 @@ class TestAstToConfig:
 
     def test_unknown_provider_raises(self) -> None:
         a = Analysis(
-            name="bad", version="1.0",
+            name="bad",
+            version="1.0",
             definitions=(Definition(name="x", provider="NoSuchProvider"),),
             providers=(),
         )

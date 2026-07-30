@@ -267,8 +267,12 @@ class TestTradeBookResolution:
 
         fill_time = datetime(2024, 1, 11)
         fill_candle = Candle(
-            timestamp=fill_time, open=101.0, high=110.0, low=99.0,
-            close=108.0, volume=5000.0,
+            timestamp=fill_time,
+            open=101.0,
+            high=110.0,
+            low=99.0,
+            close=108.0,
+            volume=5000.0,
         )
         tb.fill_order(fill_candle.open, fill_candle.timestamp)
 
@@ -281,8 +285,12 @@ class TestTradeBookResolution:
         assert open_trade.candidate.entry == 100.5
 
         stop_candle = Candle(
-            timestamp=datetime(2024, 1, 12), open=102.0, high=103.0,
-            low=94.0, close=95.0, volume=5000.0,
+            timestamp=datetime(2024, 1, 12),
+            open=102.0,
+            high=103.0,
+            low=94.0,
+            close=95.0,
+            volume=5000.0,
         )
         tb.resolve_at_cursor(stop_candle, max_hold_days=10)
         assert tb.has_no_open_trade
@@ -320,15 +328,23 @@ class TestTradeBookResolution:
         tb.fill_order(101.0, datetime(2024, 1, 11))
 
         safe_candle = Candle(
-            timestamp=datetime(2024, 1, 12), open=102.0, high=112.0,
-            low=97.0, close=110.0, volume=5000.0,
+            timestamp=datetime(2024, 1, 12),
+            open=102.0,
+            high=112.0,
+            low=97.0,
+            close=110.0,
+            volume=5000.0,
         )
         tb.resolve_at_cursor(safe_candle, max_hold_days=10)
         assert not tb.has_no_open_trade
 
         target_candle = Candle(
-            timestamp=datetime(2024, 1, 13), open=113.0, high=116.0,
-            low=112.0, close=115.0, volume=5000.0,
+            timestamp=datetime(2024, 1, 13),
+            open=113.0,
+            high=116.0,
+            low=112.0,
+            close=115.0,
+            volume=5000.0,
         )
         tb.resolve_at_cursor(target_candle, max_hold_days=10)
         assert tb.has_no_open_trade

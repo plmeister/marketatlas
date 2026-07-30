@@ -32,9 +32,7 @@ class SupportResistanceAnalyzer(Analyzer):
     def produces(self) -> tuple[FactKey, ...]:
         return (FactKey(self.instance_key),)
 
-    def analyze(
-        self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> AnalysisResult:
+    def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         swing_fact = facts.get(FactKey(self._swing_key))
         atr_fact = facts.get(FactKey(self._atr_key))
 
@@ -85,9 +83,7 @@ class SupportResistanceAnalyzer(Analyzer):
             avg_price = sum(cluster_prices) / len(cluster_prices)
             strength = len(cluster_prices)
             level_type = "support" if avg_price < current_price else "resistance"
-            levels.append(
-                SRLevel(price=avg_price, strength=strength, type=level_type)
-            )
+            levels.append(SRLevel(price=avg_price, strength=strength, type=level_type))
 
         levels.sort(key=lambda lv: lv.price)
 
@@ -110,10 +106,7 @@ class SupportResistanceAnalyzer(Analyzer):
             nearest = support_levels[-1]
             evidence_list.append(
                 EvidenceEntry(
-                    text=(
-                        f"Nearest support: {nearest.price:.2f} "
-                        f"({nearest.strength} touches)"
-                    ),
+                    text=(f"Nearest support: {nearest.price:.2f} " f"({nearest.strength} touches)"),
                     level=EvidenceLevel.SIGNAL,
                     source="SupportResistanceAnalyzer",
                 ),
@@ -124,8 +117,7 @@ class SupportResistanceAnalyzer(Analyzer):
             evidence_list.append(
                 EvidenceEntry(
                     text=(
-                        f"Nearest resistance: {nearest.price:.2f} "
-                        f"({nearest.strength} touches)"
+                        f"Nearest resistance: {nearest.price:.2f} " f"({nearest.strength} touches)"
                     ),
                     level=EvidenceLevel.SIGNAL,
                     source="SupportResistanceAnalyzer",
@@ -145,9 +137,7 @@ class SupportResistanceAnalyzer(Analyzer):
         )
 
     @staticmethod
-    def _cluster_swings(
-        swings: tuple[SwingPoint, ...], tolerance: float
-    ) -> list[list[float]]:
+    def _cluster_swings(swings: tuple[SwingPoint, ...], tolerance: float) -> list[list[float]]:
         points = sorted(
             [(s.price, s.type) for s in swings],
             key=lambda x: x[0],

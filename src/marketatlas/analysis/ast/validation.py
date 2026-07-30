@@ -123,8 +123,7 @@ def validate(analysis: Analysis) -> ValidationResult:
             if b.source == b.target:
                 errors.append(
                     Diagnostic(
-                        message=f"Self-referencing binding: "
-                        f"'{b.source}' binds to itself",
+                        message=f"Self-referencing binding: " f"'{b.source}' binds to itself",
                         severity=DiagnosticSeverity.ERROR,
                         node_name=d.name,
                         node_type="definition",
@@ -134,8 +133,7 @@ def validate(analysis: Analysis) -> ValidationResult:
             if b.source not in def_names:
                 errors.append(
                     Diagnostic(
-                        message=f"Unknown source definition in binding: "
-                        f"'{b.source}'",
+                        message=f"Unknown source definition in binding: " f"'{b.source}'",
                         severity=DiagnosticSeverity.ERROR,
                         node_name=d.name,
                         node_type="definition",
@@ -147,8 +145,7 @@ def validate(analysis: Analysis) -> ValidationResult:
             if b.target not in def_names:
                 errors.append(
                     Diagnostic(
-                        message=f"Unknown target definition in binding: "
-                        f"'{b.target}'",
+                        message=f"Unknown target definition in binding: " f"'{b.target}'",
                         severity=DiagnosticSeverity.ERROR,
                         node_name=d.name,
                         node_type="definition",
@@ -177,8 +174,7 @@ def validate(analysis: Analysis) -> ValidationResult:
         if not is_active and len(analysis.definitions) > 1:
             warnings.append(
                 Diagnostic(
-                    message=f"Unused definition: '{d.name}' "
-                    f"is not referenced by any binding",
+                    message=f"Unused definition: '{d.name}' " f"is not referenced by any binding",
                     severity=DiagnosticSeverity.WARNING,
                     node_name=d.name,
                     node_type="definition",

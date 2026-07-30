@@ -43,9 +43,7 @@ class FourSwingPullbackDetector(Analyzer):
     def produces(self) -> tuple[FactKey, ...]:
         return (FactKey(self.instance_key),)
 
-    def analyze(
-        self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> AnalysisResult:
+    def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         swing_fact = facts.get(FactKey(self._swing_key))
         trend_fact = facts.get(FactKey(self._trend_key))
         atr_fact = facts.get(FactKey(self._atr_key))
@@ -123,9 +121,7 @@ class FourSwingPullbackDetector(Analyzer):
                 return "HL" if is_bullish else "LL"
             return "HH" if is_bullish else "LH"
 
-        swing_desc = " ".join(
-            f"{_swing_label(s)}({s.price:.0f})" for s in last_4
-        )
+        swing_desc = " ".join(f"{_swing_label(s)}({s.price:.0f})" for s in last_4)
 
         evidence_list: list[EvidenceEntry] = [
             EvidenceEntry(
@@ -186,9 +182,7 @@ class FourSwingPullbackDetector(Analyzer):
             evidence=evidence_result,
         )
 
-    def _check_pattern(
-        self, swings: tuple[SwingPoint, ...], is_bullish: bool
-    ) -> tuple[bool, str]:
+    def _check_pattern(self, swings: tuple[SwingPoint, ...], is_bullish: bool) -> tuple[bool, str]:
         if len(swings) != 4:
             return False, f"Expected 4 swings, got {len(swings)}"
 
@@ -232,9 +226,7 @@ class FourSwingPullbackDetector(Analyzer):
 
         return True, ""
 
-    def _check_linearity(
-        self, view: MarketView, swings: tuple[SwingPoint, ...]
-    ) -> float:
+    def _check_linearity(self, view: MarketView, swings: tuple[SwingPoint, ...]) -> float:
         all_candles = view.history + (view.current,)
         store_start = view.cursor - len(all_candles) + 1
         max_dev = 0.0

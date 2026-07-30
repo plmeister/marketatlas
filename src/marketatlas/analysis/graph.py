@@ -20,8 +20,7 @@ class CyclicDependencyError(Exception):
 class UnsatisfiedDependencyError(Exception):
     def __init__(self, analyzer: Analyzer, missing: FactKey) -> None:
         super().__init__(
-            f"{type(analyzer).__name__} requires {missing} "
-            f"but no analyzer produces it"
+            f"{type(analyzer).__name__} requires {missing} " f"but no analyzer produces it"
         )
         self.analyzer = analyzer
         self.missing = missing

@@ -20,8 +20,7 @@ class CompilerPass(ABC):
     """Single compilation stage. Transforms or validates the AST."""
 
     @abstractmethod
-    def run(self, analysis: Analysis) -> Analysis:
-        ...
+    def run(self, analysis: Analysis) -> Analysis: ...
 
     @property
     def name(self) -> str:
@@ -215,14 +214,10 @@ def _ast_to_config(analysis: Analysis) -> StrategyConfig:
         params = {p.name: p.value for p in d.parameters}
 
         if provider.category == "analyzer":
-            analyzer_configs.append(
-                AnalyzerConfig(type=provider.impl, params=params)
-            )
+            analyzer_configs.append(AnalyzerConfig(type=provider.impl, params=params))
         elif provider.category == "signal":
             requires = tuple(b.output for b in d.bindings)
-            signal_configs.append(
-                SignalConfig(type=provider.impl, requires=requires, rules=params)
-            )
+            signal_configs.append(SignalConfig(type=provider.impl, requires=requires, rules=params))
         elif provider.category == "risk":
             risk_config = RiskConfig(algorithm=provider.impl, params=params)
 

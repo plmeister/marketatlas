@@ -75,9 +75,7 @@ def _atr_fact(value: float = 2.0) -> ATRFact:
     )
 
 
-def _keyed_facts(
-    trend: TrendFact, atr: ATRFact
-) -> dict[FactKey, Fact]:
+def _keyed_facts(trend: TrendFact, atr: ATRFact) -> dict[FactKey, Fact]:
     return {
         FactKey("trend"): trend,
         FactKey("atr_14"): atr,

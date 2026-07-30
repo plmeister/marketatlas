@@ -59,6 +59,7 @@ class TestProviderRegistry:
         r.register("compute_ma", _DummyAnalyzer)
         r.register("compute_ma", _OtherDummy)
         import logging
+
         caplog.set_level(logging.WARNING)
         provider = r.resolve("compute_ma")
         assert provider.name == "_DummyAnalyzer"
@@ -71,6 +72,7 @@ class TestProviderRegistry:
         r = ProviderRegistry()
         r.register("compute_ema", _DummyAnalyzer)
         import logging
+
         caplog.set_level(logging.WARNING)
         r.resolve("compute_ema")
         assert len(caplog.records) == 0

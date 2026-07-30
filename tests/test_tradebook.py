@@ -139,7 +139,11 @@ class TestTradeResolution:
         t0 = datetime(2024, 1, 1)
 
         cand = _candidate(
-            direction=TrendDirection.BEARISH, entry=100.0, stop=105.0, target=85.0, size=0.2,
+            direction=TrendDirection.BEARISH,
+            entry=100.0,
+            stop=105.0,
+            target=85.0,
+            size=0.2,
         )
         tb.submit_order(cand, _signal(TrendDirection.BEARISH), "s", t0)
         tb.fill_order(100.0, t0 + timedelta(days=1))
@@ -156,7 +160,11 @@ class TestTradeResolution:
         t0 = datetime(2024, 1, 1)
 
         cand = _candidate(
-            direction=TrendDirection.BEARISH, entry=100.0, stop=105.0, target=85.0, size=0.2,
+            direction=TrendDirection.BEARISH,
+            entry=100.0,
+            stop=105.0,
+            target=85.0,
+            size=0.2,
         )
         tb.submit_order(cand, _signal(TrendDirection.BEARISH), "s", t0)
         tb.fill_order(100.0, t0 + timedelta(days=1))

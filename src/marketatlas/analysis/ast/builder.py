@@ -91,9 +91,7 @@ class AnalysisBuilder:
     def define_provider(
         self, name: str, capability: str, category: str, impl: str, **default_params: object
     ) -> AnalysisBuilder:
-        params = tuple(
-            Parameter(name=k, value=v) for k, v in default_params.items()
-        )
+        params = tuple(Parameter(name=k, value=v) for k, v in default_params.items())
         self._providers[name] = Provider(
             name=name,
             capability=capability,

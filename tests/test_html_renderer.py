@@ -24,8 +24,12 @@ def _make_candle(offset: int = 0) -> Candle:
     ts = datetime(2024, 1, 1) + timedelta(hours=offset)
     base = 100.0 + offset
     return Candle(
-        timestamp=ts, open=base, high=base + 5,
-        low=base - 5, close=base + 2, volume=1000.0,
+        timestamp=ts,
+        open=base,
+        high=base + 5,
+        low=base - 5,
+        close=base + 2,
+        volume=1000.0,
     )
 
 
@@ -41,17 +45,20 @@ def _make_frame(offset: int = 0) -> AnalysisFrame:
     ema = EMAFact(
         timestamp=candle.timestamp,
         evidence=(),
-        value=102.0 + offset, period=20,
+        value=102.0 + offset,
+        period=20,
     )
     atr = ATRFact(
         timestamp=candle.timestamp,
         evidence=(),
-        value=3.5, period=14,
+        value=3.5,
+        period=14,
     )
     trend = TrendFact(
         timestamp=candle.timestamp,
         evidence=(),
-        direction=TrendDirection.BULLISH, strength=0.7,
+        direction=TrendDirection.BULLISH,
+        strength=0.7,
     )
     return AnalysisFrame(
         timestamp=candle.timestamp,
@@ -120,12 +127,16 @@ class TestExtractEMA:
         ema20 = EMAFact(timestamp=candle.timestamp, evidence=(), value=100.0, period=20)
         ema50 = EMAFact(timestamp=candle.timestamp, evidence=(), value=99.0, period=50)
         frame = AnalysisFrame(
-            timestamp=candle.timestamp, candle=candle,
-            facts={FactKey("ema_20"): ema20}, evidence=(),
+            timestamp=candle.timestamp,
+            candle=candle,
+            facts={FactKey("ema_20"): ema20},
+            evidence=(),
         )
         frame2 = AnalysisFrame(
-            timestamp=candle.timestamp, candle=candle,
-            facts={FactKey("ema_50"): ema50}, evidence=(),
+            timestamp=candle.timestamp,
+            candle=candle,
+            facts={FactKey("ema_50"): ema50},
+            evidence=(),
         )
         result = _extract_ema_lines([frame, frame2])
         assert "EMA20" in result
@@ -157,18 +168,30 @@ class TestExtractTrendMarkers:
     def test_bearish_and_neutral_directions(self) -> None:
         candle = _make_candle(0)
         bear_frame = AnalysisFrame(
-            timestamp=candle.timestamp, candle=candle,
-            facts={FactKey("trend"): TrendFact(
-                timestamp=candle.timestamp, evidence=(),
-                direction=TrendDirection.BEARISH, strength=0.5,
-            )}, evidence=(),
+            timestamp=candle.timestamp,
+            candle=candle,
+            facts={
+                FactKey("trend"): TrendFact(
+                    timestamp=candle.timestamp,
+                    evidence=(),
+                    direction=TrendDirection.BEARISH,
+                    strength=0.5,
+                )
+            },
+            evidence=(),
         )
         neut_frame = AnalysisFrame(
-            timestamp=candle.timestamp, candle=candle,
-            facts={FactKey("trend"): TrendFact(
-                timestamp=candle.timestamp, evidence=(),
-                direction=TrendDirection.NEUTRAL, strength=0.1,
-            )}, evidence=(),
+            timestamp=candle.timestamp,
+            candle=candle,
+            facts={
+                FactKey("trend"): TrendFact(
+                    timestamp=candle.timestamp,
+                    evidence=(),
+                    direction=TrendDirection.NEUTRAL,
+                    strength=0.1,
+                )
+            },
+            evidence=(),
         )
         bull, bear, neut = _extract_trend_markers([bear_frame, neut_frame])
         assert len(bull) == 0
@@ -190,13 +213,17 @@ class TestExtractPullbacks:
     def test_ignores_non_detected(self) -> None:
         candle = _make_candle(0)
         pb = PullbackFact(
-            timestamp=candle.timestamp, evidence=(),
+            timestamp=candle.timestamp,
+            evidence=(),
             status=PullbackStatus.INVALIDATED,
-            retracement_atr=1.0, direction=TrendDirection.BEARISH,
+            retracement_atr=1.0,
+            direction=TrendDirection.BEARISH,
         )
         frame = AnalysisFrame(
-            timestamp=candle.timestamp, candle=candle,
-            facts={FactKey("pullback"): pb}, evidence=(),
+            timestamp=candle.timestamp,
+            candle=candle,
+            facts={FactKey("pullback"): pb},
+            evidence=(),
         )
         assert _extract_pullbacks([frame]) == []
 
@@ -213,8 +240,10 @@ class TestEvidenceMap:
     def test_empty_evidence(self) -> None:
         candle = _make_candle(0)
         frame = AnalysisFrame(
-            timestamp=candle.timestamp, candle=candle,
-            facts={}, evidence=(),
+            timestamp=candle.timestamp,
+            candle=candle,
+            facts={},
+            evidence=(),
         )
         result = _build_candle_evidence_map([frame])
         assert int(candle.timestamp.timestamp()) not in result

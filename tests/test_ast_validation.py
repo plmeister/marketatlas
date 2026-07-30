@@ -26,12 +26,8 @@ class TestValidationResult:
 
 def _providers() -> tuple[Provider, ...]:
     return (
-        Provider(
-            name="EMAAnalyzer", capability="ema", category="analyzer", impl="EMAAnalyzer"
-        ),
-        Provider(
-            name="ATRAnalyzer", capability="atr", category="analyzer", impl="ATRAnalyzer"
-        ),
+        Provider(name="EMAAnalyzer", capability="ema", category="analyzer", impl="EMAAnalyzer"),
+        Provider(name="ATRAnalyzer", capability="atr", category="analyzer", impl="ATRAnalyzer"),
         Provider(
             name="TrendAnalyzer", capability="trend", category="analyzer", impl="TrendAnalyzer"
         ),
@@ -44,9 +40,7 @@ def _providers() -> tuple[Provider, ...]:
         Provider(
             name="PullbackSignal", capability="signal", category="signal", impl="PullbackSignal"
         ),
-        Provider(
-            name="RiskEngine", capability="risk", category="risk", impl="RiskEngine"
-        ),
+        Provider(name="RiskEngine", capability="risk", category="risk", impl="RiskEngine"),
         Provider(
             name="Normalizer", capability="normalize", category="transformer", impl="Normalizer"
         ),
@@ -66,9 +60,7 @@ class TestValidAST:
             name="test",
             version="1.0.0",
             providers=_providers(),
-            definitions=(
-                Definition(name="ema20", provider="EMAAnalyzer"),
-            ),
+            definitions=(Definition(name="ema20", provider="EMAAnalyzer"),),
         )
         r = validate(a)
         assert r.is_valid
@@ -88,14 +80,14 @@ class TestValidAST:
 
     def test_with_bindings(self) -> None:
         atr = Definition(
-            name="atr14", provider="ATRAnalyzer",
+            name="atr14",
+            provider="ATRAnalyzer",
             parameters=(Parameter(name="period", value=14),),
         )
         swing = Definition(
-            name="swing", provider="SwingStructureAnalyzer",
-            bindings=(Binding(
-                source="atr14", output="atr_14", target="swing", input="atr"
-            ),),
+            name="swing",
+            provider="SwingStructureAnalyzer",
+            bindings=(Binding(source="atr14", output="atr_14", target="swing", input="atr"),),
         )
         a = Analysis(name="test", version="1.0.0", providers=_providers(), definitions=(atr, swing))
         r = validate(a)
@@ -106,9 +98,7 @@ class TestValidAST:
             name="test",
             version="1.0.0",
             providers=_providers(),
-            definitions=(
-                Definition(name="sig", provider="PullbackSignal"),
-            ),
+            definitions=(Definition(name="sig", provider="PullbackSignal"),),
         )
         r = validate(a)
         assert r.is_valid
@@ -118,9 +108,7 @@ class TestValidAST:
             name="test",
             version="1.0.0",
             providers=_providers(),
-            definitions=(
-                Definition(name="risk", provider="RiskEngine"),
-            ),
+            definitions=(Definition(name="risk", provider="RiskEngine"),),
         )
         r = validate(a)
         assert r.is_valid
@@ -130,11 +118,7 @@ class TestValidAST:
             name="test",
             version="1.0.0",
             providers=_providers(),
-            definitions=(
-                Definition(
-                    name="norm", provider="Normalizer"
-                ),
-            ),
+            definitions=(Definition(name="norm", provider="Normalizer"),),
         )
         r = validate(a)
         assert r.is_valid
@@ -146,7 +130,8 @@ class TestValidAST:
             providers=_providers(),
             definitions=(
                 Definition(
-                    name="ema20", provider="EMAAnalyzer",
+                    name="ema20",
+                    provider="EMAAnalyzer",
                     metadata={"key": "val"},
                 ),
             ),
@@ -156,34 +141,31 @@ class TestValidAST:
 
     def test_full_strategy(self) -> None:
         ema = Definition(
-            name="ema20", provider="EMAAnalyzer",
+            name="ema20",
+            provider="EMAAnalyzer",
             parameters=(Parameter(name="period", value=20),),
         )
         atr = Definition(
-            name="atr14", provider="ATRAnalyzer",
+            name="atr14",
+            provider="ATRAnalyzer",
             parameters=(Parameter(name="period", value=14),),
         )
         swing = Definition(
-            name="swing", provider="SwingStructureAnalyzer",
-            bindings=(Binding(
-                source="atr14", output="atr_14", target="swing", input="atr"
-            ),),
+            name="swing",
+            provider="SwingStructureAnalyzer",
+            bindings=(Binding(source="atr14", output="atr_14", target="swing", input="atr"),),
         )
         signal = Definition(
-            name="signal", provider="PullbackSignal",
+            name="signal",
+            provider="PullbackSignal",
             bindings=(
-                Binding(
-                    source="swing", output="pullback",
-                    target="signal", input="pullback"
-                ),
-                Binding(
-                    source="ema20", output="ema_20",
-                    target="signal", input="trend"
-                ),
+                Binding(source="swing", output="pullback", target="signal", input="pullback"),
+                Binding(source="ema20", output="ema_20", target="signal", input="trend"),
             ),
         )
         a = Analysis(
-            name="pullback_4swing", version="1.0.0",
+            name="pullback_4swing",
+            version="1.0.0",
             providers=_providers(),
             definitions=(ema, atr, swing, signal),
         )
@@ -199,12 +181,8 @@ class TestDuplicateNames:
             version="1.0.0",
             providers=_providers(),
             definitions=(
-                Definition(
-                    name="dup", provider="EMAAnalyzer"
-                ),
-                Definition(
-                    name="dup", provider="ATRAnalyzer"
-                ),
+                Definition(name="dup", provider="EMAAnalyzer"),
+                Definition(name="dup", provider="ATRAnalyzer"),
             ),
         )
         r = validate(a)
@@ -221,11 +199,7 @@ class TestUnknownProvider:
         a = Analysis(
             name="test",
             version="1.0.0",
-            definitions=(
-                Definition(
-                    name="bad", provider="NoSuchProvider"
-                ),
-            ),
+            definitions=(Definition(name="bad", provider="NoSuchProvider"),),
         )
         r = validate(a)
         assert not r.is_valid
@@ -240,28 +214,20 @@ class TestUnknownProvider:
             version="1.0.0",
             providers=_providers(),
             definitions=(
-                Definition(
-                    name="good", provider="EMAAnalyzer"
-                ),
-                Definition(
-                    name="bad", provider="NoSuchProvider"
-                ),
+                Definition(name="good", provider="EMAAnalyzer"),
+                Definition(name="bad", provider="NoSuchProvider"),
             ),
         )
         r = validate(a)
         assert not r.is_valid
-        provider_errors = [
-            e for e in r.errors if "Unknown provider" in e.message
-        ]
+        provider_errors = [e for e in r.errors if "Unknown provider" in e.message]
         assert len(provider_errors) == 1
 
     def test_empty_provider_is_invalid(self) -> None:
         a = Analysis(
             name="test",
             version="1.0.0",
-            definitions=(
-                Definition(name="x", provider=""),
-            ),
+            definitions=(Definition(name="x", provider=""),),
         )
         r = validate(a)
         assert not r.is_valid
@@ -275,10 +241,9 @@ class TestSelfReferencingBinding:
             providers=_ps("A"),
             definitions=(
                 Definition(
-                    name="a", provider="A",
-                    bindings=(Binding(
-                        source="a", output="x", target="a", input="y"
-                    ),),
+                    name="a",
+                    provider="A",
+                    bindings=(Binding(source="a", output="x", target="a", input="y"),),
                 ),
             ),
         )
@@ -295,10 +260,9 @@ class TestSelfReferencingBinding:
             version="1.0.0",
             definitions=(
                 Definition(
-                    name="a", provider="",
-                    bindings=(Binding(
-                        source="a", output="x", target="a", input="y"
-                    ),),
+                    name="a",
+                    provider="",
+                    bindings=(Binding(source="a", output="x", target="a", input="y"),),
                 ),
             ),
         )
@@ -317,19 +281,15 @@ class TestUnknownReferences:
             version="1.0.0",
             definitions=(
                 Definition(
-                    name="b", provider="B",
-                    bindings=(Binding(
-                        source="unknown", output="x",
-                        target="b", input="y"
-                    ),),
+                    name="b",
+                    provider="B",
+                    bindings=(Binding(source="unknown", output="x", target="b", input="y"),),
                 ),
             ),
         )
         r = validate(a)
         assert not r.is_valid
-        source_errors = [
-            e for e in r.errors if "Unknown source" in e.message
-        ]
+        source_errors = [e for e in r.errors if "Unknown source" in e.message]
         assert len(source_errors) == 1
 
     def test_unknown_target(self) -> None:
@@ -338,19 +298,15 @@ class TestUnknownReferences:
             version="1.0.0",
             definitions=(
                 Definition(
-                    name="a", provider="A",
-                    bindings=(Binding(
-                        source="a", output="x",
-                        target="unknown", input="y"
-                    ),),
+                    name="a",
+                    provider="A",
+                    bindings=(Binding(source="a", output="x", target="unknown", input="y"),),
                 ),
             ),
         )
         r = validate(a)
         assert not r.is_valid
-        target_errors = [
-            e for e in r.errors if "Unknown target" in e.message
-        ]
+        target_errors = [e for e in r.errors if "Unknown target" in e.message]
         assert len(target_errors) == 1
 
     def test_both_unknown(self) -> None:
@@ -360,11 +316,9 @@ class TestUnknownReferences:
             providers=_ps("C"),
             definitions=(
                 Definition(
-                    name="c", provider="C",
-                    bindings=(Binding(
-                        source="x", output="o",
-                        target="y", input="i"
-                    ),),
+                    name="c",
+                    provider="C",
+                    bindings=(Binding(source="x", output="o", target="y", input="i"),),
                 ),
             ),
         )
@@ -381,26 +335,20 @@ class TestCycleDetection:
             providers=_ps("A", "B"),
             definitions=(
                 Definition(
-                    name="a", provider="A",
-                    bindings=(Binding(
-                        source="b", output="x",
-                        target="a", input="y"
-                    ),),
+                    name="a",
+                    provider="A",
+                    bindings=(Binding(source="b", output="x", target="a", input="y"),),
                 ),
                 Definition(
-                    name="b", provider="B",
-                    bindings=(Binding(
-                        source="a", output="x",
-                        target="b", input="y"
-                    ),),
+                    name="b",
+                    provider="B",
+                    bindings=(Binding(source="a", output="x", target="b", input="y"),),
                 ),
             ),
         )
         r = validate(a)
         assert not r.is_valid
-        cycle_errors = [
-            e for e in r.errors if "Cyclic" in e.message
-        ]
+        cycle_errors = [e for e in r.errors if "Cyclic" in e.message]
         assert len(cycle_errors) >= 1
 
     def test_indirect_cycle(self) -> None:
@@ -410,33 +358,25 @@ class TestCycleDetection:
             providers=_ps("A", "B", "C"),
             definitions=(
                 Definition(
-                    name="a", provider="A",
-                    bindings=(Binding(
-                        source="b", output="x",
-                        target="a", input="y"
-                    ),),
+                    name="a",
+                    provider="A",
+                    bindings=(Binding(source="b", output="x", target="a", input="y"),),
                 ),
                 Definition(
-                    name="b", provider="B",
-                    bindings=(Binding(
-                        source="c", output="x",
-                        target="b", input="y"
-                    ),),
+                    name="b",
+                    provider="B",
+                    bindings=(Binding(source="c", output="x", target="b", input="y"),),
                 ),
                 Definition(
-                    name="c", provider="C",
-                    bindings=(Binding(
-                        source="a", output="x",
-                        target="c", input="y"
-                    ),),
+                    name="c",
+                    provider="C",
+                    bindings=(Binding(source="a", output="x", target="c", input="y"),),
                 ),
             ),
         )
         r = validate(a)
         assert not r.is_valid
-        cycle_errors = [
-            e for e in r.errors if "Cyclic" in e.message
-        ]
+        cycle_errors = [e for e in r.errors if "Cyclic" in e.message]
         assert len(cycle_errors) >= 1
 
     def test_no_cycle_with_valid_dag(self) -> None:
@@ -447,18 +387,14 @@ class TestCycleDetection:
             definitions=(
                 Definition(name="a", provider="A"),
                 Definition(
-                    name="b", provider="B",
-                    bindings=(Binding(
-                        source="a", output="x",
-                        target="b", input="y"
-                    ),),
+                    name="b",
+                    provider="B",
+                    bindings=(Binding(source="a", output="x", target="b", input="y"),),
                 ),
                 Definition(
-                    name="c", provider="C",
-                    bindings=(Binding(
-                        source="b", output="x",
-                        target="c", input="y"
-                    ),),
+                    name="c",
+                    provider="C",
+                    bindings=(Binding(source="b", output="x", target="c", input="y"),),
                 ),
             ),
         )
@@ -468,19 +404,18 @@ class TestCycleDetection:
     def test_fork_graph_no_cycle(self) -> None:
         src = Definition(name="src", provider="A")
         b1 = Definition(
-            name="b1", provider="B1",
-            bindings=(Binding(
-                source="src", output="x", target="b1", input="y"
-            ),),
+            name="b1",
+            provider="B1",
+            bindings=(Binding(source="src", output="x", target="b1", input="y"),),
         )
         b2 = Definition(
-            name="b2", provider="B2",
-            bindings=(Binding(
-                source="src", output="x", target="b2", input="y"
-            ),),
+            name="b2",
+            provider="B2",
+            bindings=(Binding(source="src", output="x", target="b2", input="y"),),
         )
         a = Analysis(
-            name="test", version="1.0.0",
+            name="test",
+            version="1.0.0",
             providers=_ps("A", "B1", "B2"),
             definitions=(src, b1, b2),
         )
@@ -498,11 +433,9 @@ class TestUnusedDefinitions:
                 Definition(name="used", provider="A"),
                 Definition(name="unused", provider="B"),
                 Definition(
-                    name="ref", provider="C",
-                    bindings=(Binding(
-                        source="used", output="x",
-                        target="ref", input="y"
-                    ),),
+                    name="ref",
+                    provider="C",
+                    bindings=(Binding(source="used", output="x", target="ref", input="y"),),
                 ),
             ),
         )
@@ -535,11 +468,9 @@ class TestUnusedDefinitions:
             definitions=(
                 Definition(name="a", provider="A"),
                 Definition(
-                    name="b", provider="B",
-                    bindings=(Binding(
-                        source="a", output="x",
-                        target="b", input="y"
-                    ),),
+                    name="b",
+                    provider="B",
+                    bindings=(Binding(source="a", output="x", target="b", input="y"),),
                 ),
             ),
         )
@@ -552,9 +483,7 @@ class TestUnusedDefinitions:
             name="test",
             version="1.0.0",
             providers=_ps("A"),
-            definitions=(
-                Definition(name="only", provider="A"),
-            ),
+            definitions=(Definition(name="only", provider="A"),),
         )
         r = validate(a)
         assert r.is_valid
@@ -567,21 +496,15 @@ class TestMultipleErrors:
             name="test",
             version="1.0.0",
             definitions=(
+                Definition(name="bad_prov", provider="NoSuchProvider"),
+                Definition(name="dup", provider="A"),
+                Definition(name="dup", provider="B"),
                 Definition(
-                    name="bad_prov", provider="NoSuchProvider"
-                ),
-                Definition(
-                    name="dup", provider="A"
-                ),
-                Definition(
-                    name="dup", provider="B"
-                ),
-                Definition(
-                    name="self_ref", provider="C",
-                    bindings=(Binding(
-                        source="self_ref", output="o",
-                        target="self_ref", input="i"
-                    ),),
+                    name="self_ref",
+                    provider="C",
+                    bindings=(
+                        Binding(source="self_ref", output="o", target="self_ref", input="i"),
+                    ),
                 ),
             ),
         )
@@ -594,12 +517,8 @@ class TestMultipleErrors:
             name="test",
             version="1.0.0",
             definitions=(
-                Definition(
-                    name="bad_prov", provider="NoSuchProvider"
-                ),
-                Definition(
-                    name="unused", provider="A"
-                ),
+                Definition(name="bad_prov", provider="NoSuchProvider"),
+                Definition(name="unused", provider="A"),
             ),
         )
         r = validate(a)
@@ -611,6 +530,7 @@ class TestMultipleErrors:
 class TestDiagnostic:
     def test_diagnostic_construction(self) -> None:
         from marketatlas.analysis.ast.validation import Diagnostic
+
         d = Diagnostic(
             message="test error",
             severity=DiagnosticSeverity.ERROR,
@@ -624,9 +544,12 @@ class TestDiagnostic:
 
     def test_diagnostic_frozen(self) -> None:
         from marketatlas.analysis.ast.validation import Diagnostic
+
         d = Diagnostic(
-            message="m", severity=DiagnosticSeverity.WARNING,
-            node_name="n", node_type="t",
+            message="m",
+            severity=DiagnosticSeverity.WARNING,
+            node_name="n",
+            node_type="t",
         )
         with pytest.raises(AttributeError):
             d.message = "new"  # type: ignore[misc]

@@ -90,20 +90,12 @@ class TestToConfig:
         assert config.risk.algorithm == "risk_based"
 
     def test_analyzer_without_params(self) -> None:
-        a = (
-            AnalysisBuilder("test", "1.0")
-            .define("trend", "analyzer", "TrendAnalyzer")
-            .build()
-        )
+        a = AnalysisBuilder("test", "1.0").define("trend", "analyzer", "TrendAnalyzer").build()
         config = ASTCompiler.to_config(a)
         assert config.analyzers[0] == AnalyzerConfig(type="TrendAnalyzer", params={})
 
     def test_signal_without_bindings(self) -> None:
-        a = (
-            AnalysisBuilder("test", "1.0")
-            .define("sig", "signal", "PullbackSignal")
-            .build()
-        )
+        a = AnalysisBuilder("test", "1.0").define("sig", "signal", "PullbackSignal").build()
         config = ASTCompiler.to_config(a)
         assert config.signals[0].requires == ()
 
@@ -253,10 +245,6 @@ class TestCompile:
         assert config_names == ast_names
 
     def test_unknown_analyzer_type_raises(self) -> None:
-        a = (
-            AnalysisBuilder("bad", "1.0")
-            .define("fake", "analyzer", "NoSuchAnalyzer")
-            .build()
-        )
+        a = AnalysisBuilder("bad", "1.0").define("fake", "analyzer", "NoSuchAnalyzer").build()
         with pytest.raises(Exception, match="Unknown analyzer type"):
             ASTCompiler.compile(a)

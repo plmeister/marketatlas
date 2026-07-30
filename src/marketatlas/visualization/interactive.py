@@ -18,13 +18,14 @@ def _extract_frames_json(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for frame in frames:
         evidence = [
-            {"text": e.text, "level": e.level.value, "source": e.source}
-            for e in frame.evidence
+            {"text": e.text, "level": e.level.value, "source": e.source} for e in frame.evidence
         ]
-        result.append({
-            "time": int(frame.timestamp.timestamp()),
-            "evidence": evidence,
-        })
+        result.append(
+            {
+                "time": int(frame.timestamp.timestamp()),
+                "evidence": evidence,
+            }
+        )
     return result
 
 
@@ -38,10 +39,12 @@ def _extract_ema_per_frame(
                 name = f"EMA{fact.period}"
                 if name not in series:
                     series[name] = []
-                series[name].append({
-                    "time": int(frame.timestamp.timestamp()),
-                    "value": fact.value,
-                })
+                series[name].append(
+                    {
+                        "time": int(frame.timestamp.timestamp()),
+                        "value": fact.value,
+                    }
+                )
     return series
 
 
@@ -50,10 +53,12 @@ def _extract_atr_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
     for frame in frames:
         for fact in frame.facts.values():
             if isinstance(fact, ATRFact):
-                result.append({
-                    "time": int(frame.timestamp.timestamp()),
-                    "value": fact.value,
-                })
+                result.append(
+                    {
+                        "time": int(frame.timestamp.timestamp()),
+                        "value": fact.value,
+                    }
+                )
                 break
     return result
 
@@ -69,15 +74,19 @@ def _extract_sr_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
         levels = []
         if sr_fact is not None:
             for lv in sr_fact.levels:
-                levels.append({
-                    "price": lv.price,
-                    "strength": lv.strength,
-                    "type": lv.type,
-                })
-        result.append({
-            "time": int(frame.timestamp.timestamp()),
-            "levels": levels,
-        })
+                levels.append(
+                    {
+                        "price": lv.price,
+                        "strength": lv.strength,
+                        "type": lv.type,
+                    }
+                )
+        result.append(
+            {
+                "time": int(frame.timestamp.timestamp()),
+                "levels": levels,
+            }
+        )
     return result
 
 
@@ -96,14 +105,16 @@ def _extract_pullbacks_per_frame(
             PullbackStatus.CONFIRMED,
         ):
             is_bull = pb.direction == TrendDirection.BULLISH
-            result.append({
-                "time": int(frame.timestamp.timestamp()),
-                "position": "belowBar" if is_bull else "aboveBar",
-                "color": "#22c55e" if is_bull else "#ef4444",
-                "shape": "arrowUp" if is_bull else "arrowDown",
-                "text": f"Pullback ({pb.retracement_atr:.1f} ATR)",
-                "status": pb.status.value,
-            })
+            result.append(
+                {
+                    "time": int(frame.timestamp.timestamp()),
+                    "position": "belowBar" if is_bull else "aboveBar",
+                    "color": "#22c55e" if is_bull else "#ef4444",
+                    "shape": "arrowUp" if is_bull else "arrowDown",
+                    "text": f"Pullback ({pb.retracement_atr:.1f} ATR)",
+                    "status": pb.status.value,
+                }
+            )
         else:
             result.append(None)
     return result
@@ -132,8 +143,7 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
                     if isinstance(fv, SwingFact):
                         price_to_idx = {s.price: s.index for s in fv.swings}
                         swing_indices = [
-                            price_to_idx[p] for p in fact.swing_pattern
-                            if p in price_to_idx
+                            price_to_idx[p] for p in fact.swing_pattern if p in price_to_idx
                         ]
                         break
                 facts[label] = {
@@ -154,8 +164,7 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
                 facts[label] = {"type": "sr", "levels": levels}
             elif isinstance(fact, SwingFact):
                 swings = [
-                    {"price": s.price, "index": s.index, "type": s.type.value}
-                    for s in fact.swings
+                    {"price": s.price, "index": s.index, "type": s.type.value} for s in fact.swings
                 ]
                 facts[label] = {"type": "swing", "swings": swings}
         result.append(facts)
@@ -166,32 +175,31 @@ def _extract_trades_json(tradebook: TradeBook) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for trade in tradebook.trades:
         c = trade.candidate
-        result.append({
-            "entry_time": int(trade.entry_timestamp.timestamp()),
-            "exit_time": (
-                int(trade.exit_timestamp.timestamp())
-                if trade.exit_timestamp is not None
-                else None
-            ),
-            "entry": c.entry,
-            "stop": c.stop,
-            "target": c.target,
-            "direction": c.direction.value,
-            "result": trade.result,
-            "pnl": trade.pnl,
-            "source": trade.source_strategy,
-            "size": c.size,
-            "risk_amount": c.risk_amount,
-            "rr_ratio": c.rr_ratio,
-        })
+        result.append(
+            {
+                "entry_time": int(trade.entry_timestamp.timestamp()),
+                "exit_time": (
+                    int(trade.exit_timestamp.timestamp())
+                    if trade.exit_timestamp is not None
+                    else None
+                ),
+                "entry": c.entry,
+                "stop": c.stop,
+                "target": c.target,
+                "direction": c.direction.value,
+                "result": trade.result,
+                "pnl": trade.pnl,
+                "source": trade.source_strategy,
+                "size": c.size,
+                "risk_amount": c.risk_amount,
+                "rr_ratio": c.rr_ratio,
+            }
+        )
     return result
 
 
 def _evidence_to_json(entries: tuple[EvidenceEntry, ...]) -> list[dict[str, str]]:
-    return [
-        {"text": e.text, "level": e.level.value, "source": e.source}
-        for e in entries
-    ]
+    return [{"text": e.text, "level": e.level.value, "source": e.source} for e in entries]
 
 
 def _build_candle_evidence_map(
@@ -208,9 +216,18 @@ def _build_candle_evidence_map(
 
 _JS_TEMPLATE_PATH = Path(__file__).parent / "interactive.js"
 _JS_PLACEHOLDERS = [
-    "CANDLES", "FRAMES", "EMA_SERIES", "ATR_DATA", "SR_DATA",
-    "TRADES", "PULLBACKS", "FACTS_DATA", "EVIDENCE_MAP",
-    "SUMMARY", "INITIAL_BALANCE", "MIN_TOUCHES",
+    "CANDLES",
+    "FRAMES",
+    "EMA_SERIES",
+    "ATR_DATA",
+    "SR_DATA",
+    "TRADES",
+    "PULLBACKS",
+    "FACTS_DATA",
+    "EVIDENCE_MAP",
+    "SUMMARY",
+    "INITIAL_BALANCE",
+    "MIN_TOUCHES",
 ]
 
 _INTERACTIVE_TEMPLATE = """\
@@ -407,9 +424,7 @@ class InteractiveRenderer:
             "MIN_TOUCHES": json.dumps(ctx.min_touches),
         }
         for name in _JS_PLACEHOLDERS:
-            js_template = js_template.replace(
-                f"null; // @data:{name}", data_map[name]
-            )
+            js_template = js_template.replace(f"null; // @data:{name}", data_map[name])
 
         html = _INTERACTIVE_TEMPLATE.format(
             title=title,

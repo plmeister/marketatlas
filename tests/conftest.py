@@ -26,10 +26,7 @@ def assert_snapshot(name: str, actual: str, request: pytest.FixtureRequest) -> N
         return
 
     if not path.exists():
-        msg = (
-            f"Snapshot '{name}' not found at {path}. "
-            "Run with --update-snapshots to create."
-        )
+        msg = f"Snapshot '{name}' not found at {path}. " "Run with --update-snapshots to create."
         raise AssertionError(msg)
 
     expected = path.read_text()

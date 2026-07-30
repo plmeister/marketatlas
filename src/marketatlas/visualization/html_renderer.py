@@ -35,9 +35,7 @@ def _extract_ema_lines(
                 key = f"EMA{fact.period}"
                 if key not in series:
                     series[key] = []
-                series[key].append(
-                    {"time": int(frame.timestamp.timestamp()), "value": fact.value}
-                )
+                series[key].append({"time": int(frame.timestamp.timestamp()), "value": fact.value})
     return series
 
 
@@ -46,9 +44,7 @@ def _extract_atr(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
     for frame in frames:
         for fact in frame.facts.values():
             if isinstance(fact, ATRFact):
-                result.append(
-                    {"time": int(frame.timestamp.timestamp()), "value": fact.value}
-                )
+                result.append({"time": int(frame.timestamp.timestamp()), "value": fact.value})
                 break
     return result
 

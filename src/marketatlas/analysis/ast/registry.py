@@ -35,9 +35,7 @@ class ProviderRegistry:
 
         if isinstance(capability_or_provider, type) and cls is None:
             capability = capability_or_provider.__name__
-            params = tuple(
-                Parameter(name=k, value=v) for k, v in (default_params or {}).items()
-            )
+            params = tuple(Parameter(name=k, value=v) for k, v in (default_params or {}).items())
             provider = Provider(
                 name=capability_or_provider.__name__,
                 capability=capability,

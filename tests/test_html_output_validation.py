@@ -56,7 +56,12 @@ def _make_candle(offset: int = 0, base_price: float = 100.0) -> Candle:
     ts = BASE + timedelta(days=offset)
     p = base_price + offset
     return Candle(
-        timestamp=ts, open=p, high=p + 5, low=p - 5, close=p + 2, volume=1000.0,
+        timestamp=ts,
+        open=p,
+        high=p + 5,
+        low=p - 5,
+        close=p + 2,
+        volume=1000.0,
     )
 
 
@@ -72,8 +77,10 @@ def _make_frame(offset: int = 0) -> AnalysisFrame:
     ema = EMAFact(timestamp=candle.timestamp, evidence=(), value=102.0 + offset, period=20)
     atr = ATRFact(timestamp=candle.timestamp, evidence=(), value=3.5, period=14)
     trend = TrendFact(
-        timestamp=candle.timestamp, evidence=(),
-        direction=TrendDirection.BULLISH, strength=0.7,
+        timestamp=candle.timestamp,
+        evidence=(),
+        direction=TrendDirection.BULLISH,
+        strength=0.7,
     )
     return AnalysisFrame(
         timestamp=candle.timestamp,
@@ -83,9 +90,7 @@ def _make_frame(offset: int = 0) -> AnalysisFrame:
             FactKey("atr_14"): atr,
             FactKey("trend"): trend,
         },
-        evidence=(
-            EvidenceEntry(text=f"frame {offset}", level=EvidenceLevel.INFO, source="test"),
-        ),
+        evidence=(EvidenceEntry(text=f"frame {offset}", level=EvidenceLevel.INFO, source="test"),),
     )
 
 
@@ -138,7 +143,9 @@ class TestJSValidation:
         try:
             result = subprocess.run(
                 ["node", "--check", str(tmp_js)],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             assert result.returncode == 0, f"JS syntax error:\n{result.stderr}"
         finally:
@@ -232,9 +239,7 @@ class TestSmokeTests:
         # but a gross mismatch still catches real bugs)
         opens = js_block.count("{")
         closes = js_block.count("}")
-        assert opens == closes, (
-            f"Brace mismatch: {opens} opening vs {closes} closing"
-        )
+        assert opens == closes, f"Brace mismatch: {opens} opening vs {closes} closing"
 
     def test_init_section_present(self, tmp_path: object) -> None:
         """Verify init code that sets up the chart."""

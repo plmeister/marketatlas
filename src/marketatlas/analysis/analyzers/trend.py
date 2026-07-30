@@ -32,9 +32,7 @@ class TrendAnalyzer(Analyzer):
     def produces(self) -> tuple[FactKey, ...]:
         return (FactKey(self.instance_key),)
 
-    def analyze(
-        self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> AnalysisResult:
+    def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         fast_ema_fact = facts[FactKey(self._fast_key)]
         slow_ema_fact = facts[FactKey(self._slow_key)]
         assert isinstance(fast_ema_fact, EMAFact)

@@ -33,9 +33,7 @@ def _make_store(candles_data: list[CandleTuple]) -> MarketStore:
         )
         for o, h, lo, c, v in candles_data
     )
-    data = MarketData(
-        symbol=Symbol("BTCUSDT"), timeframe=Timeframe.D1, candles=candles
-    )
+    data = MarketData(symbol=Symbol("BTCUSDT"), timeframe=Timeframe.D1, candles=candles)
     return MarketStore(data)
 
 
@@ -356,9 +354,7 @@ class TestPullbackSignal:
     def test_custom_keys(self) -> None:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)
-        signal = PullbackSignal(
-            pullback_key="my_pullback", trend_key="my_trend", atr_key="my_atr"
-        )
+        signal = PullbackSignal(pullback_key="my_pullback", trend_key="my_trend", atr_key="my_atr")
         facts = {
             FactKey("my_pullback"): _confirmed_bullish_pullback_fact(),
             FactKey("my_trend"): _bullish_trend_fact(),
@@ -397,12 +393,8 @@ class TestStrategy:
         config = StrategyConfig(
             name="test_strategy",
             version="1.0",
-            analyzers=(
-                AnalyzerConfig(type="EMAAnalyzer", params={"period": 20}),
-            ),
-            signals=(
-                SignalConfig(type="PullbackSignal", rules={"min_strength": 0.6}),
-            ),
+            analyzers=(AnalyzerConfig(type="EMAAnalyzer", params={"period": 20}),),
+            signals=(SignalConfig(type="PullbackSignal", rules={"min_strength": 0.6}),),
         )
         strategy = Strategy("test", config)
         assert strategy.name == "test"
@@ -414,9 +406,7 @@ class TestStrategy:
             name="test_strategy",
             version="1.0",
             analyzers=(),
-            signals=(
-                SignalConfig(type="PullbackSignal", rules={}),
-            ),
+            signals=(SignalConfig(type="PullbackSignal", rules={}),),
         )
         strategy = Strategy("test", config)
         store = _make_store(_flat_candles())
@@ -435,9 +425,7 @@ class TestStrategy:
             name="test_strategy",
             version="1.0",
             analyzers=(),
-            signals=(
-                SignalConfig(type="PullbackSignal", rules={}),
-            ),
+            signals=(SignalConfig(type="PullbackSignal", rules={}),),
         )
         strategy = Strategy("test", config)
         store = _make_store(_flat_candles())
@@ -455,9 +443,7 @@ class TestStrategy:
             name="test_strategy",
             version="1.0",
             analyzers=(),
-            signals=(
-                SignalConfig(type="NonexistentSignal", rules={}),
-            ),
+            signals=(SignalConfig(type="NonexistentSignal", rules={}),),
         )
         try:
             Strategy("test", config)

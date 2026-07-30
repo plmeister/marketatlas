@@ -52,7 +52,8 @@ class Backtester:
         return self.run_with_progress(None)
 
     def run_with_progress(
-        self, callback: Callable[[int, int], None] | None = None,
+        self,
+        callback: Callable[[int, int], None] | None = None,
     ) -> tuple[FrameStore, TradeBook]:
         frame_store = FrameStore()
         tradebook = self._bundle.tradebook
@@ -76,11 +77,17 @@ class Backtester:
                 for name, signal in self._bundle.evaluate_all(view, facts):
                     risk_engine = self._bundle.get_risk_engine(name)
                     candidate, _ = risk_engine.evaluate(
-                        signal, facts, view, tradebook.balance,
+                        signal,
+                        facts,
+                        view,
+                        tradebook.balance,
                     )
                     if candidate is not None:
                         tradebook.submit_order(
-                            candidate, signal, name, view.current.timestamp,
+                            candidate,
+                            signal,
+                            name,
+                            view.current.timestamp,
                         )
                         break
 

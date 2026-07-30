@@ -103,8 +103,7 @@ class TestLoadStrategy:
 
     def test_unknown_analyzer_type(self, tmp_path: Path) -> None:
         yaml_str = (
-            "strategy:\n  name: test\n"
-            "analyzers:\n  - type: FakeAnalyzer\n    params: {}\n"
+            "strategy:\n  name: test\n" "analyzers:\n  - type: FakeAnalyzer\n    params: {}\n"
         )
         path = _write_yaml(tmp_path, yaml_str)
         config = load_strategy(path)
@@ -249,19 +248,13 @@ class TestParseEdgeCases:
             load_strategy(path)
 
     def test_signal_requires_not_a_list(self, tmp_path: Path) -> None:
-        yaml_str = (
-            "strategy:\n  name: test\n"
-            "signals:\n  - type: Sig\n    requires: not_a_list\n"
-        )
+        yaml_str = "strategy:\n  name: test\n" "signals:\n  - type: Sig\n    requires: not_a_list\n"
         path = _write_yaml(tmp_path, yaml_str)
         with pytest.raises(ConfigError, match="'requires' must be a list"):
             load_strategy(path)
 
     def test_signal_rules_not_a_mapping(self, tmp_path: Path) -> None:
-        yaml_str = (
-            "strategy:\n  name: test\n"
-            "signals:\n  - type: Sig\n    rules: not_a_dict\n"
-        )
+        yaml_str = "strategy:\n  name: test\n" "signals:\n  - type: Sig\n    rules: not_a_dict\n"
         path = _write_yaml(tmp_path, yaml_str)
         with pytest.raises(ConfigError, match="'rules' must be a mapping"):
             load_strategy(path)
@@ -280,8 +273,7 @@ class TestParseEdgeCases:
 
     def test_risk_params_not_a_mapping(self, tmp_path: Path) -> None:
         yaml_str = (
-            "strategy:\n  name: test\n"
-            "risk:\n  algorithm: risk_based\n  params: not_a_dict\n"
+            "strategy:\n  name: test\n" "risk:\n  algorithm: risk_based\n  params: not_a_dict\n"
         )
         path = _write_yaml(tmp_path, yaml_str)
         with pytest.raises(ConfigError, match="'risk.params' must be a mapping"):
@@ -292,9 +284,7 @@ class TestParseEdgeCases:
             name="test",
             version="1.0",
             analyzers=(AnalyzerConfig(type="EMAAnalyzer", params={"period": 20}),),
-            signals=(
-                SignalConfig(type="Sig", requires=("TrendAnalyzer",), rules={}),
-            ),
+            signals=(SignalConfig(type="Sig", requires=("TrendAnalyzer",), rules={}),),
         )
         errors = validate_config(config)
         assert any("TrendAnalyzer" in e for e in errors)

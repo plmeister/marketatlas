@@ -47,9 +47,7 @@ class StubAnalyzer(Analyzer):
     def produces(self) -> tuple[FactKey, ...]:
         return (FactKey("stub_ema"),)
 
-    def analyze(
-        self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> AnalysisResult:
+    def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         candle = view.current
         ema = EMAFact(
             timestamp=candle.timestamp,
@@ -217,8 +215,11 @@ class TestTradeBook:
 
 class TestTradeBookMetrics:
     def _make_candidate(
-        self, direction: TrendDirection = TrendDirection.BULLISH,
-        entry: float = 100.0, stop: float = 98.0, target: float = 104.0,
+        self,
+        direction: TrendDirection = TrendDirection.BULLISH,
+        entry: float = 100.0,
+        stop: float = 98.0,
+        target: float = 104.0,
     ) -> TradeCandidate:
         return TradeCandidate(
             direction=direction,
@@ -235,7 +236,8 @@ class TestTradeBookMetrics:
         )
 
     def _make_signal(
-        self, direction: TrendDirection = TrendDirection.BULLISH,
+        self,
+        direction: TrendDirection = TrendDirection.BULLISH,
     ) -> TradeSignal:
         return TradeSignal(
             direction=direction,
@@ -306,7 +308,9 @@ class TestTradeBookMetrics:
         tb = TradeBook(initial_balance=1000.0)
         candidate = self._make_candidate(
             direction=TrendDirection.BEARISH,
-            entry=100.0, stop=102.0, target=96.0,
+            entry=100.0,
+            stop=102.0,
+            target=96.0,
         )
         signal = self._make_signal(direction=TrendDirection.BEARISH)
         ts = datetime(2024, 1, 1)
@@ -325,7 +329,10 @@ class TestStrategyBundle:
 
     def test_bundle_strategies_dict(self) -> None:
         config = StrategyConfig(
-            name="test", version="1.0", analyzers=(), signals=(),
+            name="test",
+            version="1.0",
+            analyzers=(),
+            signals=(),
         )
         s1 = Strategy("a", config)
         s2 = Strategy("b", config)
@@ -341,9 +348,7 @@ class StubAnalyzerForSignals(Analyzer):
     def produces(self) -> tuple[FactKey, ...]:
         return (FactKey("atr_14"),)
 
-    def analyze(
-        self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> AnalysisResult:
+    def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         return AnalysisResult(
             facts=(
                 ATRFact(
@@ -364,9 +369,7 @@ class StubSRAnalyzer(Analyzer):
     def produces(self) -> tuple[FactKey, ...]:
         return (FactKey("sr"),)
 
-    def analyze(
-        self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> AnalysisResult:
+    def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         return AnalysisResult(
             facts=(
                 SRFact(
@@ -449,8 +452,12 @@ class TestBacktesterSignalEval:
             evidence=(),
         )
         risk_engine = RiskEngine(
-            risk_pct=1.0, slippage_pct=0.0, max_stop_atr=100.0,
-            min_rr=1.0, max_rr=2.0, avoid_srxing=False,
+            risk_pct=1.0,
+            slippage_pct=0.0,
+            max_stop_atr=100.0,
+            min_rr=1.0,
+            max_rr=2.0,
+            avoid_srxing=False,
         )
         bundle = _make_signal_bundle(
             signals=[("strat", signal)],

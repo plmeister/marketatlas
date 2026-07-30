@@ -38,9 +38,7 @@ class PullbackDetector(Analyzer):
     def produces(self) -> tuple[FactKey, ...]:
         return (FactKey(self.instance_key),)
 
-    def analyze(
-        self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> AnalysisResult:
+    def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         trend = facts[FactKey(self._trend_key)]
         assert isinstance(trend, TrendFact)
         atr_fact = facts[FactKey(self._atr_key)]

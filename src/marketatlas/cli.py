@@ -134,11 +134,7 @@ def run_command(args: argparse.Namespace) -> None:
         print("=" * 60)
         for i, trade in enumerate(tradebook.trades, 1):
             c = trade.candidate
-            exit_str = (
-                trade.exit_timestamp.date().isoformat()
-                if trade.exit_timestamp
-                else "OPEN"
-            )
+            exit_str = trade.exit_timestamp.date().isoformat() if trade.exit_timestamp else "OPEN"
             dir_str = "LONG " if c.direction.value == "bullish" else "SHORT"
             print(
                 f"  {i:3d}. {trade.entry_timestamp.date().isoformat()} -> {exit_str} "
@@ -152,7 +148,9 @@ def run_command(args: argparse.Namespace) -> None:
     output_path = Path(args.output)
     if output_path:
         ctx = RenderContext(
-            frames=frame_store, store=store, tradebook=tradebook,
+            frames=frame_store,
+            store=store,
+            tradebook=tradebook,
             max_hold_days=bt._max_hold_days,
         )
         renderer = InteractiveRenderer(ctx)
@@ -210,9 +208,7 @@ def main() -> None:
     fetch_parser.add_argument("--timeframe", required=True, help="Timeframe (e.g., 1h, 1d)")
     fetch_parser.add_argument("--start", required=True, help="Start date (ISO format)")
     fetch_parser.add_argument("--end", required=True, help="End date (ISO format)")
-    fetch_parser.add_argument(
-        "--output", default="data/", help="Output directory (default: data/)"
-    )
+    fetch_parser.add_argument("--output", default="data/", help="Output directory (default: data/)")
 
     run_parser = subparsers.add_parser("run", help="Run a strategy backtest")
     run_parser.add_argument("--strategy", "-s", required=True, help="Strategy YAML file path")
@@ -221,16 +217,21 @@ def main() -> None:
     run_parser.add_argument("--end", default="", help="End date ISO (default: today)")
     run_parser.add_argument("--interval", default="1d", help="Candle interval (default: 1d)")
     run_parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         default="/tmp/backtest_result.html",
         help="HTML output path",
     )
     run_parser.add_argument(
-        "--balance", type=float, default=1000.0,
+        "--balance",
+        type=float,
+        default=1000.0,
         help="Starting balance (default: 1000)",
     )
     run_parser.add_argument(
-        "--max-hold-days", type=int, default=10,
+        "--max-hold-days",
+        type=int,
+        default=10,
         help="Max hold days (default: 10)",
     )
 
@@ -242,8 +243,12 @@ def main() -> None:
 
     add_parser = instr_sub.add_parser("add", help="Add an instrument")
     add_parser.add_argument("canonical", help="Canonical name (e.g. EURUSD)")
-    add_parser.add_argument("--class", dest="asset_class", required=True,
-                            help="Asset class (forex, crypto, equity, commodity)")
+    add_parser.add_argument(
+        "--class",
+        dest="asset_class",
+        required=True,
+        help="Asset class (forex, crypto, equity, commodity)",
+    )
     add_parser.add_argument("--description", required=True, help="Human-readable description")
     add_parser.add_argument("--yahoo-symbol", help="Yahoo Finance symbol")
     add_parser.add_argument("--dukascopy-symbol", help="Dukascopy symbol")

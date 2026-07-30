@@ -14,9 +14,7 @@ class TestAnalysisBuilder:
 
     def test_single_definition(self) -> None:
         analysis = (
-            AnalysisBuilder("test", "1.0.0")
-            .define("ema20", "analyzer", "EMAAnalyzer")
-            .build()
+            AnalysisBuilder("test", "1.0.0").define("ema20", "analyzer", "EMAAnalyzer").build()
         )
         assert len(analysis.definitions) == 1
         d = analysis.definitions[0]
@@ -133,9 +131,8 @@ class TestAnalysisBuilder:
             builder.define("ema20", "analyzer", "EMAAnalyzer")
 
     def test_bind_unknown_source_raises(self) -> None:
-        builder = (
-            AnalysisBuilder("test", "1.0.0")
-            .define("swing", "analyzer", "SwingStructureAnalyzer")
+        builder = AnalysisBuilder("test", "1.0.0").define(
+            "swing", "analyzer", "SwingStructureAnalyzer"
         )
         with pytest.raises(ValueError, match="Unknown source definition: atr14"):
             builder.define("signal", "signal", "PullbackSignal").bind(
@@ -143,10 +140,7 @@ class TestAnalysisBuilder:
             )
 
     def test_bind_unknown_target_raises(self) -> None:
-        builder = (
-            AnalysisBuilder("test", "1.0.0")
-            .define("atr14", "analyzer", "ATRAnalyzer")
-        )
+        builder = AnalysisBuilder("test", "1.0.0").define("atr14", "analyzer", "ATRAnalyzer")
         with pytest.raises(ValueError, match="Unknown target definition: unknown"):
             builder.define("swing", "analyzer", "SwingStructureAnalyzer").bind(
                 "atr14", "atr_14", "unknown", "atr"

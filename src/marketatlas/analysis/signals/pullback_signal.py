@@ -21,9 +21,7 @@ class PullbackSignal(Signal):
         self._trend_key = trend_key
         self._atr_key = atr_key
 
-    def evaluate(
-        self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> TradeSignal | None:
+    def evaluate(self, view: MarketView, facts: dict[FactKey, Fact]) -> TradeSignal | None:
         pullback = facts.get(FactKey(self._pullback_key))
         trend = facts.get(FactKey(self._trend_key))
         atr = facts.get(FactKey(self._atr_key))
@@ -63,9 +61,7 @@ class PullbackSignal(Signal):
                 source="PullbackSignal",
             ),
             EvidenceEntry(
-                text=(
-                    f"Entry zone: {entry_zone[0]:.0f}\u2013{entry_zone[1]:.0f}"
-                ),
+                text=(f"Entry zone: {entry_zone[0]:.0f}\u2013{entry_zone[1]:.0f}"),
                 level=EvidenceLevel.INFO,
                 source="PullbackSignal",
             ),
