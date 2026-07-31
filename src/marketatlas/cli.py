@@ -5,6 +5,7 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from marketatlas.data.datastore import DataStore
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
 from marketatlas.data.providers.yahoo import YahooProvider
 from marketatlas.data.types import MarketData, Symbol, Timeframe
@@ -104,14 +105,25 @@ def run_command(args: argparse.Namespace) -> None:
     print(f"\nFetching {len(all_tfs)} timeframe(s): {', '.join(tf.value for tf in all_tfs)}")
     print(f"Range: {start.date()} to {end.date()}")
     provider = YahooProvider()
+    datastore = DataStore(Path(args.data_dir) if args.data_dir else None)
+    print(f"Data store: {datastore.base_path}")
 
     fetched: dict[Timeframe, MarketData] = {}
     resampled: list[tuple[Timeframe, Timeframe]] = []
 
     for tf in all_tfs:
+        # Serve from the persistent store when the range is already covered.
+        if datastore.has(symbol, tf, start, end):
+            md = datastore.get(symbol, tf, start, end)
+            if md is not None and md.candles:
+                fetched[tf] = md
+                print(f"  {tf.value}: served from store ({len(md.candles)} candles)")
+                continue
+
         # Try native fetch first
         try:
             md = provider.fetch(symbol, tf, start, end)
+            datastore.put(md)
             fetched[tf] = md
             print(f"  {tf.value}: fetched natively ({len(md.candles)} candles)")
             continue
@@ -129,7 +141,9 @@ def run_command(args: argparse.Namespace) -> None:
 
         try:
             candles = resample(fetched[source_tf].candles, source_tf, tf)
-            fetched[tf] = MarketData(symbol=symbol, timeframe=tf, candles=candles)
+            md = MarketData(symbol=symbol, timeframe=tf, candles=candles)
+            datastore.put(md)
+            fetched[tf] = md
             resampled.append((tf, source_tf))
             print(f"  {tf.value}: resampled from {source_tf.value} ({len(candles)} candles)")
         except CannotResampleError as e:
@@ -288,6 +302,12 @@ def main() -> None:
         type=int,
         default=10,
         help="Max hold days (default: 10)",
+    )
+    run_parser.add_argument(
+        "--data-dir",
+        default="",
+        help="Persistent data store directory "
+        "(default: $MARKETATLAS_DATA_DIR or ~/.cache/marketatlas/data)",
     )
 
     instr_parser = subparsers.add_parser("instruments", help="Manage instrument registry")

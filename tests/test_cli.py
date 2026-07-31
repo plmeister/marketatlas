@@ -5,8 +5,12 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
+
+
+@pytest.fixture(autouse=True)
+def _isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MARKETATLAS_DATA_DIR", str(tmp_path / "marketatlas-cache"))
 
 
 def _make_candles(n: int = 5, base_price: float = 100.0) -> tuple[Candle, ...]:
@@ -592,6 +596,70 @@ class TestRunCommand:
         )
 
         assert mock_provider.fetch.call_count == 2
+
+    @patch("marketatlas.visualization.interactive.InteractiveRenderer")
+    @patch("marketatlas.backtesting.backtester.Backtester")
+    @patch("marketatlas.strategy.bundle.StrategyBundle")
+    @patch("marketatlas.strategy.strategy.Strategy")
+    @patch("marketatlas.strategy.loader.load_strategy")
+    @patch("marketatlas.cli.YahooProvider")
+    def test_run_second_run_served_from_store(
+        self,
+        mock_yahoo_cls: MagicMock,
+        mock_load: MagicMock,
+        mock_strategy_cls: MagicMock,
+        mock_bundle_cls: MagicMock,
+        mock_bt_cls: MagicMock,
+        mock_renderer_cls: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        strategy_file = tmp_path / "strat.yaml"
+        strategy_file.write_text("strategy:\n  name: test\n")
+
+        config = MagicMock()
+        config.name = "test"
+        config.version = "1.0"
+        config.analyzers = []
+        config.signals = []
+        config.timeframes = ()
+        mock_load.return_value = config
+
+        mock_provider = MagicMock()
+        mock_provider.fetch.return_value = _make_market_data(symbol="BTC-USD", n=200)
+        mock_yahoo_cls.return_value = mock_provider
+
+        mock_strategy_cls.return_value = MagicMock()
+        mock_bundle_cls.return_value = MagicMock()
+
+        mock_bt = MagicMock()
+        mock_bt.frame_count = 100
+        mock_bt._max_hold_days = 10
+        mock_tradebook = MagicMock()
+        mock_tradebook.summary = {
+            "initial_balance": 1000.0, "final_balance": 1000.0,
+            "total_pnl": 0.0, "total_return_pct": 0.0,
+            "total_trades": 0, "wins": 0, "losses": 0, "breakevens": 0,
+            "win_rate": 0.0, "max_drawdown": 0.0, "profit_factor": 0.0,
+            "expectancy": 0.0, "by_strategy": {},
+        }
+        mock_tradebook.trades = []
+        mock_bt.run_with_progress.return_value = (MagicMock(), mock_tradebook)
+        mock_bt_cls.return_value = mock_bt
+
+        data_dir = tmp_path / "cache"
+        args = [
+            "run", "--strategy", str(strategy_file),
+            "--interval", "1d",
+            "--data-dir", str(data_dir),
+            "--output", "",
+            "--start", "2024-01-01", "--end", "2024-06-01",
+        ]
+        _run_main(*args)
+        assert mock_provider.fetch.call_count >= 1
+
+        mock_provider.fetch.reset_mock()
+        _run_main(*args)
+        assert mock_provider.fetch.call_count == 0
 
     @patch("marketatlas.visualization.interactive.InteractiveRenderer")
     @patch("marketatlas.backtesting.backtester.Backtester")

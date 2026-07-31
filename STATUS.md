@@ -17,6 +17,7 @@
 - [x] 014 — Backtesting replay loop
 - [x] 015 — HTML visualization
 - [x] 002 — External data fetcher
+- [x] 066 — Persistent data store
 
 ## Strategy Layer
 
