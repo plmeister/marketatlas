@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
+from marketatlas.analysis.ast.expressions import Expression, LiteralExpression
 from marketatlas.analysis.ast.models import Analysis, Definition, Parameter, Provider
 from marketatlas.analysis.ast.registry import ProviderRegistry
 from marketatlas.analysis.ast.validation import Diagnostic, validate
@@ -211,7 +212,17 @@ def _ast_to_config(analysis: Analysis) -> StrategyConfig:
         if provider is None:
             raise CompilationError(f"Unknown provider: {d.provider}")
 
-        params = {p.name: p.value for p in d.parameters}
+        params: dict[str, object] = {}
+        for p in d.parameters:
+            value: object = p.value
+            if isinstance(value, LiteralExpression):
+                value = value.value
+            elif isinstance(value, Expression):
+                raise CompilationError(
+                    f"Non-literal expression for parameter '{p.name}' of definition "
+                    f"'{d.name}' cannot be compiled yet: {type(value).__name__}"
+                )
+            params[p.name] = value
 
         if provider.category == "analyzer":
             analyzer_configs.append(AnalyzerConfig(type=provider.impl, params=params))

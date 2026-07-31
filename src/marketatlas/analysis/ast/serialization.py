@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 
+from marketatlas.analysis.ast.expressions import Expression, LiteralExpression
 from marketatlas.analysis.ast.models import (
     Analysis,
     Binding,
@@ -13,7 +14,14 @@ from marketatlas.analysis.ast.models import (
 
 
 def _parameter_to_dict(p: Parameter) -> dict[str, object]:
-    return {"name": p.name, "value": p.value}
+    value: object = p.value
+    if isinstance(value, LiteralExpression):
+        value = value.value
+    elif isinstance(value, Expression):
+        raise ValueError(
+            f"Unsupported expression node in parameter '{p.name}': {type(value).__name__}"
+        )
+    return {"name": p.name, "value": value}
 
 
 def _binding_to_dict(b: Binding) -> dict[str, str]:

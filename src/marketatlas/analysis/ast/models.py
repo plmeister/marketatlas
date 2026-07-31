@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+
+from marketatlas.analysis.ast.expressions import Expression
 
 
 class BaseNode:
@@ -16,7 +17,7 @@ class BaseNode:
 @dataclass(frozen=True)
 class Parameter:
     name: str
-    value: Any
+    value: Expression
 
 
 @dataclass(frozen=True)

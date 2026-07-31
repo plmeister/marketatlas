@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from marketatlas.analysis.ast.expressions import wrap
 from marketatlas.analysis.ast.models import Parameter, Provider
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,9 @@ class ProviderRegistry:
 
         if isinstance(capability_or_provider, type) and cls is None:
             capability = capability_or_provider.__name__
-            params = tuple(Parameter(name=k, value=v) for k, v in (default_params or {}).items())
+            params = tuple(
+                Parameter(name=k, value=wrap(v)) for k, v in (default_params or {}).items()
+            )
             provider = Provider(
                 name=capability_or_provider.__name__,
                 capability=capability,
@@ -49,7 +52,7 @@ class ProviderRegistry:
         if isinstance(capability_or_provider, str):
             if cls is not None:
                 params = tuple(
-                    Parameter(name=k, value=v) for k, v in (default_params or {}).items()
+                    Parameter(name=k, value=wrap(v)) for k, v in (default_params or {}).items()
                 )
                 provider = Provider(
                     name=cls.__name__,
@@ -63,7 +66,7 @@ class ProviderRegistry:
 
             def decorator(target_cls: type) -> type:
                 params = tuple(
-                    Parameter(name=k, value=v) for k, v in (default_params or {}).items()
+                    Parameter(name=k, value=wrap(v)) for k, v in (default_params or {}).items()
                 )
                 provider = Provider(
                     name=target_cls.__name__,
@@ -104,8 +107,8 @@ def create_default_registry() -> ProviderRegistry:
     from marketatlas.analysis.analyzers.atr import ATRAnalyzer
     from marketatlas.analysis.analyzers.ema import EMAAnalyzer
     from marketatlas.analysis.analyzers.sr import SupportResistanceAnalyzer
-    from marketatlas.analysis.analyzers.swing_basic import BasicSwingAnalyzer
     from marketatlas.analysis.analyzers.swing import SwingStructureAnalyzer
+    from marketatlas.analysis.analyzers.swing_basic import BasicSwingAnalyzer
     from marketatlas.analysis.analyzers.trend import TrendAnalyzer
     from marketatlas.analysis.patterns.four_swing_pullback import FourSwingPullbackDetector
     from marketatlas.analysis.signals.pullback_signal import PullbackSignal

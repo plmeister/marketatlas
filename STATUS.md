@@ -45,3 +45,4 @@
 - [x] 039 — AST serialization (JSON)
 - [x] 040 — Compiler adapter (AST to graph)
 - [x] 041 — Capability, Provider, Definition separation
+- [x] 047 — Expression hierarchy (Parameter.value → Expression)

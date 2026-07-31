@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from marketatlas.analysis.ast.expressions import wrap
 from marketatlas.analysis.ast.models import Analysis, Binding, Definition, Parameter, Provider
 
 
@@ -12,7 +13,7 @@ class _DefinitionBuilder:
         self._bindings: list[Binding] = []
 
     def with_param(self, name: str, value: object) -> _DefinitionBuilder:
-        self._parameters.append(Parameter(name=name, value=value))
+        self._parameters.append(Parameter(name=name, value=wrap(value)))
         return self
 
     def bind(self, source: str, output: str, target: str, input: str) -> _DefinitionBuilder:
@@ -91,7 +92,7 @@ class AnalysisBuilder:
     def define_provider(
         self, name: str, capability: str, category: str, impl: str, **default_params: object
     ) -> AnalysisBuilder:
-        params = tuple(Parameter(name=k, value=v) for k, v in default_params.items())
+        params = tuple(Parameter(name=k, value=wrap(v)) for k, v in default_params.items())
         self._providers[name] = Provider(
             name=name,
             capability=capability,
