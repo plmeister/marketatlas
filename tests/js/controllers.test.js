@@ -170,6 +170,21 @@ test('f key toggles future visibility', () => {
   kb.destroy();
 });
 
+test('a key toggles auto-scroll via callback', () => {
+  const toggles = [];
+  const kb = new KeyboardController(null, { toggleAutoscroll: () => toggles.push('toggled') });
+  document.dispatch('keydown', keyEvent('a'));
+  document.dispatch('keydown', keyEvent('A'));
+  assert.deepStrictEqual(toggles, ['toggled', 'toggled']);
+  kb.destroy();
+});
+
+test('a key is a no-op without callback', () => {
+  const kb = new KeyboardController(null, {});
+  assert.doesNotThrow(() => document.dispatch('keydown', keyEvent('a')));
+  kb.destroy();
+});
+
 test('ignores keys when typing in an input', () => {
   const model = makeModel();
   const pb = new PlaybackController(model, {}, { speed: 100, render: () => {} });
@@ -200,6 +215,10 @@ function makeSpyViews() {
     calls[m] = [];
     chart[m] = (idx) => { calls[m].push(idx); };
   });
+  calls.getVisibleTimeRange = [];
+  calls.setVisibleTimeRange = [];
+  chart.getVisibleTimeRange = () => { calls.getVisibleTimeRange.push('call'); return null; };
+  chart.setVisibleTimeRange = (r) => { calls.setVisibleTimeRange.push(r); };
   const panels = {};
   ['info', 'evidence', 'summary'].forEach(name => {
     const c = [];
@@ -270,6 +289,38 @@ test('switchTF to unknown TF is ignored', () => {
   assert.deepStrictEqual(backend.rebuildCalls, []);
   assert.strictEqual(model.activeTF, '1d');
   assert.deepStrictEqual(calls.updateCandles, []);
+});
+
+test('switchTF preserves the visible time range across TF switch', () => {
+  const model = makeModel();
+  const { chart, calls, panels } = makeSpyViews();
+  const range = { from: '2024-01-01', to: '2024-02-01' };
+  chart.getVisibleTimeRange = () => range;
+  const backend = makeBackend(model);
+  const ctrl = new TFController(model, {
+    chart, info: panels.info, evidence: panels.evidence,
+    summary: panels.summary, timeline: panels.timeline,
+  }, backend);
+  model.goTo(2);
+  ctrl.switchTF('1w');
+  // Same horizontal span restored on the new chart; no scroll override.
+  assert.deepStrictEqual(calls.setVisibleTimeRange, [range]);
+  assert.deepStrictEqual(calls.scrollToFrame, []);
+  assert.deepStrictEqual(calls.updateCandles, [2]);
+});
+
+test('switchTF falls back to scrollToFrame when no visible range available', () => {
+  const model = makeModel();
+  const { chart, calls, panels } = makeSpyViews();
+  const backend = makeBackend(model);
+  const ctrl = new TFController(model, {
+    chart, info: panels.info, evidence: panels.evidence,
+    summary: panels.summary, timeline: panels.timeline,
+  }, backend);
+  model.goTo(2);
+  ctrl.switchTF('1w');
+  assert.deepStrictEqual(calls.setVisibleTimeRange, []);
+  assert.deepStrictEqual(calls.scrollToFrame, [2]);
 });
 
 test('switchTF round-trips back to primary TF', () => {

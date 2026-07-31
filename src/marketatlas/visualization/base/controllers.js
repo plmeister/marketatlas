@@ -71,8 +71,9 @@ class PlaybackController {
 
 // --- KeyboardController ---
 class KeyboardController {
-  constructor(playbackCtrl) {
+  constructor(playbackCtrl, opts) {
     this.pb = playbackCtrl;
+    this.opts = opts || {};
     this._bound = this._handler.bind(this);
     document.addEventListener('keydown', this._bound);
   }
@@ -106,6 +107,10 @@ class KeyboardController {
       case 'F':
         this.pb.toggleFutureVisibility();
         break;
+      case 'a':
+      case 'A':
+        if (this.opts.toggleAutoscroll) this.opts.toggleAutoscroll();
+        break;
     }
   }
 
@@ -125,13 +130,22 @@ class TFController {
   switchTF(tf) {
     if (tf === this.model.activeTF) return;
     if (!this.backend.loadTFData(tf)) return;
+    const prevRange = this.views.chart.getVisibleTimeRange();
     this.model.switchTF(tf);
     this.backend.rebuildCharts(tf);
     const idx = this.model.goTo(this.model.currentFrame); // re-clamp after data change
-    this._refreshAll(idx);
+    // Preserve the same horizontal time span across TF switch so the visible
+    // date range stays constant (candles just get wider/taller per TF).
+    if (prevRange) {
+      this.model.programmaticScroll = true;
+      this.views.chart.setVisibleTimeRange(prevRange);
+      this._refreshAll(idx, false);
+    } else {
+      this._refreshAll(idx, true);
+    }
   }
 
-  _refreshAll(idx) {
+  _refreshAll(idx, scroll) {
     const v = this.views;
     v.chart.updateCandles(idx);
     v.chart.updateVolume(idx);
@@ -141,7 +155,7 @@ class TFController {
     v.chart.updateTrades(idx);
     v.chart.updateZigzag(idx);
     v.chart.updateMarkers(idx);
-    v.chart.scrollToFrame(idx);
+    if (scroll) v.chart.scrollToFrame(idx);
     v.info.update(this.model, idx);
     v.evidence.update(this.model, idx);
     v.summary.update(this.model, idx);

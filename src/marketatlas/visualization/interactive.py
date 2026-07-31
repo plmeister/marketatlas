@@ -138,13 +138,20 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
                     "strength": fact.strength,
                 }
             elif isinstance(fact, PullbackFact):
-                # Match swing_pattern prices to SwingFact swings for indices
+                # Match swing_pattern prices to SwingFact swings for indices/times
                 swing_indices: list[int] = []
+                swing_times: list[str] = []
                 for fk, fv in frame.facts.items():
                     if isinstance(fv, SwingFact):
                         price_to_idx = {s.price: s.index for s in fv.swings}
+                        price_to_time = {
+                            s.price: s.timestamp.strftime("%Y-%m-%d") for s in fv.swings
+                        }
                         swing_indices = [
                             price_to_idx[p] for p in fact.swing_pattern if p in price_to_idx
+                        ]
+                        swing_times = [
+                            price_to_time[p] for p in fact.swing_pattern if p in price_to_time
                         ]
                         break
                 facts[label] = {
@@ -156,6 +163,7 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
                     "deviation_pct": fact.deviation_pct,
                     "swing_pattern": list(fact.swing_pattern),
                     "swing_pattern_indices": swing_indices,
+                    "swing_pattern_times": swing_times,
                 }
             elif isinstance(fact, SRFact):
                 levels = [
@@ -165,7 +173,13 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
                 facts[label] = {"type": "sr", "levels": levels}
             elif isinstance(fact, SwingFact):
                 swings = [
-                    {"price": s.price, "index": s.index, "type": s.type.value} for s in fact.swings
+                    {
+                        "price": s.price,
+                        "index": s.index,
+                        "type": s.type.value,
+                        "time": s.timestamp.strftime("%Y-%m-%d"),
+                    }
+                    for s in fact.swings
                 ]
                 facts[label] = {"type": "swing", "swings": swings}
         result.append(facts)
@@ -453,7 +467,9 @@ class InteractiveRenderer:
             "MIN_TOUCHES": json.dumps(ctx.min_touches),
         }
         for name in sorted(_JS_PLACEHOLDERS, key=len, reverse=True):
-            js_template = js_template.replace(f"null; // @data:{name}", data_map[name])
+            js_template = js_template.replace(
+                f"null; // @data:{name}", data_map[name] + ";"
+            )
 
         html = _INTERACTIVE_TEMPLATE.format(
             title=title,

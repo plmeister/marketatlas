@@ -20,6 +20,10 @@ const CANDLES_BY_TF = {
   '1w': [
     { time: '2024-01-06', open: 100, high: 120, low: 99, close: 109, volume: 5400 },
     { time: '2024-01-13', open: 109, high: 132, low: 106, close: 126, volume: 6350 },
+    { time: '2024-01-20', open: 126, high: 134, low: 120, close: 128, volume: 6100 },
+    { time: '2024-01-27', open: 128, high: 136, low: 124, close: 130, volume: 6500 },
+    { time: '2024-02-03', open: 130, high: 138, low: 126, close: 132, volume: 6200 },
+    { time: '2024-02-10', open: 132, high: 140, low: 128, close: 134, volume: 6800 },
   ],
 };
 
@@ -95,12 +99,14 @@ const PULLBACKS = [
 const FACTS_DATA = [
   {},
   {},
-  { PB: { type: 'pullback', status: 'detected', direction: 'bullish', retracement_atr: 1.5, confirmation_strength: 0.6, deviation_pct: 2.1, swing_pattern: [108, 114, 106], swing_pattern_indices: [1, 2, 3] } },
+  { PB: { type: 'pullback', status: 'detected', direction: 'bullish', retracement_atr: 1.5, confirmation_strength: 0.6, deviation_pct: 2.1, swing_pattern: [108, 114, 106], swing_pattern_indices: [1, 2, 3], swing_pattern_times: ['2024-01-02', '2024-01-03', '2024-01-04'] } },
   { TREND: { type: 'trend', direction: 'bullish', strength: 0.8 } },
   {},
+  { TREND: { type: 'trend', direction: 'bullish', strength: 0.9 }, SWING: { type: 'swing', swings: [{ price: 118, index: 4, type: 'high', time: '2024-01-05' }, { price: 109, index: 5, type: 'low', time: '2024-01-06' }] } },
   {},
   {},
-  { TREND: { type: 'trend', direction: 'bullish', strength: 0.9 }, SWING: { type: 'swing', swings: [{ price: 118, index: 4, type: 'high' }, { price: 109, index: 5, type: 'low' }] } },
+  {},
+  {},
   {},
   {},
 ];

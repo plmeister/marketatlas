@@ -192,7 +192,7 @@ class TestExtractFramesJson:
         frames = [_make_frame(i) for i in range(3)]
         result = _extract_frames_json(frames)
         assert len(result) == 3
-        assert result[0]["time"] == int(BASE.timestamp())
+        assert result[0]["time"] == BASE.strftime("%Y-%m-%d")
 
     def test_includes_evidence(self) -> None:
         frames = [_make_frame(0)]
@@ -345,6 +345,8 @@ class TestExtractFactsPerFrame:
         pb = result[0]["pullback"]
         assert pb["swing_pattern"] == [95.0, 110.0, 97.0, 112.0]
         assert pb["swing_pattern_indices"] == [1, 3, 5, 7]
+        ts_str = ts.strftime("%Y-%m-%d")
+        assert pb["swing_pattern_times"] == [ts_str, ts_str, ts_str, ts_str]
 
     def test_swing_fact_included(self) -> None:
         candle = _make_candle(0)
@@ -369,6 +371,27 @@ class TestExtractFactsPerFrame:
         assert len(result[0]["swing"]["swings"]) == 2
         assert result[0]["swing"]["swings"][0]["type"] == "low"
 
+    def test_swing_fact_includes_native_time(self) -> None:
+        candle = _make_candle(0)
+        ts = candle.timestamp
+        swing = SwingFact(
+            timestamp=ts,
+            evidence=(),
+            swings=(
+                SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=ts),
+            ),
+        )
+        frame = AnalysisFrame(
+            timestamp=candle.timestamp,
+            candle=candle,
+            facts={FactKey("swing"): swing},
+            evidence=(),
+        )
+        result = _extract_facts_per_frame([frame])
+        point = result[0]["swing"]["swings"][0]
+        assert point["time"] == ts.strftime("%Y-%m-%d")
+        assert point["index"] == 0  # index kept for reference
+
     def test_empty(self) -> None:
         assert _extract_facts_per_frame([]) == []
 
@@ -384,8 +407,8 @@ class TestExtractTrades:
     def test_entry_exit_times(self) -> None:
         tb = _make_tradebook_with_trades()
         result = _extract_trades_json(tb)
-        assert result[0]["entry_time"] == int((BASE + timedelta(days=6)).timestamp())
-        assert result[0]["exit_time"] == int((BASE + timedelta(days=8)).timestamp())
+        assert result[0]["entry_time"] == (BASE + timedelta(days=6)).strftime("%Y-%m-%d")
+        assert result[0]["exit_time"] == (BASE + timedelta(days=8)).strftime("%Y-%m-%d")
 
     def test_empty_tradebook(self) -> None:
         tb = TradeBook()
@@ -420,6 +443,28 @@ class TestInteractiveRenderer:
         assert "const TRADES =" in content
         assert "const PULLBACKS =" in content
         assert "const FACTS_DATA =" in content
+
+    def test_data_placeholders_terminated_with_semicolon(self, tmp_path: object) -> None:
+        path = tmp_path / "semicolons.html"  # type: ignore[operator]
+        store = _make_store(10)
+        frame_store = _make_frame_store(5)
+        tb = TradeBook()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        InteractiveRenderer(ctx).render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        js_match = re.search(r"<script>\n(.*)\n</script>", content, re.S)
+        assert js_match is not None, "inline script block not found"
+        js = js_match.group(1)
+        # Each data placeholder must keep a terminating semicolon; otherwise a
+        # following statement starting with '(' is absorbed into the value
+        # expression (e.g. `const MIN_TOUCHES = 2(function() {...})()`).
+        for name in ("CANDLES", "CANDLES_BY_TF", "FRAMES", "INITIAL_BALANCE", "MIN_TOUCHES"):
+            line = next(
+                l for l in js.splitlines() if l.startswith(f"const {name} = ")
+            )
+            assert line.endswith(";"), f"const {name} missing terminating semicolon"
+        # Init IIFE must not be glued onto the last data declaration.
+        assert ";(function() {" in js
 
     def test_contains_controls(self, tmp_path: object) -> None:
         path = tmp_path / "controls.html"  # type: ignore[operator]
@@ -732,7 +777,7 @@ class TestInteractiveRenderer:
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
         assert "const MIN_TOUCHES = 2" in content
-        assert "lv.strength < MIN_TOUCHES" in content
+        assert "lv.strength < this.model.minTouches" in content
 
     def test_tiered_line_width_in_js(self, tmp_path: object) -> None:
         path = tmp_path / "tier.html"  # type: ignore[operator]
@@ -767,12 +812,10 @@ class TestInteractiveRenderer:
         renderer = InteractiveRenderer(ctx)
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
-        # First candle open is 100.0, so O/H/L/C/Vol labels + values present
-        assert 'class="label">O<' in content
-        assert 'class="label">H<' in content
-        assert 'class="label">L<' in content
-        assert 'class="label">C<' in content
-        assert 'class="label">Vol<' in content
+        # Info panel renders O/H/L/C/Vol labels dynamically from candle keys
+        assert "class=\"label\">' + label + '</span>" in content
+        assert "class=\"label\">Vol</span>" in content
+        assert "candle[key].toFixed(2)" in content
 
     def test_crosshair_snap_in_js(self, tmp_path: object) -> None:
         path = tmp_path / "crosshair.html"  # type: ignore[operator]
@@ -807,9 +850,9 @@ class TestInteractiveRenderer:
         renderer = InteractiveRenderer(ctx)
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
-        assert "!autoScrollDisabled" in content
+        assert "!model.autoScrollDisabled" in content
         # Ensure no futureVisibility === 'hide' guard on auto-scroll
-        segment = content.split("Auto-scroll chart")[1].split("}")[0]
+        segment = content.split("btn-autoscroll")[1].split("}")[0]
         assert "futureVisibility === 'hide'" not in segment
 
     def test_keyboard_shortcut_a_in_js(self, tmp_path: object) -> None:
@@ -821,7 +864,7 @@ class TestInteractiveRenderer:
         renderer = InteractiveRenderer(ctx)
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
-        assert "key === 'a'" in content
+        assert "case 'a':" in content
 
     def test_volume_container_in_output(self, tmp_path: object) -> None:
         path = tmp_path / "vol.html"  # type: ignore[operator]
@@ -856,7 +899,7 @@ class TestInteractiveRenderer:
         renderer = InteractiveRenderer(ctx)
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
-        assert "volumeContainer.clientWidth" in content
+        assert "containers.volume.clientWidth" in content
 
     def test_volume_chart_synced_timescales(self, tmp_path: object) -> None:
         path = tmp_path / "vol_sync.html"  # type: ignore[operator]
@@ -868,7 +911,7 @@ class TestInteractiveRenderer:
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
         # Volume chart participates in time scale sync
-        assert "volumeChart.timeScale()" in content
+        assert "sync(this.volumeChart" in content
 
     def test_candle_highlight_uses_update(self, tmp_path: object) -> None:
         path = tmp_path / "hl.html"  # type: ignore[operator]
@@ -879,50 +922,50 @@ class TestInteractiveRenderer:
         renderer = InteractiveRenderer(ctx)
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
-        assert "updateCandleHighlight" in content
+        assert "highlightCandle" in content
         assert "candleSeries.update" in content
         assert "borderColor: '#facc15'" in content
         assert "wickColor: '#facc15'" in content
         assert "candleHighlightLine" not in content
 
     def test_visibility_button_in_output(self, tmp_path: object) -> None:
-        path = tmp_path / "vis.html"
+        path = tmp_path / "vis.html"  # type: ignore[operator]
         store = _make_store(10)
         frame_store = _make_frame_store(5)
         tb = TradeBook()
         ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
         renderer = InteractiveRenderer(ctx)
-        renderer.render(path)
-        content = path.read_text()
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
         assert "btn-visibility" in content
         assert "toggleFutureVisibility" in content
         assert "futureVisibility" in content
 
     def test_dim_mode_candle_colors_in_js(self, tmp_path: object) -> None:
-        path = tmp_path / "dim.html"
+        path = tmp_path / "dim.html"  # type: ignore[operator]
         store = _make_store(10)
         frame_store = _make_frame_store(5)
         tb = TradeBook()
         ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
         renderer = InteractiveRenderer(ctx)
-        renderer.render(path)
-        content = path.read_text()
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
         # JS dim mode should set borderColor and wickColor for dimmed candles
         assert "borderColor: 'rgba(128,128,128,0.3)'" in content
         assert "wickColor: 'rgba(128,128,128,0.3)'" in content
 
     def test_future_visibility_toggle_cycle(self, tmp_path: object) -> None:
-        path = tmp_path / "toggle.html"
+        path = tmp_path / "toggle.html"  # type: ignore[operator]
         store = _make_store(10)
         frame_store = _make_frame_store(5)
         tb = TradeBook()
         ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
         renderer = InteractiveRenderer(ctx)
-        renderer.render(path)
-        content = path.read_text()
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
         # Must cycle hide -> dim -> show
         btn_vis = re.search(r'id="btn-visibility".*?</button>', content)
         assert btn_vis is not None
         assert "futureVisibility" in content
-        assert "futureVisibilityLabels" in content
+        assert "const labels = {" in content
         assert "updateCandles" in content

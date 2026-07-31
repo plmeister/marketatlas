@@ -35,15 +35,15 @@ function createEl(id) {
 class MockSeries {
   constructor(opts) {
     this.opts = opts || {};
-    this.data = [];
+    this._data = [];
     this.markers = [];
     this.priceLines = [];
   }
-  setData(d) { this.data = d; }
-  update(d) { this.data = this.data.concat(d); }
+  setData(d) { this._data = d; }
+  update(d) { this._data = this._data.concat(d); }
   applyOptions(o) { Object.assign(this.opts, o); }
   setMarkers(m) { this.markers = m; }
-  data() { return this.data; }
+  data() { return this._data; }
   createPriceLine(o) {
     const pl = Object.assign({ removed: false }, o);
     pl.remove = () => { pl.removed = true; };
@@ -70,6 +70,11 @@ class MockChart {
   subscribeVisibleLogicalRangeChange(cb) { this.rangeHandlers.push(cb); }
   setVisibleLogicalRange() {}
   getVisibleLogicalRange() { return { from: 0, to: 10 }; }
+  getVisibleRange() { return this.visibleRange || { from: '2024-01-01', to: '2024-01-10' }; }
+  setVisibleRange(range) {
+    this.visibleRange = range;
+    this.rangeHandlers.forEach(cb => cb({ from: 0, to: 10 }));
+  }
   scrollToTime() {}
   scrollToPosition() {}
   setCrosshairPosition(price, time, series) { this.crosshair = { price, time, series }; }

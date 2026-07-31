@@ -15,7 +15,7 @@ const INITIAL_BALANCE = null; // @data:INITIAL_BALANCE
 const MIN_TOUCHES = null; // @data:MIN_TOUCHES
 
 // --- Init ---
-(function() {
+;(function() {
   const model = new AppModel({
     CANDLES, CANDLES_BY_TF, AVAILABLE_TFS, FRAMES,
     EMA_SERIES, ATR_DATA, SR_DATA, TRADES, PULLBACKS,
@@ -60,7 +60,14 @@ const MIN_TOUCHES = null; // @data:MIN_TOUCHES
     render: render,
   });
 
-  const keyboardCtrl = new KeyboardController(playbackCtrl);
+  const keyboardCtrl = new KeyboardController(playbackCtrl, {
+    toggleAutoscroll: function() {
+      model.autoScrollDisabled = !model.autoScrollDisabled;
+      const btn = document.getElementById('btn-autoscroll');
+      btn.classList.toggle('active', !model.autoScrollDisabled);
+      if (!model.autoScrollDisabled) chartView.scrollToFrame(model.currentFrame);
+    },
+  });
   const tfCtrl = new TFController(model, views, {
     loadTFData: function(tf) {
       if (!model.candlesByTF[tf]) return false;

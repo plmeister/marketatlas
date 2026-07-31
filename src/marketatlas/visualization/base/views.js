@@ -203,7 +203,6 @@ class ChartView {
 
   updateSR(idx) {
     this._clearPriceLines();
-    if (!this.model.isPrimaryTF()) return;
     const levels = this.model.srLevelsAt(idx);
     levels.forEach(lv => {
       if (lv.strength < this.model.minTouches) return;
@@ -254,11 +253,11 @@ class ChartView {
     Object.values(facts).forEach(val => {
       if (val.type !== 'pullback') return;
       if (val.status !== 'detected' && val.status !== 'confirmed') return;
-      const indices = val.swing_pattern_indices || [];
+      const times = val.swing_pattern_times || [];
       const prices = val.swing_pattern || [];
-      if (indices.length < 2) return;
-      const lineData = indices.map((i, j) => ({
-        time: this.model.activeCandles[i] ? this.model.activeCandles[i].time : null,
+      if (times.length < 2) return;
+      const lineData = times.map((t, j) => ({
+        time: t,
         value: prices[j],
       })).filter(p => p.time !== null);
       if (lineData.length < 2) return;
@@ -282,15 +281,16 @@ class ChartView {
       markers.push({ time: pb.time, position: pb.position, color: pb.color, shape: pb.shape, text: pb.text });
     }
 
-    // Swing markers
+    // Swing markers — swings carry their own native time (they belong to the
+    // TF they were detected on, not the current view TF). LightweightCharts
+    // silently drops markers whose time is not a candle on the active TF.
     const facts = this.model.frameFacts(idx);
     Object.values(facts).forEach(val => {
       if (val.type === 'swing' && val.swings) {
         val.swings.forEach(sw => {
-          const ct = this.model.activeCandles[sw.index] ? this.model.activeCandles[sw.index].time : null;
-          if (!ct) return;
+          if (!sw.time) return;
           const isHigh = sw.type === 'high';
-          markers.push({ time: ct, position: isHigh ? 'aboveBar' : 'belowBar',
+          markers.push({ time: sw.time, position: isHigh ? 'aboveBar' : 'belowBar',
             color: isHigh ? '#f59e0b' : '#3b82f6',
             shape: isHigh ? 'arrowDown' : 'arrowUp', text: '' });
         });
@@ -348,6 +348,16 @@ class ChartView {
     if (this.chart) this.chart.applyOptions({ width: this.containers.main.clientWidth });
     if (this.atrChart) this.atrChart.applyOptions({ width: this.containers.atr.clientWidth });
     if (this.volumeChart) this.volumeChart.applyOptions({ width: this.containers.volume.clientWidth });
+  }
+
+  getVisibleTimeRange() {
+    if (!this.chart) return null;
+    return this.chart.timeScale().getVisibleRange();
+  }
+
+  setVisibleTimeRange(range) {
+    if (!this.chart || !range) return;
+    this.chart.timeScale().setVisibleRange(range);
   }
 }
 

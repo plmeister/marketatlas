@@ -43,7 +43,7 @@ test('build on primary TF creates EMA and zigzag annotation series', () => {
   assert.deepStrictEqual(Object.keys(cv.emaSeriesMap).sort(), Object.keys(EMA_SERIES).sort());
   assert.ok(cv.zigzagBull, 'zigzagBull series should exist');
   assert.ok(cv.zigzagBear, 'zigzagBear series should exist');
-  assert.strictEqual(cv.atrSeries.data.length, ATR_DATA.length);
+  assert.strictEqual(cv.atrSeries.data().length, ATR_DATA.length);
 });
 
 test('build on secondary TF skips EMA/zigzag annotations and clears ATR', () => {
@@ -54,7 +54,7 @@ test('build on secondary TF skips EMA/zigzag annotations and clears ATR', () => 
   assert.strictEqual(Object.keys(cv.emaSeriesMap).length, 0);
   assert.strictEqual(cv.zigzagBull, null);
   assert.strictEqual(cv.zigzagBear, null);
-  assert.strictEqual(cv.atrSeries.data.length, 0);
+  assert.strictEqual(cv.atrSeries.data().length, 0);
 });
 
 test('rebuild after TF switch destroys old charts and restores annotations', () => {
@@ -81,7 +81,7 @@ test('updateEMAs truncates EMA data to frame time on primary TF', () => {
   const cv = new ChartView(model, makeContainers());
   cv.build('1d');
   cv.updateEMAs(3); // frame time 2024-01-05
-  assert.strictEqual(cv.emaSeriesMap.EMA10.data.length, 5);
+  assert.strictEqual(cv.emaSeriesMap.EMA10.data().length, 5);
 });
 
 test('updateEMAs is a no-op on secondary TF', () => {
@@ -99,7 +99,7 @@ test('updateATR truncates ATR data on primary TF', () => {
   const cv = new ChartView(model, makeContainers());
   cv.build('1d');
   cv.updateATR(3);
-  assert.strictEqual(cv.atrSeries.data.length, 5);
+  assert.strictEqual(cv.atrSeries.data().length, 5);
 });
 
 test('updateATR keeps ATR panel empty on secondary TF', () => {
@@ -108,7 +108,7 @@ test('updateATR keeps ATR panel empty on secondary TF', () => {
   const cv = new ChartView(model, makeContainers());
   cv.build('1w');
   cv.updateATR(3);
-  assert.strictEqual(cv.atrSeries.data.length, 0);
+  assert.strictEqual(cv.atrSeries.data().length, 0);
 });
 
 // --- updateSR() ---
@@ -129,13 +129,13 @@ test('updateSR skips levels below minTouches', () => {
   assert.strictEqual(cv.srPriceLines.length, 0);
 });
 
-test('updateSR is a no-op on secondary TF', () => {
+test('updateSR shows SR price lines on secondary TF', () => {
   const model = makeModel();
   model.switchTF('1w');
   const cv = new ChartView(model, makeContainers());
   cv.build('1w');
   cv.updateSR(1);
-  assert.strictEqual(cv.srPriceLines.length, 0);
+  assert.strictEqual(cv.srPriceLines.length, 1);
 });
 
 // --- updateZigzag() ---
@@ -144,7 +144,7 @@ test('updateZigzag draws bullish pullback pattern on primary TF', () => {
   const cv = new ChartView(model, makeContainers());
   cv.build('1d');
   cv.updateZigzag(2); // frame 2 has detected bullish pullback
-  assert.strictEqual(cv.zigzagBull.data.length, 3);
+  assert.strictEqual(cv.zigzagBull.data().length, 3);
   assert.strictEqual(cv.zigzagBull.opts.lineVisible, true);
   assert.strictEqual(cv.zigzagBear.opts.lineVisible, false);
 });
@@ -193,7 +193,7 @@ test('updateCandles hides future candles in hide mode', () => {
   const cv = new ChartView(model, makeContainers());
   cv.build('1d');
   cv.updateCandles(3); // frame time 2024-01-05 -> 5 candles visible
-  assert.strictEqual(cv.candleSeries.data.length, 5);
+  assert.strictEqual(cv.candleSeries.data().length, 5);
 });
 
 test('updateCandles dims future candles in dim mode', () => {
@@ -202,8 +202,8 @@ test('updateCandles dims future candles in dim mode', () => {
   const cv = new ChartView(model, makeContainers());
   cv.build('1d');
   cv.updateCandles(3);
-  assert.strictEqual(cv.candleSeries.data.length, 10);
-  const future = cv.candleSeries.data.slice(5);
+  assert.strictEqual(cv.candleSeries.data().length, 10);
+  const future = cv.candleSeries.data().slice(5);
   assert.strictEqual(future.length, 5);
   assert.ok(future.every(c => c.color === 'rgba(128,128,128,0.3)'));
 });
@@ -230,6 +230,30 @@ test('updateMarkers sorts markers chronologically', () => {
   for (let i = 1; i < times.length; i++) {
     assert.ok(times[i] >= times[i - 1], `markers out of order at ${i}`);
   }
+});
+
+test('updateMarkers places swing markers at native swing times', () => {
+  const model = makeModel();
+  const cv = new ChartView(model, makeContainers());
+  cv.build('1d');
+  cv.updateMarkers(5); // frame 5 has swing facts at 1d indices 4,5
+  const swingTimes = cv.candleSeries.markers
+    .filter(m => m.color === '#f59e0b' || m.color === '#3b82f6')
+    .map(m => m.time)
+    .sort();
+  assert.deepStrictEqual(swingTimes, ['2024-01-05', '2024-01-06']);
+});
+
+test('updateMarkers on secondary TF keeps native swing times (not remapped via 1w candles)', () => {
+  const model = makeModel();
+  model.switchTF('1w');
+  const cv = new ChartView(model, makeContainers());
+  cv.build('1w');
+  cv.updateMarkers(5);
+  const swingMarkers = cv.candleSeries.markers
+    .filter(m => m.color === '#f59e0b' || m.color === '#3b82f6');
+  // Markers keep the swing's native 1d time; LC drops them when no 1w candle matches.
+  assert.deepStrictEqual(swingMarkers.map(m => m.time).sort(), ['2024-01-05', '2024-01-06']);
 });
 
 console.log('\nInfoPanelView Tests\n');
