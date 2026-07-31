@@ -1,3 +1,5 @@
+from typing import Any
+
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.result import AnalysisResult
@@ -18,7 +20,9 @@ class PullbackDetector(Analyzer):
         swing_lookback: int = 20,
         trend_key: str = "trend",
         atr_key: str = "atr_14",
+        **kwargs: Any,
     ) -> None:
+        super().__init__(**kwargs)
         self._min_retracement_atr = min_retracement_atr
         self._max_retracement_atr = max_retracement_atr
         self._swing_lookback = swing_lookback
@@ -31,17 +35,17 @@ class PullbackDetector(Analyzer):
 
     def requires(self) -> tuple[FactKey, ...]:
         return (
-            FactKey(self._trend_key),
-            FactKey(self._atr_key),
+            self._make_key(self._trend_key),
+            self._make_key(self._atr_key),
         )
 
     def produces(self) -> tuple[FactKey, ...]:
-        return (FactKey(self.instance_key),)
+        return (self._make_key(self.instance_key),)
 
     def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
-        trend = facts[FactKey(self._trend_key)]
+        trend = facts[self._make_key(self._trend_key)]
         assert isinstance(trend, TrendFact)
-        atr_fact = facts[FactKey(self._atr_key)]
+        atr_fact = facts[self._make_key(self._atr_key)]
         assert isinstance(atr_fact, ATRFact)
 
         if trend.direction == TrendDirection.NEUTRAL or atr_fact.value <= 0:

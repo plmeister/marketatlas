@@ -16,13 +16,19 @@ from marketatlas.frames.store import FrameStore
 
 def _candle_to_dict(c: Candle) -> dict[str, Any]:
     return {
-        "time": int(c.timestamp.timestamp()),
+        "time": c.timestamp.strftime("%Y-%m-%d"),
         "open": c.open,
         "high": c.high,
         "low": c.low,
         "close": c.close,
         "volume": c.volume,
     }
+
+
+def _ts_to_time(ts: float) -> str:
+    from datetime import datetime, timezone
+
+    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
 
 
 def _extract_ema_lines(
@@ -35,7 +41,7 @@ def _extract_ema_lines(
                 key = f"EMA{fact.period}"
                 if key not in series:
                     series[key] = []
-                series[key].append({"time": int(frame.timestamp.timestamp()), "value": fact.value})
+                series[key].append({"time": _ts_to_time(frame.timestamp.timestamp()), "value": fact.value})
     return series
 
 
@@ -44,7 +50,7 @@ def _extract_atr(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
     for frame in frames:
         for fact in frame.facts.values():
             if isinstance(fact, ATRFact):
-                result.append({"time": int(frame.timestamp.timestamp()), "value": fact.value})
+                result.append({"time": _ts_to_time(frame.timestamp.timestamp()), "value": fact.value})
                 break
     return result
 
@@ -58,7 +64,7 @@ def _extract_trend_markers(
     for frame in frames:
         for fact in frame.facts.values():
             if isinstance(fact, TrendFact):
-                entry = {"time": int(frame.timestamp.timestamp())}
+                entry = {"time": _ts_to_time(frame.timestamp.timestamp())}
                 if fact.direction == TrendDirection.BULLISH:
                     bullish.append(entry)
                 elif fact.direction == TrendDirection.BEARISH:
@@ -79,7 +85,7 @@ def _extract_pullbacks(
                 is_bull = fact.direction == TrendDirection.BULLISH
                 result.append(
                     {
-                        "time": int(frame.timestamp.timestamp()),
+                        "time": _ts_to_time(frame.timestamp.timestamp()),
                         "position": "belowBar" if is_bull else "aboveBar",
                         "color": "#22c55e" if is_bull else "#ef4444",
                         "shape": "arrowUp" if is_bull else "arrowDown",
@@ -104,10 +110,10 @@ def _evidence_to_json(entries: tuple[EvidenceEntry, ...]) -> list[dict[str, str]
 
 def _build_candle_evidence_map(
     frames: list[AnalysisFrame],
-) -> dict[int, list[dict[str, str]]]:
-    result: dict[int, list[dict[str, str]]] = {}
+) -> dict[str, list[dict[str, str]]]:
+    result: dict[str, list[dict[str, str]]] = {}
     for frame in frames:
-        key = int(frame.timestamp.timestamp())
+        key = _ts_to_time(frame.timestamp.timestamp())
         ev = _evidence_to_json(frame.evidence)
         if ev:
             result[key] = ev

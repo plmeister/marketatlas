@@ -1,3 +1,5 @@
+from typing import Any
+
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.result import AnalysisResult
@@ -16,7 +18,9 @@ class SwingStructureAnalyzer(Analyzer):
         atr_key: str = "atr_14",
         left_bars: int = 2,
         right_bars: int = 1,
+        **kwargs: Any,
     ) -> None:
+        super().__init__(**kwargs)
         self._lookback = lookback
         self._min_swing_atr = min_swing_atr
         self._atr_key = atr_key
@@ -31,7 +35,7 @@ class SwingStructureAnalyzer(Analyzer):
         return ()
 
     def produces(self) -> tuple[FactKey, ...]:
-        return (FactKey(self.instance_key),)
+        return (self._make_key(self.instance_key),)
 
     def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         all_candles: tuple[Candle, ...] = tuple(view.store.slice(0, view.cursor)) + (view.current,)

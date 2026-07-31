@@ -1,3 +1,5 @@
+from typing import Any
+
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.result import AnalysisResult
@@ -14,7 +16,9 @@ class SupportResistanceAnalyzer(Analyzer):
         swing_key: str = "swing",
         atr_key: str = "atr_14",
         level_tolerance_atr: float = 0.5,
+        **kwargs: Any,
     ) -> None:
+        super().__init__(**kwargs)
         self._swing_key = swing_key
         self._atr_key = atr_key
         self._level_tolerance_atr = level_tolerance_atr
@@ -25,16 +29,16 @@ class SupportResistanceAnalyzer(Analyzer):
 
     def requires(self) -> tuple[FactKey, ...]:
         return (
-            FactKey(self._swing_key),
-            FactKey(self._atr_key),
+            self._make_key(self._swing_key),
+            self._make_key(self._atr_key),
         )
 
     def produces(self) -> tuple[FactKey, ...]:
-        return (FactKey(self.instance_key),)
+        return (self._make_key(self.instance_key),)
 
     def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
-        swing_fact = facts.get(FactKey(self._swing_key))
-        atr_fact = facts.get(FactKey(self._atr_key))
+        swing_fact = facts.get(self._make_key(self._swing_key))
+        atr_fact = facts.get(self._make_key(self._atr_key))
 
         if not isinstance(swing_fact, SwingFact) or not swing_fact.swings:
             evidence: tuple[EvidenceEntry, ...] = (

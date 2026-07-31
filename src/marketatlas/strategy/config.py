@@ -8,6 +8,7 @@ from typing import Any
 class AnalyzerConfig:
     type: str
     params: dict[str, Any] = field(default_factory=dict)
+    timeframe: str | None = None  # None = use strategy base timeframe
 
 
 @dataclass(frozen=True)

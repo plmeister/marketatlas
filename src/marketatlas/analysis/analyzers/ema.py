@@ -1,3 +1,5 @@
+from typing import Any
+
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.math import compute_ema
@@ -9,7 +11,8 @@ from marketatlas.facts.primitive import EMAFact
 
 
 class EMAAnalyzer(Analyzer):
-    def __init__(self, period: int = 20) -> None:
+    def __init__(self, period: int = 20, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
         self._period = period
 
     @property
@@ -20,7 +23,7 @@ class EMAAnalyzer(Analyzer):
         return ()
 
     def produces(self) -> tuple[FactKey, ...]:
-        return (FactKey(self.instance_key),)
+        return (self._make_key(self.instance_key),)
 
     def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         ema_value = compute_ema(view.prices, self._period)

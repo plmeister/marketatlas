@@ -1,3 +1,5 @@
+from typing import Any
+
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.result import AnalysisResult
@@ -14,7 +16,9 @@ class BasicSwingAnalyzer(Analyzer):
         lookback: int = 20,
         left_bars: int = 2,
         right_bars: int = 1,
+        **kwargs: Any,
     ) -> None:
+        super().__init__(**kwargs)
         self._lookback = lookback
         self._left_bars = left_bars
         self._right_bars = right_bars
@@ -27,7 +31,7 @@ class BasicSwingAnalyzer(Analyzer):
         return ()
 
     def produces(self) -> tuple[FactKey, ...]:
-        return (FactKey(self.instance_key),)
+        return (self._make_key(self.instance_key),)
 
     def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         all_candles: tuple[Candle, ...] = tuple(view.store.slice(0, view.cursor)) + (view.current,)
@@ -101,7 +105,7 @@ class BasicSwingAnalyzer(Analyzer):
     ) -> list[SwingPoint]:
         raw: list[SwingPoint] = []
         n = len(candles)
-        lookback_start = n - lookback
+        lookback_start = max(left_bars, n - lookback)
         for i in range(lookback_start, n - right_bars):
             high_i = candles[i].high
             low_i = candles[i].low

@@ -68,11 +68,14 @@ def validate_config(config: StrategyConfig) -> list[str]:
             errors.append(f"Unknown analyzer type '{ac.type}' at index {i}")
 
     # Build analyzers to check what they produce
+    base_tf = config.timeframes[0] if config.timeframes else "1d"
     analyzers: list[Analyzer] = []
     for ac in config.analyzers:
         cls = ANALYZER_TYPES.get(ac.type)
         if cls is not None:
-            analyzers.append(cls(**ac.params))
+            kwargs = dict(ac.params)
+            kwargs["timeframe"] = ac.timeframe if ac.timeframe is not None else base_tf
+            analyzers.append(cls(**kwargs))
 
     produces_keys: set[FactKey] = set()
     for a in analyzers:
@@ -110,7 +113,10 @@ def _parse_analyzers(raw: Any) -> tuple[AnalyzerConfig, ...]:
         params = item.get("params", {})
         if not isinstance(params, dict):
             raise ConfigError(f"Analyzer at index {i} 'params' must be a mapping")
-        configs.append(AnalyzerConfig(type=atype, params=params))
+        tf = item.get("timeframe")
+        if tf is not None and not isinstance(tf, str):
+            raise ConfigError(f"Analyzer at index {i} 'timeframe' must be a string")
+        configs.append(AnalyzerConfig(type=atype, params=params, timeframe=tf))
     return tuple(configs)
 
 
@@ -149,10 +155,13 @@ def _parse_risk(raw: Any) -> RiskConfig:
 
 
 def build_analyzers(config: StrategyConfig) -> list[Analyzer]:
+    base_tf = config.timeframes[0] if config.timeframes else "1d"
     analyzers: list[Analyzer] = []
     for ac in config.analyzers:
         cls = ANALYZER_TYPES.get(ac.type)
         if cls is None:
             raise ConfigError(f"Unknown analyzer type '{ac.type}'")
-        analyzers.append(cls(**ac.params))
+        kwargs = dict(ac.params)
+        kwargs["timeframe"] = ac.timeframe if ac.timeframe is not None else base_tf
+        analyzers.append(cls(**kwargs))
     return analyzers

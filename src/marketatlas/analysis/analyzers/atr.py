@@ -1,3 +1,5 @@
+from typing import Any
+
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.result import AnalysisResult
@@ -8,7 +10,8 @@ from marketatlas.facts.primitive import ATRFact
 
 
 class ATRAnalyzer(Analyzer):
-    def __init__(self, period: int = 14) -> None:
+    def __init__(self, period: int = 14, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
         self._period = period
 
     @property
@@ -19,7 +22,7 @@ class ATRAnalyzer(Analyzer):
         return ()
 
     def produces(self) -> tuple[FactKey, ...]:
-        return (FactKey(self.instance_key),)
+        return (self._make_key(self.instance_key),)
 
     def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         highs = view.highs
