@@ -1,4 +1,5 @@
 from marketatlas.analysis.ast.builder import AnalysisBuilder
+from marketatlas.analysis.ast.clone import clone, clone_expression
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.ast.expressions import (
     Choice,
@@ -48,6 +49,8 @@ __all__ = [
     "Capability",
     "Choice",
     "ChoiceExpression",
+    "clone",
+    "clone_expression",
     "CompilationError",
     "CompilerPass",
     "Definition",
