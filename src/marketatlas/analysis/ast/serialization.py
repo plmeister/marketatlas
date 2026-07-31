@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 
-from marketatlas.analysis.ast.expressions import Expression, LiteralExpression
+from marketatlas.analysis.ast.expressions import (
+    ChoiceExpression,
+    Expression,
+    LiteralExpression,
+)
 from marketatlas.analysis.ast.models import (
     Analysis,
     Binding,
@@ -13,15 +17,39 @@ from marketatlas.analysis.ast.models import (
 )
 
 
-def _parameter_to_dict(p: Parameter) -> dict[str, object]:
-    value: object = p.value
+def _expression_to_dict(value: object, param_name: str = "") -> object:
     if isinstance(value, LiteralExpression):
-        value = value.value
-    elif isinstance(value, Expression):
-        raise ValueError(
-            f"Unsupported expression node in parameter '{p.name}': {type(value).__name__}"
-        )
-    return {"name": p.name, "value": value}
+        return value.value
+    if isinstance(value, ChoiceExpression):
+        return {
+            "expr": "choice",
+            "values": [_expression_to_dict(v, param_name) for v in value.values],
+        }
+    if isinstance(value, Expression):
+        name_part = f" in parameter '{param_name}'" if param_name else ""
+        raise ValueError(f"Unsupported expression node{name_part}: {type(value).__name__}")
+    return value
+
+
+def _dict_to_expression(value: object) -> Expression:
+    """Recursive deserializer for choice nodes; literals are wrapped."""
+    if isinstance(value, Mapping) and value.get("expr") == "choice" and "values" in value:
+        values = value["values"]
+        assert isinstance(values, Sequence)
+        return ChoiceExpression(tuple(_dict_to_expression(v) for v in values))
+    if isinstance(value, Expression):
+        return value
+    return LiteralExpression(value)
+
+
+def _parameter_value_from_dict(value: object) -> object:
+    if isinstance(value, Mapping) and value.get("expr") == "choice" and "values" in value:
+        return _dict_to_expression(value)
+    return value
+
+
+def _parameter_to_dict(p: Parameter) -> dict[str, object]:
+    return {"name": p.name, "value": _expression_to_dict(p.value, p.name)}
 
 
 def _binding_to_dict(b: Binding) -> dict[str, str]:
@@ -82,7 +110,7 @@ def _dict_to_parameter(d: Mapping[str, object]) -> Parameter:
         raise ValueError("Missing required field: name")
     if "value" not in d:
         raise ValueError("Missing required field: value")
-    return Parameter(name=d["name"], value=d["value"])  # type: ignore[arg-type]
+    return Parameter(name=d["name"], value=_parameter_value_from_dict(d["value"]))  # type: ignore[arg-type]
 
 
 def _dict_to_binding(d: Mapping[str, object]) -> Binding:

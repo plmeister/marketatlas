@@ -3,7 +3,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
-from marketatlas.analysis.ast.expressions import Expression, LiteralExpression
+from marketatlas.analysis.ast.expressions import (
+    ChoiceExpression,
+    Expression,
+    LiteralExpression,
+)
 from marketatlas.analysis.ast.models import Analysis, Definition, Parameter, Provider
 from marketatlas.analysis.ast.registry import ProviderRegistry
 from marketatlas.analysis.ast.validation import Diagnostic, validate
@@ -217,6 +221,12 @@ def _ast_to_config(analysis: Analysis) -> StrategyConfig:
             value: object = p.value
             if isinstance(value, LiteralExpression):
                 value = value.value
+            elif isinstance(value, ChoiceExpression):
+                raise CompilationError(
+                    f"Parameter '{p.name}' of definition '{d.name}' is a "
+                    f"ChoiceExpression and cannot be compiled until expanded "
+                    f"(template expansion, backlog 050)."
+                )
             elif isinstance(value, Expression):
                 raise CompilationError(
                     f"Non-literal expression for parameter '{p.name}' of definition "

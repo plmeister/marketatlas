@@ -46,3 +46,4 @@
 - [x] 040 — Compiler adapter (AST to graph)
 - [x] 041 — Capability, Provider, Definition separation
 - [x] 047 — Expression hierarchy (Parameter.value → Expression)
+- [x] 048 — ChoiceExpression node (template expansion point)

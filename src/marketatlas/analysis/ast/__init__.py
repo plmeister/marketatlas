@@ -1,6 +1,13 @@
 from marketatlas.analysis.ast.builder import AnalysisBuilder
 from marketatlas.analysis.ast.compiler import ASTCompiler
-from marketatlas.analysis.ast.expressions import Expression, LiteralExpression, unwrap, wrap
+from marketatlas.analysis.ast.expressions import (
+    Choice,
+    ChoiceExpression,
+    Expression,
+    LiteralExpression,
+    unwrap,
+    wrap,
+)
 from marketatlas.analysis.ast.models import (
     Analysis,
     BaseNode,
@@ -39,6 +46,8 @@ __all__ = [
     "BaseNode",
     "Binding",
     "Capability",
+    "Choice",
+    "ChoiceExpression",
     "CompilationError",
     "CompilerPass",
     "Definition",
