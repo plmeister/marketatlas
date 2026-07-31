@@ -20,5 +20,5 @@ Concise reference document defining all concepts in the semantic model: Analysis
 
 ## Related
 
-- All AST backlogs (036-050)
+- All AST backlogs (036-060)
 - `src/marketatlas/analysis/` — existing analyzers
