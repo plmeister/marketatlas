@@ -26,6 +26,7 @@ from marketatlas.analysis.ast.pipeline import (
     Pipeline,
     RegistryResolutionPass,
     ValidationPass,
+    expand,
 )
 from marketatlas.analysis.ast.registry import (
     ProviderNotFoundError,
@@ -58,6 +59,7 @@ __all__ = [
     "Diagnostic",
     "DiagnosticSeverity",
     "Expression",
+    "expand",
     "GraphGenerationPass",
     "LiteralExpression",
     "Parameter",

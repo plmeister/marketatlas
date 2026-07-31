@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import TypeVar
 
+from marketatlas.analysis.ast.clone import clone, clone_expression
 from marketatlas.analysis.ast.expressions import (
     ChoiceExpression,
     Expression,
@@ -19,6 +22,8 @@ from marketatlas.strategy.config import (
     StrategyConfig,
 )
 from marketatlas.strategy.loader import build_analyzers
+
+_T = TypeVar("_T")
 
 
 class CompilerPass(ABC):
@@ -203,6 +208,108 @@ def _merge_default_params(
         if dp.name not in existing:
             merged.append(dp)
     return tuple(merged)
+
+
+def _choice_leaves(expr: Expression) -> tuple[Expression, ...]:
+    """Flatten a ``ChoiceExpression`` into its non-choice leaf values.
+
+    Nested choices are flattened recursively: ``Choice([Choice([1, 2]), 3])``
+    yields leaves ``(Literal(1), Literal(2), Literal(3))``. Non-choice
+    expressions return a single-element tuple.
+    """
+    if isinstance(expr, ChoiceExpression):
+        leaves: list[Expression] = []
+        for value in expr.values:
+            leaves.extend(_choice_leaves(value))
+        return tuple(leaves)
+    return (expr,)
+
+
+def _cartesian(options: Sequence[Sequence[_T]]) -> list[tuple[_T, ...]]:
+    """Deterministic cartesian product in declaration order.
+
+    The rightmost sequence varies fastest (column-major): product of
+    ``(a, b) x (1, 2)`` yields ``(a,1), (a,2), (b,1), (b,2)``.
+    """
+    result: list[tuple[_T, ...]] = [()]
+    for opts in options:
+        result = [prev + (opt,) for prev in result for opt in opts]
+    return result
+
+
+def _expand_definition(defn: Definition) -> tuple[tuple[Parameter, ...], ...]:
+    """Produce one parameter-variant tuple per cartesian combination of choices.
+
+    Each parameter with a ``ChoiceExpression`` value contributes one option per
+    flattened leaf; literal and other-expression params contribute a single
+    option. An empty choice raises ``CompilationError`` naming the definition
+    and parameter. Every returned parameter carries a freshly cloned value.
+    """
+    options: list[tuple[Expression, ...]] = []
+    for p in defn.parameters:
+        leaves = _choice_leaves(p.value)
+        if isinstance(p.value, ChoiceExpression) and not leaves:
+            raise CompilationError(
+                f"Empty choice for parameter '{p.name}' of definition "
+                f"'{defn.name}'. A ChoiceExpression must have at least one value."
+            )
+        options.append(leaves)
+
+    combos = _cartesian(options)
+    return tuple(
+        tuple(
+            Parameter(name=p.name, value=clone_expression(value))
+            for p, value in zip(defn.parameters, combo)
+        )
+        for combo in combos
+    )
+
+
+def expand(analysis: Analysis) -> tuple[Analysis, ...]:
+    """Expand an AST template into concrete ASTs with literal-only parameters.
+
+    Every ``ChoiceExpression`` parameter (backlog 048) is replaced by its
+    leaves; choices across parameters and definitions combine by cartesian
+    product. Nested choices are flattened into the product. ``list`` literal
+    params are ordinary values and never expand. The input template is never
+    mutated — each variant is built from a deep clone (backlog 049).
+
+    Ordering is deterministic: parameter choices iterate in declaration order
+    with the rightmost choice varying fastest; definitions preserve template
+    order. Expansion count can explode (product of all choice sizes) — callers
+    should treat the result as a set of concrete templates, not rely on it
+    staying small.
+
+    Convergent choices (two combinations producing an equal AST) are *not*
+    deduplicated here; stage-3 concrete-AST validation (backlogs 051/054)
+    reports the resulting duplicate definitions.
+
+    Raises ``CompilationError`` on an empty ``ChoiceExpression``.
+    """
+    template = clone(analysis)
+    variants_per_def = [_expand_definition(d) for d in template.definitions]
+    combos = _cartesian(variants_per_def)
+    return tuple(
+        Analysis(
+            name=template.name,
+            version=template.version,
+            definitions=tuple(
+                Definition(
+                    name=d.name,
+                    provider=d.provider,
+                    parameters=params,
+                    bindings=d.bindings,
+                    id=d.id,
+                    metadata=d.metadata,
+                )
+                for d, params in zip(template.definitions, combo)
+            ),
+            providers=template.providers,
+            id=template.id,
+            metadata=template.metadata,
+        )
+        for combo in combos
+    )
 
 
 def _ast_to_config(analysis: Analysis) -> StrategyConfig:

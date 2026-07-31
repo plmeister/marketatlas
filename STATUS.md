@@ -47,3 +47,4 @@
 - [x] 041 — Capability, Provider, Definition separation
 - [x] 047 — Expression hierarchy (Parameter.value → Expression)
 - [x] 048 — ChoiceExpression node (template expansion point)
+- [x] 050 — Template expansion pass (ChoiceExpression → concrete ASTs)
