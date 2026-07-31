@@ -223,12 +223,12 @@ class TestSmokeTests:
     """Basic smoke tests that generated HTML is functionally complete."""
 
     def test_update_frame_callable_pattern(self, tmp_path: object) -> None:
-        """Verify updateFrame function exists in JS."""
+        """Verify the render function exists in JS."""
         path = _render_html(tmp_path)
         content = path.read_text()  # type: ignore[union-attr]
         js_block = _extract_js_block(content)
-        assert "function updateFrame" in js_block, "updateFrame function not found"
-        assert "updateFrame(0)" in js_block, "updateFrame(0) call not found"
+        assert "function render()" in js_block, "render function not found"
+        assert "render();" in js_block, "render() call not found"
 
     def test_no_missing_braces_in_js(self, tmp_path: object) -> None:
         """Count opening/closing braces to catch obvious mismatches."""
@@ -246,7 +246,7 @@ class TestSmokeTests:
         path = _render_html(tmp_path)
         content = path.read_text()  # type: ignore[union-attr]
         js_block = _extract_js_block(content)
-        assert "buildTimeline" in js_block
+        assert "timelineBarView.build" in js_block
         assert "frame-total" in js_block
 
     def test_chart_creation_present(self, tmp_path: object) -> None:
