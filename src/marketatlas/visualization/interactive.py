@@ -12,7 +12,7 @@ from marketatlas.facts.structural import SRFact, SwingFact, TrendDirection, Tren
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.strategy.tradebook import TradeBook
 from marketatlas.visualization.context import RenderContext
-from marketatlas.visualization.html_renderer import _candle_to_dict
+from marketatlas.visualization.html_renderer import _candle_to_dict, _ts_to_time
 
 
 def _extract_frames_json(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
@@ -23,7 +23,7 @@ def _extract_frames_json(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
         ]
         result.append(
             {
-                "time": int(frame.timestamp.timestamp()),
+                "time": _ts_to_time(frame.timestamp.timestamp()),
                 "evidence": evidence,
             }
         )
@@ -42,7 +42,7 @@ def _extract_ema_per_frame(
                     series[name] = []
                 series[name].append(
                     {
-                        "time": int(frame.timestamp.timestamp()),
+                        "time": _ts_to_time(frame.timestamp.timestamp()),
                         "value": fact.value,
                     }
                 )
@@ -56,7 +56,7 @@ def _extract_atr_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
             if isinstance(fact, ATRFact):
                 result.append(
                     {
-                        "time": int(frame.timestamp.timestamp()),
+                        "time": _ts_to_time(frame.timestamp.timestamp()),
                         "value": fact.value,
                     }
                 )
@@ -84,7 +84,7 @@ def _extract_sr_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
                 )
         result.append(
             {
-                "time": int(frame.timestamp.timestamp()),
+                "time": _ts_to_time(frame.timestamp.timestamp()),
                 "levels": levels,
             }
         )
@@ -108,7 +108,7 @@ def _extract_pullbacks_per_frame(
             is_bull = pb.direction == TrendDirection.BULLISH
             result.append(
                 {
-                    "time": int(frame.timestamp.timestamp()),
+                    "time": _ts_to_time(frame.timestamp.timestamp()),
                     "position": "belowBar" if is_bull else "aboveBar",
                     "color": "#22c55e" if is_bull else "#ef4444",
                     "shape": "arrowUp" if is_bull else "arrowDown",
@@ -178,9 +178,9 @@ def _extract_trades_json(tradebook: TradeBook) -> list[dict[str, Any]]:
         c = trade.candidate
         result.append(
             {
-                "entry_time": int(trade.entry_timestamp.timestamp()),
+                "entry_time": trade.entry_timestamp.strftime("%Y-%m-%d"),
                 "exit_time": (
-                    int(trade.exit_timestamp.timestamp())
+                    trade.exit_timestamp.strftime("%Y-%m-%d")
                     if trade.exit_timestamp is not None
                     else None
                 ),
@@ -205,10 +205,10 @@ def _evidence_to_json(entries: tuple[EvidenceEntry, ...]) -> list[dict[str, str]
 
 def _build_candle_evidence_map(
     frames: list[AnalysisFrame],
-) -> dict[int, list[dict[str, str]]]:
-    result: dict[int, list[dict[str, str]]] = {}
+) -> dict[str, list[dict[str, str]]]:
+    result: dict[str, list[dict[str, str]]] = {}
     for frame in frames:
-        key = int(frame.timestamp.timestamp())
+        key = _ts_to_time(frame.timestamp.timestamp())
         ev = _evidence_to_json(frame.evidence)
         if ev:
             result[key] = ev
@@ -216,6 +216,9 @@ def _build_candle_evidence_map(
 
 
 _JS_TEMPLATE_PATH = Path(__file__).parent / "interactive.js"
+_JS_BASE_DIR = Path(__file__).parent / "base"
+_BASE_MODULE_NAMES = ["models.js", "views.js", "controllers.js"]
+
 _JS_PLACEHOLDERS = [
     "CANDLES",
     "CANDLES_BY_TF",
@@ -422,7 +425,12 @@ class InteractiveRenderer:
             f"{len(ctx.tradebook.trades)} trades"
         )
 
-        js_template = _JS_TEMPLATE_PATH.read_text(encoding="utf-8")
+        js_modules = "".join(
+            (_JS_BASE_DIR / m).read_text(encoding="utf-8") + "\n"
+            for m in _BASE_MODULE_NAMES
+        )
+        js_entry = _JS_TEMPLATE_PATH.read_text(encoding="utf-8")
+        js_template = js_modules + js_entry
         primary_tf = ctx.store.timeframe.value
         tf_options = "".join(
             f'<option value="{tf}"{" selected" if tf == primary_tf else ""}>{tf}</option>'
