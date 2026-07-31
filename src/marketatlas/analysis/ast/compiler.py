@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from marketatlas.analysis.ast.models import Analysis
 from marketatlas.analysis.ast.pipeline import (
-    DefinitionExpansionPass,
-    GraphGenerationPass,
     Pipeline,
     RegistryResolutionPass,
     ValidationPass,
@@ -15,6 +13,10 @@ from marketatlas.strategy.config import StrategyConfig
 
 class ASTCompiler:
     @staticmethod
+    def _pipeline(registry: ProviderRegistry) -> Pipeline:
+        return Pipeline().add_pass(ValidationPass()).add_pass(RegistryResolutionPass(registry))
+
+    @staticmethod
     def to_config(analysis: Analysis) -> StrategyConfig:
         from marketatlas.analysis.ast.pipeline import _ast_to_config
 
@@ -25,14 +27,35 @@ class ASTCompiler:
         analysis: Analysis,
         registry: ProviderRegistry | None = None,
     ) -> AnalysisGraph:
+        """Compile a single concrete AST to an ``AnalysisGraph``.
+
+        Unchanged for literal-only (choice-free) templates. Templates that
+        expand to multiple concrete ASTs raise — use ``compile_all``.
+        """
         if registry is None:
             registry = create_default_registry()
+        return ASTCompiler._pipeline(registry).run(analysis)
 
-        pipeline = (
-            Pipeline()
-            .add_pass(ValidationPass())
-            .add_pass(RegistryResolutionPass(registry))
-            .add_pass(DefinitionExpansionPass(registry))
-            .add_pass(GraphGenerationPass())
-        )
-        return pipeline.run(analysis)
+    @staticmethod
+    def expand(
+        analysis: Analysis,
+        registry: ProviderRegistry | None = None,
+    ) -> tuple[Analysis, ...]:
+        """Stages 1-3: validate, expand choices, validate each concrete AST."""
+        if registry is None:
+            registry = create_default_registry()
+        return ASTCompiler._pipeline(registry).expand(analysis)
+
+    @staticmethod
+    def compile_all(
+        analysis: Analysis,
+        registry: ProviderRegistry | None = None,
+    ) -> tuple[AnalysisGraph, ...]:
+        """Compile every concrete AST to its own ``AnalysisGraph``.
+
+        Multi-output path for choice templates: one graph per concrete AST,
+        never silently merged (backlog 051).
+        """
+        if registry is None:
+            registry = create_default_registry()
+        return ASTCompiler._pipeline(registry).compile_all(analysis)

@@ -13,7 +13,11 @@ from marketatlas.analysis.ast.expressions import (
 )
 from marketatlas.analysis.ast.models import Analysis, Definition, Parameter, Provider
 from marketatlas.analysis.ast.registry import ProviderRegistry
-from marketatlas.analysis.ast.validation import Diagnostic, validate
+from marketatlas.analysis.ast.validation import (
+    Diagnostic,
+    DiagnosticSeverity,
+    validate,
+)
 from marketatlas.analysis.graph import AnalysisGraph
 from marketatlas.strategy.config import (
     AnalyzerConfig,
@@ -38,7 +42,7 @@ class CompilerPass(ABC):
 
 
 class ValidationPass(CompilerPass):
-    """Pass 1: Run semantic checks. Raise on errors."""
+    """Stage 1: Run semantic checks on the template AST. Raise on errors."""
 
     def run(self, analysis: Analysis) -> Analysis:
         result = validate(analysis)
@@ -53,7 +57,12 @@ class ValidationPass(CompilerPass):
 
 
 class RegistryResolutionPass(CompilerPass):
-    """Pass 2: Resolve symbolic capability names to concrete provider references via registry."""
+    """Stage 1: Resolve symbolic provider names to concrete providers.
+
+    Also the single owner of default-parameter merging: every resolved
+    provider's ``default_params`` are inlined here for any parameter a
+    definition does not declare. No later stage re-merges defaults.
+    """
 
     def __init__(self, registry: ProviderRegistry) -> None:
         self._registry = registry
@@ -75,7 +84,7 @@ class RegistryResolutionPass(CompilerPass):
                     raise CompilationError(
                         f"Provider '{d.provider}' not found for definition '{d.name}'. "
                         "Neither in AST providers nor in registry."
-                    )
+                    ) from None
 
             provider = resolved_providers[provider_name]
             merged_params = _merge_default_params(provider, d.parameters)
@@ -100,42 +109,91 @@ class RegistryResolutionPass(CompilerPass):
         )
 
 
-class DefinitionExpansionPass(CompilerPass):
-    """Pass 3: Expand definitions — inline default parameters from provider registry."""
+class TemplateExpansionPass(CompilerPass):
+    """Stage 2: expand template choices into concrete ASTs.
 
-    def __init__(self, registry: ProviderRegistry) -> None:
-        self._registry = registry
+    Choice expansion is a fork (one template → N concrete ASTs), so the
+    single-output ``run`` interface only handles choice-free templates
+    (identity). Use ``run_all`` (or ``Pipeline.expand``) to obtain every
+    concrete variant (backlog 050).
+    """
 
     def run(self, analysis: Analysis) -> Analysis:
-        expanded: list[Definition] = []
-        for d in analysis.definitions:
-            provider = _find_provider(analysis, d.provider)
-            if provider is None:
-                expanded.append(d)
-                continue
-            merged = _merge_default_params(provider, d.parameters)
-            expanded.append(
-                Definition(
-                    name=d.name,
-                    provider=d.provider,
-                    parameters=merged,
-                    bindings=d.bindings,
-                    id=d.id,
-                    metadata=d.metadata,
-                )
+        variants = expand(analysis)
+        if len(variants) != 1:
+            raise CompilationError(
+                f"Template expansion produced {len(variants)} concrete analyses. "
+                "A TemplateExpansionPass cannot return multiple analyses through "
+                "run(); use run_all() or Pipeline.expand()."
             )
-        return Analysis(
-            name=analysis.name,
-            version=analysis.version,
-            definitions=tuple(expanded),
-            providers=analysis.providers,
-            id=analysis.id,
-            metadata=analysis.metadata,
-        )
+        return variants[0]
+
+    def run_all(self, analysis: Analysis) -> tuple[Analysis, ...]:
+        return expand(analysis)
+
+
+class ConcreteValidationPass(CompilerPass):
+    """Stage 3: validate a concrete (post-expansion) AST.
+
+    Runs on each concrete AST produced by stage 2. Enforces post-expansion
+    invariants on top of the standard semantic validation (backlog 038):
+    * every ``ChoiceExpression`` is resolved (none remain);
+    * no duplicate definition names — two choice combinations can converge on
+      the same concrete definition (backlogs 051/054).
+    """
+
+    def run(self, analysis: Analysis) -> Analysis:
+        errors: list[Diagnostic] = []
+
+        for d in analysis.definitions:
+            for p in d.parameters:
+                if isinstance(p.value, ChoiceExpression):
+                    errors.append(
+                        Diagnostic(
+                            message=(
+                                f"Unresolved ChoiceExpression for parameter "
+                                f"'{p.name}' of definition '{d.name}'. Template "
+                                f"expansion must replace every choice before "
+                                f"concrete validation."
+                            ),
+                            severity=DiagnosticSeverity.ERROR,
+                            node_name=d.name,
+                            node_type="definition",
+                        )
+                    )
+
+        seen: set[str] = set()
+        for d in analysis.definitions:
+            if d.name in seen:
+                errors.append(
+                    Diagnostic(
+                        message=(
+                            f"Duplicate definition '{d.name}' after template "
+                            f"expansion. Two choice combinations produced the "
+                            f"same concrete definition."
+                        ),
+                        severity=DiagnosticSeverity.ERROR,
+                        node_name=d.name,
+                        node_type="definition",
+                    )
+                )
+            seen.add(d.name)
+
+        result = validate(analysis)
+        errors.extend(result.errors)
+
+        if errors:
+            msgs = [f"[{d.severity.value}] {d.node_name}: {d.message}" for d in errors]
+            raise CompilationError(
+                f"Concrete AST validation failed ({len(errors)} errors):\n" + "\n".join(msgs),
+                errors=tuple(errors),
+                warnings=result.warnings,
+            )
+        return analysis
 
 
 class GraphGenerationPass(CompilerPass):
-    """Pass 4: Convert AST to AnalysisGraph."""
+    """Stage 4: Convert a concrete AST to an AnalysisGraph."""
 
     def run(self, analysis: Analysis) -> Analysis:
         config = _ast_to_config(analysis)
@@ -154,7 +212,17 @@ class CompilationError(Exception):
 
 
 class Pipeline:
-    """Ordered compilation pipeline. Composable passes."""
+    """Compilation pipeline over the four canonical stages (backlog 051).
+
+    ``AST (template) → [1 AST validation] → [2 template expansion] →
+    [3 concrete AST validation] → [4 graph compilation]``. ``add_pass``
+    registers the single-output stage-1 passes (validation, registry
+    resolution); the remaining stages are orchestrated by the pipeline
+    methods because expansion forks one template into many concrete ASTs.
+
+    The ``Parse`` stage (DSL text → template AST) sits upstream of stage 1
+    (backlog 057).
+    """
 
     def __init__(self) -> None:
         self._passes: list[CompilerPass] = []
@@ -163,25 +231,8 @@ class Pipeline:
         self._passes.append(pass_)
         return self
 
-    def run(self, analysis: Analysis) -> AnalysisGraph:
-        current: Analysis = analysis
-        for pass_ in self._passes:
-            result = pass_.run(current)
-            if isinstance(result, Analysis):
-                current = result
-            elif isinstance(result, AnalysisGraph):
-                return result
-            else:
-                raise CompilationError(
-                    f"Pass '{pass_.name}' returned unexpected type: {type(result).__name__}"
-                )
-        raise CompilationError(
-            "Pipeline completed without producing an AnalysisGraph. "
-            "Ensure a GraphGenerationPass is included."
-        )
-
     def run_to_ast(self, analysis: Analysis) -> Analysis:
-        """Run pipeline but stop before graph generation — returns final AST."""
+        """Run the registered stage-1 passes; stop before graph generation."""
         current = analysis
         for pass_ in self._passes:
             result = pass_.run(current)
@@ -190,13 +241,51 @@ class Pipeline:
             current = result
         return current
 
+    def expand(self, analysis: Analysis) -> tuple[Analysis, ...]:
+        """Stages 1-3: validate/resolve the template, expand choices, then
+        validate each concrete AST. Returns every concrete AST."""
+        template = self.run_to_ast(analysis)
+        variants = TemplateExpansionPass().run_all(template)
+        return tuple(ConcreteValidationPass().run(v) for v in variants)
+
+    def compile_all(self, analysis: Analysis) -> tuple[AnalysisGraph, ...]:
+        """Run the full pipeline (stages 1-4) for every concrete AST.
+
+        Multiple concrete graphs are returned explicitly — never silently
+        merged into one graph; merge semantics belong to the caller (see
+        ``StrategyBundle``).
+        """
+        return tuple(self._graph(v) for v in self.expand(analysis))
+
+    def run(self, analysis: Analysis) -> AnalysisGraph:
+        """Run the full pipeline for a single concrete AST.
+
+        Works only when template expansion yields exactly one concrete AST
+        (choice-free templates). Multi-output templates raise — use
+        ``compile_all`` for multi-output compilation or ``expand`` for the
+        concrete ASTs.
+        """
+        variants = self.expand(analysis)
+        if len(variants) != 1:
+            raise CompilationError(
+                f"Template expansion produced {len(variants)} concrete analyses. "
+                "Pipeline.run requires a single concrete AST; use "
+                "Pipeline.compile_all for multi-output compilation or "
+                "Pipeline.expand for the concrete ASTs."
+            )
+        return self._graph(variants[0])
+
+    def _graph(self, analysis: Analysis) -> AnalysisGraph:
+        result = GraphGenerationPass().run(analysis)
+        if not isinstance(result, AnalysisGraph):
+            raise CompilationError(
+                f"GraphGenerationPass returned unexpected type: {type(result).__name__}"
+            )
+        return result
+
 
 def _provider_map(analysis: Analysis) -> dict[str, Provider]:
     return {p.name: p for p in analysis.providers}
-
-
-def _find_provider(analysis: Analysis, name: str) -> Provider | None:
-    return _provider_map(analysis).get(name)
 
 
 def _merge_default_params(

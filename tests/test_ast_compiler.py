@@ -1,8 +1,16 @@
 import pytest
+
 from marketatlas.analysis.analyzers.atr import ATRAnalyzer
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.ast.builder import AnalysisBuilder
 from marketatlas.analysis.ast.compiler import ASTCompiler
+from marketatlas.analysis.ast.expressions import Choice, wrap
+from marketatlas.analysis.ast.models import (
+    Analysis,
+    Definition,
+    Parameter,
+    Provider,
+)
 from marketatlas.analysis.graph import AnalysisGraph
 from marketatlas.strategy.config import (
     AnalyzerConfig,
@@ -11,6 +19,27 @@ from marketatlas.strategy.config import (
     StrategyConfig,
 )
 from marketatlas.strategy.loader import build_analyzers
+
+
+def _choice_template() -> Analysis:
+    provider = Provider(
+        name="ema",
+        capability="compute_ema",
+        category="analyzer",
+        impl="EMAAnalyzer",
+    )
+    return Analysis(
+        name="t",
+        version="1.0",
+        definitions=(
+            Definition(
+                name="ema",
+                provider="ema",
+                parameters=(Parameter(name="period", value=wrap(Choice([50, 100]))),),
+            ),
+        ),
+        providers=(provider,),
+    )
 
 
 class TestToConfig:
@@ -248,3 +277,47 @@ class TestCompile:
         a = AnalysisBuilder("bad", "1.0").define("fake", "analyzer", "NoSuchAnalyzer").build()
         with pytest.raises(Exception, match="Unknown analyzer type"):
             ASTCompiler.compile(a)
+
+
+class TestMultiOutput:
+    def test_compile_raises_on_choice_template(self) -> None:
+        with pytest.raises(Exception, match="compile_all"):
+            ASTCompiler.compile(_choice_template())
+
+    def test_expand_returns_concrete_asts(self) -> None:
+        variants = ASTCompiler.expand(_choice_template())
+        assert len(variants) == 2
+        assert variants[0].definitions[0].parameters[0].value == 50
+        assert variants[1].definitions[0].parameters[0].value == 100
+
+    def test_compile_all_returns_one_graph_per_variant(self) -> None:
+        graphs = ASTCompiler.compile_all(_choice_template())
+        assert len(graphs) == 2
+        periods = [type(g).__name__ for g in graphs]
+        assert periods == ["AnalysisGraph", "AnalysisGraph"]
+        for g in graphs:
+            order = g.execution_order()
+            assert len(order) == 1
+            assert isinstance(order[0], EMAAnalyzer)
+
+    def test_compile_all_graphs_distinct_params(self) -> None:
+        graphs = ASTCompiler.compile_all(_choice_template())
+        keys = [o.instance_key for g in graphs for o in g.execution_order()]
+        assert keys == ["ema_50", "ema_100"]
+
+    def test_expand_single_variant_for_choice_free(self) -> None:
+        a = (
+            AnalysisBuilder("test", "1.0")
+            .define("ema20", "analyzer", "EMAAnalyzer")
+            .with_param("period", 20)
+            .build()
+        )
+        variants = ASTCompiler.expand(a)
+        assert len(variants) == 1
+        assert variants[0] == a
+
+    def test_compile_all_merges_registry_defaults(self) -> None:
+        variants = ASTCompiler.expand(_choice_template())
+        merged = [d.parameters for d in variants[0].definitions]
+        assert len(merged) == 1
+        assert len(merged[0]) == 1

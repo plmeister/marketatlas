@@ -1,13 +1,21 @@
 import pytest
+
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.ast.builder import AnalysisBuilder
-from marketatlas.analysis.ast.models import Analysis, Definition, Parameter, Provider
+from marketatlas.analysis.ast.expressions import Choice, wrap
+from marketatlas.analysis.ast.models import (
+    Analysis,
+    Definition,
+    Parameter,
+    Provider,
+)
 from marketatlas.analysis.ast.pipeline import (
     CompilationError,
-    DefinitionExpansionPass,
+    ConcreteValidationPass,
     GraphGenerationPass,
     Pipeline,
     RegistryResolutionPass,
+    TemplateExpansionPass,
     ValidationPass,
     _ast_to_config,
 )
@@ -22,6 +30,36 @@ def _p(**kw: object) -> Provider:
         capability=str(kw.get("capability", "")),
         category=str(kw.get("category", "analyzer")),
         impl=str(kw.get("impl", "")),
+    )
+
+
+def _choice_template() -> Analysis:
+    """Template with a single ``Choice([50, 100])`` on an ``ema`` definition."""
+    provider = Provider(
+        name="ema",
+        capability="compute_ema",
+        category="analyzer",
+        impl="EMAAnalyzer",
+    )
+    return Analysis(
+        name="t",
+        version="1.0",
+        definitions=(
+            Definition(
+                name="ema",
+                provider="ema",
+                parameters=(Parameter(name="period", value=wrap(Choice([50, 100]))),),
+            ),
+        ),
+        providers=(provider,),
+    )
+
+
+def _canonical_pipeline(registry: ProviderRegistry | None = None) -> Pipeline:
+    return (
+        Pipeline()
+        .add_pass(ValidationPass())
+        .add_pass(RegistryResolutionPass(registry or create_default_registry()))
     )
 
 
@@ -78,8 +116,8 @@ class TestRegistryResolutionPass:
         a = Analysis(
             name="test",
             version="1.0",
-            definitions=(Definition(name="ema20", provider="compute_ema"),),
-            providers=(_p(name="compute_ema", capability="compute_ema", impl="EMAAnalyzer"),),
+            definitions=(Definition(name="ema20", provider="ema"),),
+            providers=(_p(name="ema", capability="ema", impl="EMAAnalyzer"),),
         )
         result = RegistryResolutionPass(registry).run(a)
         assert len(result.definitions) == 1
@@ -119,7 +157,7 @@ class TestRegistryResolutionPass:
                 Definition(
                     name="ema50",
                     provider="compute_ema",
-                    parameters=(Parameter(name="period", value=50),),
+                    parameters=(Parameter(name="period", value=wrap(50)),),
                 ),
             ),
             providers=(_p(name="compute_ema", capability="compute_ema", impl="EMAAnalyzer"),),
@@ -129,67 +167,55 @@ class TestRegistryResolutionPass:
         assert params.get("period") == 50
 
 
-class TestDefinitionExpansionPass:
-    def test_expands_default_params(self) -> None:
-        registry = ProviderRegistry()
-        registry.register("compute_ema", EMAAnalyzer, default_params={"period": 20})
-        a = Analysis(
-            name="test",
-            version="1.0",
-            definitions=(Definition(name="ema20", provider="EMAAnalyzer"),),
-            providers=(
-                Provider(
-                    name="EMAAnalyzer",
-                    capability="compute_ema",
-                    category="analyzer",
-                    impl="EMAAnalyzer",
-                    default_params=(Parameter(name="period", value=20),),
-                ),
-            ),
-        )
-        result = DefinitionExpansionPass(registry).run(a)
-        params = {p.name: p.value for p in result.definitions[0].parameters}
-        assert params.get("period") == 20
-
-    def test_does_not_override_explicit_params(self) -> None:
-        registry = ProviderRegistry()
-        registry.register("compute_ema", EMAAnalyzer, default_params={"period": 20})
-        a = Analysis(
-            name="test",
-            version="1.0",
-            definitions=(
-                Definition(
-                    name="ema50",
-                    provider="EMAAnalyzer",
-                    parameters=(Parameter(name="period", value=50),),
-                ),
-            ),
-            providers=(
-                Provider(
-                    name="EMAAnalyzer",
-                    capability="compute_ema",
-                    category="analyzer",
-                    impl="EMAAnalyzer",
-                    default_params=(Parameter(name="period", value=20),),
-                ),
-            ),
-        )
-        result = DefinitionExpansionPass(registry).run(a)
-        params = {p.name: p.value for p in result.definitions[0].parameters}
-        assert params.get("period") == 50
-
-    def test_no_defaults_no_change(self) -> None:
-        registry = create_default_registry()
+class TestTemplateExpansionPass:
+    def test_identity_on_choice_free(self) -> None:
         a = (
             AnalysisBuilder("test", "1.0")
             .define("ema20", "analyzer", "EMAAnalyzer")
             .with_param("period", 20)
             .build()
         )
-        result = DefinitionExpansionPass(registry).run(a)
-        params = {p.name: p.value for p in result.definitions[0].parameters}
-        assert params.get("period") == 20
-        assert len(result.definitions[0].parameters) == 1
+        result = TemplateExpansionPass().run(a)
+        assert result == a
+
+    def test_run_raises_on_multi_variant(self) -> None:
+        with pytest.raises(CompilationError, match="run_all"):
+            TemplateExpansionPass().run(_choice_template())
+
+    def test_run_all_returns_variants(self) -> None:
+        variants = TemplateExpansionPass().run_all(_choice_template())
+        assert len(variants) == 2
+        assert variants[0].definitions[0].parameters[0].value == 50
+        assert variants[1].definitions[0].parameters[0].value == 100
+
+
+class TestConcreteValidationPass:
+    def test_passes_concrete_analysis(self) -> None:
+        a = (
+            AnalysisBuilder("test", "1.0")
+            .define("ema20", "analyzer", "EMAAnalyzer")
+            .with_param("period", 20)
+            .build()
+        )
+        result = ConcreteValidationPass().run(a)
+        assert result is a
+
+    def test_rejects_unresolved_choice(self) -> None:
+        with pytest.raises(CompilationError, match="Unresolved ChoiceExpression"):
+            ConcreteValidationPass().run(_choice_template())
+
+    def test_rejects_duplicate_definitions_post_expansion(self) -> None:
+        a = Analysis(
+            name="bad",
+            version="1.0",
+            definitions=(
+                Definition(name="dup", provider="ema"),
+                Definition(name="dup", provider="ema"),
+            ),
+            providers=(_p(name="ema", capability="compute_ema", impl="EMAAnalyzer"),),
+        )
+        with pytest.raises(CompilationError, match="Duplicate definition 'dup'"):
+            ConcreteValidationPass().run(a)
 
 
 class TestGraphGenerationPass:
@@ -229,18 +255,27 @@ class TestPipeline:
             .with_param("period", 14)
             .build()
         )
-        registry = create_default_registry()
-        pipeline = (
-            Pipeline()
-            .add_pass(ValidationPass())
-            .add_pass(RegistryResolutionPass(registry))
-            .add_pass(DefinitionExpansionPass(registry))
-            .add_pass(GraphGenerationPass())
-        )
-        graph = pipeline.run(a)
+        graph = _canonical_pipeline().run(a)
         assert isinstance(graph, AnalysisGraph)
         order = graph.execution_order()
         assert len(order) == 2
+
+    def test_run_raises_on_multi_variant_template(self) -> None:
+        with pytest.raises(CompilationError, match="compile_all"):
+            _canonical_pipeline().run(_choice_template())
+
+    def test_expand_returns_concrete_asts(self) -> None:
+        variants = _canonical_pipeline().expand(_choice_template())
+        assert len(variants) == 2
+        assert variants[0].definitions[0].parameters[0].value == 50
+        assert variants[1].definitions[0].parameters[0].value == 100
+
+    def test_compile_all_returns_one_graph_per_variant(self) -> None:
+        graphs = _canonical_pipeline().compile_all(_choice_template())
+        assert len(graphs) == 2
+        for g in graphs:
+            assert isinstance(g, AnalysisGraph)
+            assert len(g.execution_order()) == 1
 
     def test_pipeline_composable_passes(self) -> None:
         a = (
@@ -255,7 +290,6 @@ class TestPipeline:
         assert result is a
 
     def test_run_to_ast_stops_before_graph(self) -> None:
-        registry = create_default_registry()
         a = (
             AnalysisBuilder("test", "1.0")
             .define("ema20", "analyzer", "EMAAnalyzer")
@@ -265,18 +299,12 @@ class TestPipeline:
         pipeline = (
             Pipeline()
             .add_pass(ValidationPass())
-            .add_pass(RegistryResolutionPass(registry))
-            .add_pass(DefinitionExpansionPass(registry))
+            .add_pass(RegistryResolutionPass(create_default_registry()))
             .add_pass(GraphGenerationPass())
         )
         ast_result = pipeline.run_to_ast(a)
         assert isinstance(ast_result, Analysis)
-
-    def test_pipeline_without_graph_pass_raises(self) -> None:
-        a = AnalysisBuilder("test", "1.0").define("ema20", "analyzer", "EMAAnalyzer").build()
-        pipeline = Pipeline().add_pass(ValidationPass())
-        with pytest.raises(CompilationError, match="without producing"):
-            pipeline.run(a)
+        assert not isinstance(ast_result, AnalysisGraph)
 
     def test_validation_failure_stops_pipeline(self) -> None:
         a = Analysis(
@@ -291,7 +319,7 @@ class TestPipeline:
                 _p(name="ATRAnalyzer", capability="compute_atr", impl="ATRAnalyzer"),
             ),
         )
-        pipeline = Pipeline().add_pass(ValidationPass()).add_pass(GraphGenerationPass())
+        pipeline = Pipeline().add_pass(ValidationPass())
         with pytest.raises(CompilationError, match="Duplicate definition name"):
             pipeline.run(a)
 
@@ -305,14 +333,7 @@ class TestPipeline:
             .define("trend", "analyzer", "TrendAnalyzer")
             .build()
         )
-        registry = create_default_registry()
-        pipeline = (
-            Pipeline()
-            .add_pass(ValidationPass())
-            .add_pass(RegistryResolutionPass(registry))
-            .add_pass(DefinitionExpansionPass(registry))
-            .add_pass(GraphGenerationPass())
-        )
+        pipeline = _canonical_pipeline()
         graph = pipeline.run(a)
         order = graph.execution_order()
         names = [type(o).__name__ for o in order]
