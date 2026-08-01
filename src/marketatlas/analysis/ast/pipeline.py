@@ -10,6 +10,7 @@ from marketatlas.analysis.ast.expressions import (
     ChoiceExpression,
     Expression,
     LiteralExpression,
+    choice_leaves,
 )
 from marketatlas.analysis.ast.models import Analysis, Definition, Parameter, Provider
 from marketatlas.analysis.ast.param_schema import format_type, type_compatible
@@ -244,7 +245,7 @@ class ParamValidationPass(CompilerPass):
                         )
                     )
                     continue
-                for leaf in _choice_leaves(p.value):
+                for leaf in choice_leaves(p.value):
                     if not isinstance(leaf, LiteralExpression):
                         continue
                     if not type_compatible(leaf.value, spec.expected_type):
@@ -393,21 +394,6 @@ def _merge_default_params(
     return tuple(merged)
 
 
-def _choice_leaves(expr: Expression) -> tuple[Expression, ...]:
-    """Flatten a ``ChoiceExpression`` into its non-choice leaf values.
-
-    Nested choices are flattened recursively: ``Choice([Choice([1, 2]), 3])``
-    yields leaves ``(Literal(1), Literal(2), Literal(3))``. Non-choice
-    expressions return a single-element tuple.
-    """
-    if isinstance(expr, ChoiceExpression):
-        leaves: list[Expression] = []
-        for value in expr.values:
-            leaves.extend(_choice_leaves(value))
-        return tuple(leaves)
-    return (expr,)
-
-
 def _cartesian(options: Sequence[Sequence[_T]]) -> list[tuple[_T, ...]]:
     """Deterministic cartesian product in declaration order.
 
@@ -430,7 +416,7 @@ def _expand_definition(defn: Definition) -> tuple[tuple[Parameter, ...], ...]:
     """
     options: list[tuple[Expression, ...]] = []
     for p in defn.parameters:
-        leaves = _choice_leaves(p.value)
+        leaves = choice_leaves(p.value)
         if isinstance(p.value, ChoiceExpression) and not leaves:
             raise CompilationError(
                 f"Empty choice for parameter '{p.name}' of definition "

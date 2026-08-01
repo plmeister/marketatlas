@@ -74,6 +74,21 @@ def wrap(value: object) -> Expression:
     return LiteralExpression(value)
 
 
+def choice_leaves(expr: Expression) -> tuple[Expression, ...]:
+    """Flatten a ``ChoiceExpression`` into its non-choice leaf values.
+
+    Nested choices are flattened recursively: ``Choice([Choice([1, 2]), 3])``
+    yields leaves ``(Literal(1), Literal(2), Literal(3))``. Non-choice
+    expressions return a single-element tuple.
+    """
+    if isinstance(expr, ChoiceExpression):
+        leaves: list[Expression] = []
+        for value in expr.values:
+            leaves.extend(choice_leaves(value))
+        return tuple(leaves)
+    return (expr,)
+
+
 def unwrap(value: object) -> object:
     """Return the concrete Python value of an expression, or the value itself.
 
