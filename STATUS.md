@@ -51,3 +51,4 @@
 - [x] 051 — Compiler pipeline stages (4-stage: validation → expansion → concrete validation → graph)
 - [x] 052 — Provider param schema validation (registry-derived, post-resolution, per-leaf Choice type checks)
 - [x] 053 — Provider construction API (`EMA(period=20)` factories + `build_analysis` composition)
+- [x] 054 — Compiler golden tests (choice expansion, inline expected outputs)
