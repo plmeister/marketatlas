@@ -5,6 +5,7 @@ from typing import Any
 
 from marketatlas.analysis.ast.expressions import wrap
 from marketatlas.analysis.ast.models import Parameter, Provider
+from marketatlas.analysis.ast.param_schema import ParamSpec, derive_param_schema
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,25 @@ class ProviderNotFoundError(LookupError):
 class ProviderRegistry:
     def __init__(self) -> None:
         self._providers: dict[str, list[Provider]] = {}
+        self._param_schemas: dict[str, tuple[ParamSpec, ...]] = {}
+
+    def register_param_schema(self, key: str, schema: tuple[ParamSpec, ...]) -> None:
+        """Attach a parameter schema to a provider name or capability key."""
+        self._param_schemas[key] = schema
+
+    def param_schema(self, key: str) -> tuple[ParamSpec, ...] | None:
+        """Return the schema keyed by provider name/capability, or ``None``.
+
+        ``None`` means no schema is registered for that key — callers skip
+        param validation rather than false-positive (backlog 052).
+        """
+        return self._param_schemas.get(key)
+
+    def _derive_and_register_schema(self, provider: Provider, cls: type) -> None:
+        schema = derive_param_schema(cls)
+        if schema:
+            self.register_param_schema(provider.name, schema)
+            self.register_param_schema(provider.capability, schema)
 
     def register_provider(self, provider: Provider) -> None:
         cap = provider.capability
@@ -47,6 +67,7 @@ class ProviderRegistry:
                 default_params=params,
             )
             self.register_provider(provider)
+            self._derive_and_register_schema(provider, capability_or_provider)
             return capability_or_provider
 
         if isinstance(capability_or_provider, str):
@@ -62,6 +83,7 @@ class ProviderRegistry:
                     default_params=params,
                 )
                 self.register_provider(provider)
+                self._derive_and_register_schema(provider, cls)
                 return None
 
             def decorator(target_cls: type) -> type:
@@ -76,6 +98,7 @@ class ProviderRegistry:
                     default_params=params,
                 )
                 self.register_provider(provider)
+                self._derive_and_register_schema(provider, target_cls)
                 return target_cls
 
             return decorator

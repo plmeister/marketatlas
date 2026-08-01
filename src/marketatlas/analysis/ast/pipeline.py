@@ -12,6 +12,7 @@ from marketatlas.analysis.ast.expressions import (
     LiteralExpression,
 )
 from marketatlas.analysis.ast.models import Analysis, Definition, Parameter, Provider
+from marketatlas.analysis.ast.param_schema import format_type, type_compatible
 from marketatlas.analysis.ast.registry import ProviderRegistry
 from marketatlas.analysis.ast.validation import (
     Diagnostic,
@@ -192,6 +193,98 @@ class ConcreteValidationPass(CompilerPass):
         return analysis
 
 
+class ParamValidationPass(CompilerPass):
+    """Stage 1: validate definition parameters against provider metadata.
+
+    Runs post-registry-resolution (backlog 052): every provider reference is
+    concrete and default params are merged, so name/required checks see the
+    full effective parameter set. Checks that parameter names are known,
+    required parameters are present, and literal values are type-compatible
+    with the provider's schema. Providers without a registered schema (e.g.
+    AST-declared with no registry counterpart) are skipped — validation never
+    false-positives on opaque constructors. A ``ChoiceExpression`` value is
+    type-checked per leaf; non-literal leaves (future reference expressions)
+    are accepted.
+    """
+
+    def __init__(self, registry: ProviderRegistry) -> None:
+        self._registry = registry
+
+    def run(self, analysis: Analysis) -> Analysis:
+        errors: list[Diagnostic] = []
+        providers = _provider_map(analysis)
+
+        for d in analysis.definitions:
+            provider = providers.get(d.provider)
+            if provider is None:
+                continue
+            schema = self._registry.param_schema(provider.capability)
+            if not schema:
+                schema = self._registry.param_schema(provider.name)
+            if not schema:
+                continue
+
+            known = {spec.name: spec for spec in schema}
+            declared = {p.name for p in d.parameters}
+
+            for p in d.parameters:
+                spec = known.get(p.name)
+                if spec is None:
+                    known_str = ", ".join(sorted(known))
+                    errors.append(
+                        Diagnostic(
+                            message=(
+                                f"Unknown parameter '{p.name}' for definition "
+                                f"'{d.name}' (provider '{provider.name}'). "
+                                f"Known parameters: {known_str}"
+                            ),
+                            severity=DiagnosticSeverity.ERROR,
+                            node_name=d.name,
+                            node_type="definition",
+                        )
+                    )
+                    continue
+                for leaf in _choice_leaves(p.value):
+                    if not isinstance(leaf, LiteralExpression):
+                        continue
+                    if not type_compatible(leaf.value, spec.expected_type):
+                        errors.append(
+                            Diagnostic(
+                                message=(
+                                    f"Parameter '{p.name}' of definition '{d.name}' "
+                                    f"has value of type {type(leaf.value).__name__} but "
+                                    f"provider '{provider.name}' expects "
+                                    f"{format_type(spec.expected_type)}"
+                                ),
+                                severity=DiagnosticSeverity.ERROR,
+                                node_name=d.name,
+                                node_type="definition",
+                            )
+                        )
+
+            for spec in schema:
+                if spec.required and spec.name not in declared:
+                    errors.append(
+                        Diagnostic(
+                            message=(
+                                f"Missing required parameter '{spec.name}' for "
+                                f"definition '{d.name}' (provider '{provider.name}')"
+                            ),
+                            severity=DiagnosticSeverity.ERROR,
+                            node_name=d.name,
+                            node_type="definition",
+                        )
+                    )
+
+        if errors:
+            msgs = [f"[{e.severity.value}] {e.node_name}: {e.message}" for e in errors]
+            raise CompilationError(
+                f"Provider parameter validation failed ({len(errors)} errors):\n" + "\n".join(msgs),
+                errors=tuple(errors),
+            )
+        return analysis
+
+
 class GraphGenerationPass(CompilerPass):
     """Stage 4: Convert a concrete AST to an AnalysisGraph."""
 
@@ -214,11 +307,12 @@ class CompilationError(Exception):
 class Pipeline:
     """Compilation pipeline over the four canonical stages (backlog 051).
 
-    ``AST (template) → [1 AST validation] → [2 template expansion] →
-    [3 concrete AST validation] → [4 graph compilation]``. ``add_pass``
-    registers the single-output stage-1 passes (validation, registry
-    resolution); the remaining stages are orchestrated by the pipeline
-    methods because expansion forks one template into many concrete ASTs.
+    ``AST (template) → [1 AST validation + registry resolution + provider
+    param validation] → [2 template expansion] → [3 concrete AST validation]
+    → [4 graph compilation]``. ``add_pass`` registers the single-output
+    stage-1 passes (validation, registry resolution, param validation); the
+    remaining stages are orchestrated by the pipeline methods because
+    expansion forks one template into many concrete ASTs.
 
     The ``Parse`` stage (DSL text → template AST) sits upstream of stage 1
     (backlog 057).

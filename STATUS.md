@@ -49,3 +49,4 @@
 - [x] 048 — ChoiceExpression node (template expansion point)
 - [x] 050 — Template expansion pass (ChoiceExpression → concrete ASTs)
 - [x] 051 — Compiler pipeline stages (4-stage: validation → expansion → concrete validation → graph)
+- [x] 052 — Provider param schema validation (registry-derived, post-resolution, per-leaf Choice type checks)

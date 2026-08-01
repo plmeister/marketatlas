@@ -1,8 +1,12 @@
 # 052: Provider Metadata Validation — Params and Types
 
-**Status:** pending  
+**Status:** done  
 **Epic:** ast  
 **Priority:** medium
+
+## Summary
+
+Implemented param-schema validation as a new stage-1 pass `ParamValidationPass` (pipeline.py), running post-registry-resolution, pre-expansion. Schemas are **registry-held** (keyed by provider name and capability), not on `Provider` in models.py — decided per the Technical Note "Prefer registry-held schema keyed by provider name to keep `models.py` stable". `register()` auto-derives schemas from constructor `__init__` signatures (`derive_param_schema` in param_schema.py) via `inspect.signature` + `typing.get_type_hints`; opaque constructors yield an empty schema (validation skipped, no false positives). Type checks are best-effort: `Any`/unannotated/string-forward-refs/generic-origins accept-all, `int` widens to `float`, unions accept any member, `ChoiceExpression` leaves checked individually.
 
 ## Description
 
@@ -27,12 +31,12 @@ Today the registry (registry.py) only stores `default_params`; there is no schem
 
 ## Acceptance Criteria
 
-- [ ] `Provider` carries a param schema (names, required, expected types)
-- [ ] Built-in providers expose correct schemas derived from constructors (spot-check `ema.period`, `atr.period`, swing `lookback`, `sr`, risk)
-- [ ] Validation errors: unknown param name, missing required param, wrong type — each with definition + parameter name
-- [ ] `ChoiceExpression` leaves type-checked individually (e.g. `Choice([20, "x"])` on an int param errors on the string leaf)
-- [ ] Graph deps unaffected: existing cycle/binding validation tests unchanged
-- [ ] Tests: table-driven cases per provider + expression-type edge cases
+- [x] Param schema (names, required, expected types) carried by the registry (`ProviderRegistry.param_schema`), keyed by provider name + capability; `Provider` in models.py unchanged
+- [x] Built-in providers expose correct schemas derived from constructors (spot-check `ema.period`, `atr.period`, swing `lookback`, `sr`, risk)
+- [x] Validation errors: unknown param name, missing required param, wrong type — each with definition + parameter name
+- [x] `ChoiceExpression` leaves type-checked individually (e.g. `Choice([20, "x"])` on an int param errors on the string leaf)
+- [x] Graph deps unaffected: existing cycle/binding validation tests unchanged
+- [x] Tests: table-driven cases per provider + expression-type edge cases (30 new tests in `tests/test_ast_param_schema.py`)
 
 ## Technical Notes
 

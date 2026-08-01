@@ -1,5 +1,4 @@
 import pytest
-
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.ast.builder import AnalysisBuilder
 from marketatlas.analysis.ast.expressions import Choice, wrap
@@ -13,6 +12,7 @@ from marketatlas.analysis.ast.pipeline import (
     CompilationError,
     ConcreteValidationPass,
     GraphGenerationPass,
+    ParamValidationPass,
     Pipeline,
     RegistryResolutionPass,
     TemplateExpansionPass,
@@ -56,10 +56,12 @@ def _choice_template() -> Analysis:
 
 
 def _canonical_pipeline(registry: ProviderRegistry | None = None) -> Pipeline:
+    registry = registry or create_default_registry()
     return (
         Pipeline()
         .add_pass(ValidationPass())
-        .add_pass(RegistryResolutionPass(registry or create_default_registry()))
+        .add_pass(RegistryResolutionPass(registry))
+        .add_pass(ParamValidationPass(registry))
     )
 
 

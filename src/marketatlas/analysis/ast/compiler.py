@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from marketatlas.analysis.ast.models import Analysis
 from marketatlas.analysis.ast.pipeline import (
+    ParamValidationPass,
     Pipeline,
     RegistryResolutionPass,
     ValidationPass,
@@ -14,7 +15,12 @@ from marketatlas.strategy.config import StrategyConfig
 class ASTCompiler:
     @staticmethod
     def _pipeline(registry: ProviderRegistry) -> Pipeline:
-        return Pipeline().add_pass(ValidationPass()).add_pass(RegistryResolutionPass(registry))
+        return (
+            Pipeline()
+            .add_pass(ValidationPass())
+            .add_pass(RegistryResolutionPass(registry))
+            .add_pass(ParamValidationPass(registry))
+        )
 
     @staticmethod
     def to_config(analysis: Analysis) -> StrategyConfig:
