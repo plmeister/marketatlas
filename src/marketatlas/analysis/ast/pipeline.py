@@ -130,6 +130,7 @@ class RegistryResolutionPass(CompilerPass):
                     provider=provider_name,
                     parameters=merged_params,
                     bindings=d.bindings,
+                    timeframe=d.timeframe,
                     id=d.id,
                     metadata=d.metadata,
                 )
@@ -548,12 +549,14 @@ def expand(analysis: Analysis, source_map: SourceMap | None = None) -> tuple[Ana
                     provider=d.provider,
                     parameters=params,
                     bindings=d.bindings,
+                    timeframe=d.timeframe,
                     id=d.id,
                     metadata=d.metadata,
                 )
                 for d, params in zip(template.definitions, combo)
             ),
             providers=template.providers,
+            timeframes=template.timeframes,
             id=template.id,
             metadata=template.metadata,
         )
@@ -566,6 +569,7 @@ def _ast_to_config(analysis: Analysis) -> StrategyConfig:
     analyzer_configs: list[AnalyzerConfig] = []
     signal_configs: list[SignalConfig] = []
     risk_config: RiskConfig = RiskConfig(algorithm="none")
+    base_tf = analysis.timeframes[0] if analysis.timeframes else None
 
     for d in analysis.definitions:
         provider = providers.get(d.provider)
@@ -590,18 +594,31 @@ def _ast_to_config(analysis: Analysis) -> StrategyConfig:
                 )
             params[p.name] = value
 
+        tf = d.timeframe.value if d.timeframe is not None else base_tf
         if provider.category == "analyzer":
-            analyzer_configs.append(AnalyzerConfig(type=provider.impl, params=params))
+            analyzer_configs.append(
+                AnalyzerConfig(type=provider.impl, params=params, timeframe=tf)
+            )
         elif provider.category == "signal":
             requires = tuple(b.output for b in d.bindings)
             signal_configs.append(SignalConfig(type=provider.impl, requires=requires, rules=params))
         elif provider.category == "risk":
             risk_config = RiskConfig(algorithm=provider.impl, params=params)
 
-    return StrategyConfig(
+    config = StrategyConfig(
         name=analysis.name,
         version=analysis.version,
         analyzers=tuple(analyzer_configs),
         signals=tuple(signal_configs),
         risk=risk_config,
     )
+    if analysis.timeframes:
+        config = StrategyConfig(
+            name=config.name,
+            version=config.version,
+            timeframes=analysis.timeframes,
+            analyzers=config.analyzers,
+            signals=config.signals,
+            risk=config.risk,
+        )
+    return config

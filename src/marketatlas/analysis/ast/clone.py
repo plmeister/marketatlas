@@ -83,6 +83,7 @@ def clone(node: object) -> object:
             version=node.version,
             definitions=tuple(clone(d) for d in node.definitions),
             providers=tuple(clone(p) for p in node.providers),
+            timeframes=node.timeframes,
             id=node.id,
             metadata=_clone_metadata(node.metadata),
         )
@@ -92,6 +93,7 @@ def clone(node: object) -> object:
             provider=node.provider,
             parameters=tuple(clone(p) for p in node.parameters),
             bindings=tuple(clone(b) for b in node.bindings),
+            timeframe=node.timeframe,
             id=node.id,
             metadata=_clone_metadata(node.metadata),
         )

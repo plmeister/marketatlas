@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 from marketatlas.analysis.ast.expressions import wrap
-from marketatlas.analysis.ast.models import Analysis, Binding, Definition, Parameter, Provider
+from marketatlas.analysis.ast.models import (
+    Analysis,
+    Binding,
+    Definition,
+    Parameter,
+    Provider,
+    derive_timeframes,
+)
+from marketatlas.data.types import Timeframe
 
 
 class _DefinitionBuilder:
@@ -11,9 +19,14 @@ class _DefinitionBuilder:
         self._provider_name = provider_name
         self._parameters: list[Parameter] = []
         self._bindings: list[Binding] = []
+        self._timeframe: Timeframe | None = None
 
     def with_param(self, name: str, value: object) -> _DefinitionBuilder:
         self._parameters.append(Parameter(name=name, value=wrap(value)))
+        return self
+
+    def with_timeframe(self, timeframe: str | Timeframe) -> _DefinitionBuilder:
+        self._timeframe = _coerce_timeframe(timeframe)
         return self
 
     def bind(self, source: str, output: str, target: str, input: str) -> _DefinitionBuilder:
@@ -48,6 +61,7 @@ class _DefinitionBuilder:
             provider=self._provider_name,
             parameters=tuple(self._parameters),
             bindings=tuple(self._bindings),
+            timeframe=self._timeframe,
         )
 
 
@@ -58,9 +72,14 @@ class AnalysisBuilder:
         self._definitions: dict[str, _DefinitionBuilder] = {}
         self._providers: dict[str, Provider] = {}
         self._metadata: dict[str, str] = {}
+        self._base_timeframe: Timeframe | None = None
 
     def with_metadata(self, key: str, value: str) -> AnalysisBuilder:
         self._metadata[key] = value
+        return self
+
+    def with_timeframe(self, timeframe: str | Timeframe) -> AnalysisBuilder:
+        self._base_timeframe = _coerce_timeframe(timeframe)
         return self
 
     def define(
@@ -103,10 +122,22 @@ class AnalysisBuilder:
         return self
 
     def build(self) -> Analysis:
+        definitions = tuple(db._build() for db in self._definitions.values())
         return Analysis(
             name=self._name,
             version=self._version,
-            definitions=tuple(db._build() for db in self._definitions.values()),
+            definitions=definitions,
             providers=tuple(self._providers.values()),
+            timeframes=derive_timeframes(self._base_timeframe, definitions),
             metadata=self._metadata if self._metadata else None,
         )
+
+
+def _coerce_timeframe(timeframe: str | Timeframe) -> Timeframe:
+    if isinstance(timeframe, Timeframe):
+        return timeframe
+    try:
+        return Timeframe(timeframe)
+    except ValueError:
+        valid = ", ".join(tf.value for tf in Timeframe)
+        raise ValueError(f"Invalid timeframe '{timeframe}'. Valid timeframes: {valid}") from None

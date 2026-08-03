@@ -56,3 +56,4 @@
 - [x] 057 — DSL parser (template AST from text, reference/shorthand bindings)
 - [x] 058 — Provider contract metadata (inputs/outputs per provider, registry-held)
 - [x] 059 — Positioned diagnostics (Diagnostic.position, SourceMap, line:col formatter + caret snippet)
+- [x] 061 — Timeframe declaration on analysis nodes (Definition.timeframe, Analysis.timeframes, DSL `timeframe` field)

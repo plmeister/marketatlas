@@ -9,7 +9,13 @@ from marketatlas.analysis.ast.expressions import (
     choice_leaves,
     wrap,
 )
-from marketatlas.analysis.ast.models import Analysis, Definition, Parameter, Provider
+from marketatlas.analysis.ast.models import (
+    Analysis,
+    Definition,
+    Parameter,
+    Provider,
+    derive_timeframes,
+)
 from marketatlas.analysis.ast.param_schema import ParamSpec, format_type, type_compatible
 from marketatlas.analysis.ast.registry import ProviderRegistry, create_default_registry
 
@@ -106,6 +112,7 @@ def build_analysis(
         version=version,
         definitions=tuple(definitions),
         providers=tuple(providers),
+        timeframes=derive_timeframes(None, tuple(definitions)),
     )
 
 

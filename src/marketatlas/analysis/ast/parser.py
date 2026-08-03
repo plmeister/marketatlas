@@ -72,9 +72,13 @@ from marketatlas.analysis.ast.lexer import (
 )
 from marketatlas.analysis.ast.models import Analysis, Binding, Definition, Parameter, Provider
 from marketatlas.analysis.ast.registry import ProviderRegistry, create_default_registry
+from marketatlas.data.types import Timeframe
 
 #: Identifiers treated as literal values, never references.
 _RESERVED = frozenset({"true", "false", "null"})
+
+#: Reserved per-definition field declaring the node's timeframe (backlog 061).
+_TIMEFRAME_FIELD = "timeframe"
 
 
 class DslParseError(Exception):
@@ -161,6 +165,7 @@ class _Parser:
                 provider=d.provider,
                 parameters=d.parameters,
                 bindings=bindings_map[d.name],
+                timeframe=d.timeframe,
                 id=d.id,
                 metadata=d.metadata,
             )
@@ -183,15 +188,25 @@ class _Parser:
         type_tok = self._expect_ident(f"expected a provider type after ':=' for '{name}'")
         provider = self._resolve_type(type_tok)
         self._expect(LBRACE, f"expected '{{' after type '{type_tok.lexeme}'")
-        params = self._parse_fields(name, provider)
+        params, timeframe = self._parse_fields(name, provider)
         self._expect(RBRACE, f"expected '}}' to close definition '{name}'")
-        return Definition(name=name, provider=type_tok.lexeme, parameters=params)
+        return Definition(
+            name=name,
+            provider=type_tok.lexeme,
+            parameters=params,
+            timeframe=timeframe,
+        )
 
-    def _parse_fields(self, target_name: str, target_provider: Provider) -> tuple[Parameter, ...]:
+    def _parse_fields(
+        self, target_name: str, target_provider: Provider
+    ) -> tuple[tuple[Parameter, ...], Timeframe | None]:
         params: list[Parameter] = []
+        timeframe: Timeframe | None = None
         while self._peek().kind != RBRACE:
             field_tok = self._expect_ident("expected a field name or '}'")
-            if self._peek().kind == COLON:
+            if field_tok.lexeme == _TIMEFRAME_FIELD:
+                timeframe = self._parse_timeframe_field(field_tok)
+            elif self._peek().kind == COLON:
                 self._advance()
                 if self._peek().kind == IDENT and self._peek().lexeme not in _RESERVED:
                     ref_tok = self._advance()
@@ -219,7 +234,22 @@ class _Parser:
                 self._advance()
             elif self._peek().kind != RBRACE:
                 self._error("expected ',' or '}}'", self._peek().position)
-        return tuple(params)
+        return tuple(params), timeframe
+
+    def _parse_timeframe_field(self, field_tok: Token) -> Timeframe:
+        self._expect(COLON, f"expected ':' after reserved field '{_TIMEFRAME_FIELD}'")
+        token = self._peek()
+        if token.kind != STRING:
+            self._error("timeframe must be a quoted string like \"1h\"", token.position)
+        self._advance()
+        try:
+            return Timeframe(token.value)
+        except ValueError:
+            valid = ", ".join(tf.value for tf in Timeframe)
+            self._error(
+                f"invalid timeframe '{token.value}'. Valid timeframes: {valid}",
+                token.position,
+            )
 
     def _shorthand(self, field_tok: Token, target_name: str, target_provider: Provider) -> None:
         contract = self._registry.contract(target_provider.capability) or self._registry.contract(

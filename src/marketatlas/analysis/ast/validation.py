@@ -6,6 +6,7 @@ from enum import Enum
 
 from marketatlas.analysis.ast.lexer import SourcePosition
 from marketatlas.analysis.ast.models import Analysis, Definition
+from marketatlas.data.types import Timeframe
 
 
 class DiagnosticSeverity(Enum):
@@ -108,6 +109,20 @@ def validate(analysis: Analysis) -> ValidationResult:
         seen_names.add(d.name)
         ref_counts.setdefault(d.name, 0)
 
+        if d.timeframe is not None and not isinstance(d.timeframe, Timeframe):
+            errors.append(
+                Diagnostic(
+                    message=(
+                        f"Definition '{d.name}' has an invalid timeframe "
+                        f"'{d.timeframe}'. Valid timeframes: "
+                        f"{', '.join(tf.value for tf in Timeframe)}"
+                    ),
+                    severity=DiagnosticSeverity.ERROR,
+                    node_name=d.name,
+                    node_type="definition",
+                )
+            )
+
         if not d.provider:
             errors.append(
                 Diagnostic(
@@ -164,6 +179,21 @@ def validate(analysis: Analysis) -> ValidationResult:
 
             if d.name in def_names:
                 has_bindings.add(d.name)
+
+    valid_tf_values = {tf.value for tf in Timeframe}
+    for tf in analysis.timeframes:
+        if tf not in valid_tf_values:
+            errors.append(
+                Diagnostic(
+                    message=(
+                        f"Analysis '{analysis.name}' declares an invalid timeframe "
+                        f"'{tf}'. Valid timeframes: {', '.join(sorted(valid_tf_values))}"
+                    ),
+                    severity=DiagnosticSeverity.ERROR,
+                    node_name=analysis.name,
+                    node_type="analysis",
+                )
+            )
 
     if not errors:
         cycles = _detect_cycles(analysis.definitions)

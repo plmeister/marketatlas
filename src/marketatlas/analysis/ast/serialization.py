@@ -15,6 +15,7 @@ from marketatlas.analysis.ast.models import (
     Parameter,
     Provider,
 )
+from marketatlas.data.types import Timeframe
 
 
 def _expression_to_dict(value: object, param_name: str = "") -> object:
@@ -77,6 +78,8 @@ def _definition_to_dict(d: Definition) -> dict[str, object]:
         obj["parameters"] = [_parameter_to_dict(p) for p in d.parameters]
     if d.bindings:
         obj["bindings"] = [_binding_to_dict(b) for b in d.bindings]
+    if d.timeframe is not None:
+        obj["timeframe"] = d.timeframe.value
     if d.id:
         obj["id"] = d.id
     if d.metadata:
@@ -93,6 +96,8 @@ def to_dict(analysis: Analysis) -> dict[str, object]:
         obj["definitions"] = [_definition_to_dict(d) for d in analysis.definitions]
     if analysis.providers:
         obj["providers"] = [_provider_to_dict(p) for p in analysis.providers]
+    if analysis.timeframes:
+        obj["timeframes"] = list(analysis.timeframes)
     if analysis.id:
         obj["id"] = analysis.id
     if analysis.metadata:
@@ -151,14 +156,28 @@ def _dict_to_definition(d: Mapping[str, object]) -> Definition:
     bindings_raw = d.get("bindings", ())
     assert isinstance(bindings_raw, Sequence)
     bindings = tuple(_dict_to_binding(b) for b in bindings_raw)
+    timeframe = _dict_to_timeframe(d.get("timeframe"))
     return Definition(
         name=d["name"],  # type: ignore[arg-type]
         provider=d["provider"],  # type: ignore[arg-type]
         parameters=params,
         bindings=bindings,
+        timeframe=timeframe,
         id=d.get("id", ""),  # type: ignore[arg-type]
         metadata=d.get("metadata", None),  # type: ignore[arg-type]
     )
+
+
+def _dict_to_timeframe(value: object) -> Timeframe | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"Invalid timeframe: expected a string, got {type(value).__name__}")
+    try:
+        return Timeframe(value)
+    except ValueError:
+        valid = ", ".join(tf.value for tf in Timeframe)
+        raise ValueError(f"Invalid timeframe '{value}'. Valid timeframes: {valid}") from None
 
 
 def from_dict(data: Mapping[str, object]) -> Analysis:
@@ -171,14 +190,30 @@ def from_dict(data: Mapping[str, object]) -> Analysis:
     providers_raw = data.get("providers", ())
     providers_list: Sequence[Mapping[str, object]] = providers_raw  # type: ignore[assignment]
     providers = tuple(_dict_to_provider(p) for p in providers_list)
+    timeframes_raw = data.get("timeframes", ())
+    timeframes_list: Sequence[object] = timeframes_raw  # type: ignore[assignment]
+    timeframes = tuple(
+        _dict_to_timeframe_string(tf) for tf in timeframes_list
+    )
     return Analysis(
         name=data["name"],  # type: ignore[arg-type]
         version=data["version"],  # type: ignore[arg-type]
         definitions=definitions,
         providers=providers,
+        timeframes=timeframes,
         id=data.get("id", ""),  # type: ignore[arg-type]
         metadata=data.get("metadata", None),  # type: ignore[arg-type]
     )
+
+
+def _dict_to_timeframe_string(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"Invalid timeframe: expected a string, got {type(value).__name__}")
+    try:
+        return Timeframe(value).value
+    except ValueError:
+        valid = ", ".join(tf.value for tf in Timeframe)
+        raise ValueError(f"Invalid timeframe '{value}'. Valid timeframes: {valid}") from None
 
 
 def from_json(data: str) -> Analysis:
