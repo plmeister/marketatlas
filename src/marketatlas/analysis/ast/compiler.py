@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from marketatlas.analysis.ast.diagnostics import SourceMap
 from marketatlas.analysis.ast.models import Analysis
 from marketatlas.analysis.ast.pipeline import (
     ParamValidationPass,
@@ -14,12 +15,12 @@ from marketatlas.strategy.config import StrategyConfig
 
 class ASTCompiler:
     @staticmethod
-    def _pipeline(registry: ProviderRegistry) -> Pipeline:
+    def _pipeline(registry: ProviderRegistry, source_map: SourceMap | None = None) -> Pipeline:
         return (
-            Pipeline()
-            .add_pass(ValidationPass())
+            Pipeline(source_map)
+            .add_pass(ValidationPass(source_map))
             .add_pass(RegistryResolutionPass(registry))
-            .add_pass(ParamValidationPass(registry))
+            .add_pass(ParamValidationPass(registry, source_map))
         )
 
     @staticmethod
@@ -65,3 +66,30 @@ class ASTCompiler:
         if registry is None:
             registry = create_default_registry()
         return ASTCompiler._pipeline(registry).compile_all(analysis)
+
+    @staticmethod
+    def compile_dsl(
+        source: str,
+        *,
+        name: str = "analysis",
+        version: str = "1.0",
+        registry: ProviderRegistry | None = None,
+    ) -> tuple[AnalysisGraph, ...]:
+        """End-to-end: DSL text → template AST → every concrete graph.
+
+        Parses ``source`` (backlog 057), threads the resulting ``SourceMap``
+        (backlog 059) through the whole pipeline, and returns one
+        ``AnalysisGraph`` per concrete AST — choice templates expand to
+        multiple graphs (backlog 051). Compiler failures raise
+        ``CompilationError`` whose ``errors`` carry ``line:col`` positions
+        where the source is mapped; lexical/grammar errors raise
+        ``DslSyntaxError``/``DslParseError`` directly.
+        """
+        from marketatlas.analysis.ast.parser import parse_with_positions
+
+        if registry is None:
+            registry = create_default_registry()
+        analysis, source_map = parse_with_positions(
+            source, name=name, version=version, registry=registry
+        )
+        return ASTCompiler._pipeline(registry, source_map).compile_all(analysis)

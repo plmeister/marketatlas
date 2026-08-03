@@ -15,6 +15,13 @@ from marketatlas.analysis.ast.constructors import (
     build_analysis,
     construct,
 )
+from marketatlas.analysis.ast.diagnostics import (
+    SourceMap,
+    format_diagnostic,
+    format_errors,
+    render_snippet,
+    with_position,
+)
 from marketatlas.analysis.ast.expressions import (
     Choice,
     ChoiceExpression,
@@ -54,7 +61,7 @@ from marketatlas.analysis.ast.models import (
     Provider,
 )
 from marketatlas.analysis.ast.param_schema import ParamSpec, derive_param_schema, type_compatible
-from marketatlas.analysis.ast.parser import DslParseError, parse
+from marketatlas.analysis.ast.parser import DslParseError, parse, parse_with_positions
 from marketatlas.analysis.ast.pipeline import (
     CompilationError,
     CompilerPass,
@@ -128,6 +135,7 @@ __all__ = [
     "RegistryResolutionPass",
     "SR",
     "STRING",
+    "SourceMap",
     "SourcePosition",
     "SwingStructure",
     "Swings",
@@ -147,14 +155,19 @@ __all__ = [
     "create_default_registry",
     "derive_param_schema",
     "expand",
+    "format_diagnostic",
+    "format_errors",
     "from_dict",
     "from_json",
     "parse",
+    "parse_with_positions",
+    "render_snippet",
     "to_dict",
     "to_json",
     "tokenize",
     "type_compatible",
     "unwrap",
     "validate",
+    "with_position",
     "wrap",
 ]

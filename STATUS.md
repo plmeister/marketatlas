@@ -53,3 +53,6 @@
 - [x] 053 — Provider construction API (`EMA(period=20)` factories + `build_analysis` composition)
 - [x] 054 — Compiler golden tests (choice expansion, inline expected outputs)
 - [x] 056 — DSL lexer (token stream + positioned SourcePosition, DslSyntaxError)
+- [x] 057 — DSL parser (template AST from text, reference/shorthand bindings)
+- [x] 058 — Provider contract metadata (inputs/outputs per provider, registry-held)
+- [x] 059 — Positioned diagnostics (Diagnostic.position, SourceMap, line:col formatter + caret snippet)

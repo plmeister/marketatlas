@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 
+from marketatlas.analysis.ast.lexer import SourcePosition
 from marketatlas.analysis.ast.models import Analysis, Definition
 
 
@@ -14,10 +15,19 @@ class DiagnosticSeverity(Enum):
 
 @dataclass(frozen=True)
 class Diagnostic:
+    """Semantic/compiler finding with an optional source location (backlog 059).
+
+    ``position`` is ``None`` when the error was produced from an AST with no
+    source mapping (builder-constructed, deserialized). Lexer/parser errors
+    raise their own positioned exceptions (``DslSyntaxError``/``DslParseError``)
+    instead of ``Diagnostic``.
+    """
+
     message: str
     severity: DiagnosticSeverity
     node_name: str
     node_type: str
+    position: SourcePosition | None = None
 
 
 @dataclass(frozen=True)

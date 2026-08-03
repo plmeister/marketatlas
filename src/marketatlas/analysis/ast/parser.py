@@ -49,6 +49,7 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from marketatlas.analysis.ast.constructors import build_analysis
+from marketatlas.analysis.ast.diagnostics import SourceMap
 from marketatlas.analysis.ast.expressions import ChoiceExpression, Expression, LiteralExpression
 from marketatlas.analysis.ast.lexer import (
     ASSIGN,
@@ -97,16 +98,25 @@ class _RawBinding:
 
 
 class _Parser:
-    def __init__(
-        self, source: str, registry: ProviderRegistry, name: str, version: str
-    ) -> None:
+    def __init__(self, source: str, registry: ProviderRegistry, name: str, version: str) -> None:
         self._tokens = tokenize(source)
         self._pos = 0
         self._registry = registry
         self._name = name
         self._version = version
         self._def_positions: dict[str, SourcePosition] = {}
+        self._param_positions: dict[tuple[str, str], SourcePosition] = {}
         self._raw_bindings: list[_RawBinding] = []
+        self._source = source
+
+    @property
+    def source_map(self) -> SourceMap:
+        """Positions of named AST nodes in the source text (backlog 059)."""
+        return SourceMap(
+            definitions=dict(self._def_positions),
+            parameters=dict(self._param_positions),
+            source=self._source,
+        )
 
     # -- token helpers -------------------------------------------------
 
@@ -177,9 +187,7 @@ class _Parser:
         self._expect(RBRACE, f"expected '}}' to close definition '{name}'")
         return Definition(name=name, provider=type_tok.lexeme, parameters=params)
 
-    def _parse_fields(
-        self, target_name: str, target_provider: Provider
-    ) -> tuple[Parameter, ...]:
+    def _parse_fields(self, target_name: str, target_provider: Provider) -> tuple[Parameter, ...]:
         params: list[Parameter] = []
         while self._peek().kind != RBRACE:
             field_tok = self._expect_ident("expected a field name or '}'")
@@ -196,6 +204,7 @@ class _Parser:
                         )
                     )
                 else:
+                    self._param_positions[(target_name, field_tok.lexeme)] = field_tok.position
                     params.append(
                         Parameter(field_tok.lexeme, self._parse_value("as a parameter value"))
                     )
@@ -212,9 +221,7 @@ class _Parser:
                 self._error("expected ',' or '}}'", self._peek().position)
         return tuple(params)
 
-    def _shorthand(
-        self, field_tok: Token, target_name: str, target_provider: Provider
-    ) -> None:
+    def _shorthand(self, field_tok: Token, target_name: str, target_provider: Provider) -> None:
         contract = self._registry.contract(target_provider.capability) or self._registry.contract(
             target_provider.name
         )
@@ -320,15 +327,12 @@ class _Parser:
                 type_tok.position,
             )
 
-    def _resolve_bindings(
-        self, definitions: list[Definition]
-    ) -> dict[str, tuple[Binding, ...]]:
+    def _resolve_bindings(self, definitions: list[Definition]) -> dict[str, tuple[Binding, ...]]:
         result: dict[str, tuple[Binding, ...]] = {d.name: () for d in definitions}
         for raw in self._raw_bindings:
             if raw.source not in self._def_positions:
                 self._error(
-                    f"unknown source definition '{raw.source}' referenced by "
-                    f"'{raw.target}'",
+                    f"unknown source definition '{raw.source}' referenced by " f"'{raw.target}'",
                     raw.position,
                 )
             result[raw.target] = result[raw.target] + (
@@ -340,6 +344,25 @@ class _Parser:
                 ),
             )
         return result
+
+
+def parse_with_positions(
+    source: str,
+    *,
+    name: str = "analysis",
+    version: str = "1.0",
+    registry: ProviderRegistry | None = None,
+) -> tuple[Analysis, SourceMap]:
+    """Parse DSL text into a template ``Analysis`` plus its ``SourceMap``.
+
+    The ``SourceMap`` (backlog 059) maps definition and parameter names to
+    source positions so the compiler pipeline can attach ``line:col``
+    locations to its diagnostics. ``parse`` is the plain-AST convenience
+    wrapper; this is the entry point for position-aware compilation.
+    """
+    reg = registry if registry is not None else create_default_registry()
+    parser = _Parser(source, reg, name, version)
+    return parser.parse(), parser.source_map
 
 
 def parse(
@@ -355,7 +378,9 @@ def parse(
     pipeline's job, backlog 050) and is self-contained: ``providers`` is
     populated from the registry so the result serializes and validates
     standalone. Raises ``DslSyntaxError`` for lexical errors and
-    ``DslParseError`` (both positioned) for grammar errors.
+    ``DslParseError`` (both positioned) for grammar errors. Use
+    ``parse_with_positions`` for the source map needed by positioned compiler
+    diagnostics (backlog 059).
     """
-    reg = registry if registry is not None else create_default_registry()
-    return _Parser(source, reg, name, version).parse()
+    analysis, _ = parse_with_positions(source, name=name, version=version, registry=registry)
+    return analysis

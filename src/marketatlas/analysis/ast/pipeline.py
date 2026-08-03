@@ -6,12 +6,14 @@ from dataclasses import dataclass, field
 from typing import TypeVar
 
 from marketatlas.analysis.ast.clone import clone, clone_expression
+from marketatlas.analysis.ast.diagnostics import SourceMap, with_position
 from marketatlas.analysis.ast.expressions import (
     ChoiceExpression,
     Expression,
     LiteralExpression,
     choice_leaves,
 )
+from marketatlas.analysis.ast.lexer import SourcePosition
 from marketatlas.analysis.ast.models import Analysis, Definition, Parameter, Provider
 from marketatlas.analysis.ast.param_schema import format_type, type_compatible
 from marketatlas.analysis.ast.registry import ProviderRegistry
@@ -32,6 +34,29 @@ from marketatlas.strategy.loader import build_analyzers
 _T = TypeVar("_T")
 
 
+def _position_diagnostics(
+    diagnostics: tuple[Diagnostic, ...],
+    source_map: SourceMap | None,
+    *,
+    parameter: str | None = None,
+) -> tuple[Diagnostic, ...]:
+    """Attach source positions from ``source_map`` to diagnostics (backlog 059).
+
+    Positions are preserved where the map has an entry for the diagnostic's
+    node (and, for parameter-scoped findings, the named parameter); existing
+    positions are never overwritten.
+    """
+    if source_map is None:
+        return diagnostics
+    return tuple(
+        with_position(
+            d,
+            source_map.position_for(d.node_type, d.node_name, parameter=parameter),
+        )
+        for d in diagnostics
+    )
+
+
 class CompilerPass(ABC):
     """Single compilation stage. Transforms or validates the AST."""
 
@@ -44,15 +69,24 @@ class CompilerPass(ABC):
 
 
 class ValidationPass(CompilerPass):
-    """Stage 1: Run semantic checks on the template AST. Raise on errors."""
+    """Stage 1: Run semantic checks on the template AST. Raise on errors.
+
+    An optional ``SourceMap`` (backlog 059) attaches source positions to the
+    diagnostics — positions are preserved through ``CompilationError`` where
+    the source is mapped, and left ``None`` otherwise.
+    """
+
+    def __init__(self, source_map: SourceMap | None = None) -> None:
+        self._source_map = source_map
 
     def run(self, analysis: Analysis) -> Analysis:
         result = validate(analysis)
         if not result.is_valid:
-            msgs = [f"[{d.severity.value}] {d.node_name}: {d.message}" for d in result.errors]
+            errors = _position_diagnostics(result.errors, self._source_map)
+            msgs = [f"[{d.severity.value}] {d.node_name}: {d.message}" for d in errors]
             raise CompilationError(
-                f"Validation failed ({len(result.errors)} errors):\n" + "\n".join(msgs),
-                errors=result.errors,
+                f"Validation failed ({len(errors)} errors):\n" + "\n".join(msgs),
+                errors=errors,
                 warnings=result.warnings,
             )
         return analysis
@@ -120,8 +154,11 @@ class TemplateExpansionPass(CompilerPass):
     concrete variant (backlog 050).
     """
 
+    def __init__(self, source_map: SourceMap | None = None) -> None:
+        self._source_map = source_map
+
     def run(self, analysis: Analysis) -> Analysis:
-        variants = expand(analysis)
+        variants = expand(analysis, self._source_map)
         if len(variants) != 1:
             raise CompilationError(
                 f"Template expansion produced {len(variants)} concrete analyses. "
@@ -131,7 +168,7 @@ class TemplateExpansionPass(CompilerPass):
         return variants[0]
 
     def run_all(self, analysis: Analysis) -> tuple[Analysis, ...]:
-        return expand(analysis)
+        return expand(analysis, self._source_map)
 
 
 class ConcreteValidationPass(CompilerPass):
@@ -143,6 +180,9 @@ class ConcreteValidationPass(CompilerPass):
     * no duplicate definition names — two choice combinations can converge on
       the same concrete definition (backlogs 051/054).
     """
+
+    def __init__(self, source_map: SourceMap | None = None) -> None:
+        self._source_map = source_map
 
     def run(self, analysis: Analysis) -> Analysis:
         errors: list[Diagnostic] = []
@@ -182,6 +222,7 @@ class ConcreteValidationPass(CompilerPass):
             seen.add(d.name)
 
         result = validate(analysis)
+        errors = list(_position_diagnostics(tuple(errors), self._source_map))
         errors.extend(result.errors)
 
         if errors:
@@ -208,8 +249,9 @@ class ParamValidationPass(CompilerPass):
     are accepted.
     """
 
-    def __init__(self, registry: ProviderRegistry) -> None:
+    def __init__(self, registry: ProviderRegistry, source_map: SourceMap | None = None) -> None:
         self._registry = registry
+        self._source_map = source_map
 
     def run(self, analysis: Analysis) -> Analysis:
         errors: list[Diagnostic] = []
@@ -242,6 +284,7 @@ class ParamValidationPass(CompilerPass):
                             severity=DiagnosticSeverity.ERROR,
                             node_name=d.name,
                             node_type="definition",
+                            position=self._parameter_position(d.name, p.name),
                         )
                     )
                     continue
@@ -260,6 +303,7 @@ class ParamValidationPass(CompilerPass):
                                 severity=DiagnosticSeverity.ERROR,
                                 node_name=d.name,
                                 node_type="definition",
+                                position=self._parameter_position(d.name, p.name),
                             )
                         )
 
@@ -274,6 +318,7 @@ class ParamValidationPass(CompilerPass):
                             severity=DiagnosticSeverity.ERROR,
                             node_name=d.name,
                             node_type="definition",
+                            position=self._definition_position(d.name),
                         )
                     )
 
@@ -284,6 +329,16 @@ class ParamValidationPass(CompilerPass):
                 errors=tuple(errors),
             )
         return analysis
+
+    def _definition_position(self, name: str) -> SourcePosition | None:
+        if self._source_map is None:
+            return None
+        return self._source_map.position_for("definition", name)
+
+    def _parameter_position(self, name: str, parameter: str) -> SourcePosition | None:
+        if self._source_map is None:
+            return None
+        return self._source_map.position_for("definition", name, parameter=parameter)
 
 
 class GraphGenerationPass(CompilerPass):
@@ -316,11 +371,14 @@ class Pipeline:
     expansion forks one template into many concrete ASTs.
 
     The ``Parse`` stage (DSL text → template AST) sits upstream of stage 1
-    (backlog 057).
+    (backlog 057). An optional ``SourceMap`` (backlog 059) threads source
+    positions into the stage-2/3 passes so expansion and concrete-validation
+    errors stay located.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, source_map: SourceMap | None = None) -> None:
         self._passes: list[CompilerPass] = []
+        self._source_map = source_map
 
     def add_pass(self, pass_: CompilerPass) -> Pipeline:
         self._passes.append(pass_)
@@ -340,8 +398,8 @@ class Pipeline:
         """Stages 1-3: validate/resolve the template, expand choices, then
         validate each concrete AST. Returns every concrete AST."""
         template = self.run_to_ast(analysis)
-        variants = TemplateExpansionPass().run_all(template)
-        return tuple(ConcreteValidationPass().run(v) for v in variants)
+        variants = TemplateExpansionPass(self._source_map).run_all(template)
+        return tuple(ConcreteValidationPass(self._source_map).run(v) for v in variants)
 
     def compile_all(self, analysis: Analysis) -> tuple[AnalysisGraph, ...]:
         """Run the full pipeline (stages 1-4) for every concrete AST.
@@ -406,21 +464,42 @@ def _cartesian(options: Sequence[Sequence[_T]]) -> list[tuple[_T, ...]]:
     return result
 
 
-def _expand_definition(defn: Definition) -> tuple[tuple[Parameter, ...], ...]:
+def _expand_definition(
+    defn: Definition, source_map: SourceMap | None = None
+) -> tuple[tuple[Parameter, ...], ...]:
     """Produce one parameter-variant tuple per cartesian combination of choices.
 
     Each parameter with a ``ChoiceExpression`` value contributes one option per
     flattened leaf; literal and other-expression params contribute a single
     option. An empty choice raises ``CompilationError`` naming the definition
-    and parameter. Every returned parameter carries a freshly cloned value.
+    and parameter (positioned when ``source_map`` provides one). Every returned
+    parameter carries a freshly cloned value.
     """
     options: list[tuple[Expression, ...]] = []
     for p in defn.parameters:
         leaves = choice_leaves(p.value)
         if isinstance(p.value, ChoiceExpression) and not leaves:
+            position = (
+                source_map.position_for("definition", defn.name, parameter=p.name)
+                if source_map is not None
+                else None
+            )
             raise CompilationError(
                 f"Empty choice for parameter '{p.name}' of definition "
-                f"'{defn.name}'. A ChoiceExpression must have at least one value."
+                f"'{defn.name}'. A ChoiceExpression must have at least one value.",
+                errors=(
+                    Diagnostic(
+                        message=(
+                            f"Empty choice for parameter '{p.name}' of definition "
+                            f"'{defn.name}'. A ChoiceExpression must have at least "
+                            f"one value."
+                        ),
+                        severity=DiagnosticSeverity.ERROR,
+                        node_name=defn.name,
+                        node_type="definition",
+                        position=position,
+                    ),
+                ),
             )
         options.append(leaves)
 
@@ -434,7 +513,7 @@ def _expand_definition(defn: Definition) -> tuple[tuple[Parameter, ...], ...]:
     )
 
 
-def expand(analysis: Analysis) -> tuple[Analysis, ...]:
+def expand(analysis: Analysis, source_map: SourceMap | None = None) -> tuple[Analysis, ...]:
     """Expand an AST template into concrete ASTs with literal-only parameters.
 
     Every ``ChoiceExpression`` parameter (backlog 048) is replaced by its
@@ -453,10 +532,11 @@ def expand(analysis: Analysis) -> tuple[Analysis, ...]:
     deduplicated here; stage-3 concrete-AST validation (backlogs 051/054)
     reports the resulting duplicate definitions.
 
-    Raises ``CompilationError`` on an empty ``ChoiceExpression``.
+    Raises ``CompilationError`` on an empty ``ChoiceExpression`` (positioned
+    when ``source_map`` supplies one).
     """
     template = clone(analysis)
-    variants_per_def = [_expand_definition(d) for d in template.definitions]
+    variants_per_def = [_expand_definition(d, source_map) for d in template.definitions]
     combos = _cartesian(variants_per_def)
     return tuple(
         Analysis(
