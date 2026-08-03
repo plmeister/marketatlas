@@ -54,6 +54,7 @@ from marketatlas.analysis.ast.models import (
     Provider,
 )
 from marketatlas.analysis.ast.param_schema import ParamSpec, derive_param_schema, type_compatible
+from marketatlas.analysis.ast.parser import DslParseError, parse
 from marketatlas.analysis.ast.pipeline import (
     CompilationError,
     CompilerPass,
@@ -67,6 +68,7 @@ from marketatlas.analysis.ast.pipeline import (
     expand,
 )
 from marketatlas.analysis.ast.registry import (
+    ProviderContract,
     ProviderNotFoundError,
     ProviderRegistry,
     create_default_registry,
@@ -97,6 +99,7 @@ __all__ = [
     "DiagnosticSeverity",
     "DslSyntaxError",
     "Definition",
+    "DslParseError",
     "EMA",
     "Expression",
     "FLOAT",
@@ -117,6 +120,7 @@ __all__ = [
     "Pipeline",
     "Provider",
     "ProviderConstructionError",
+    "ProviderContract",
     "ProviderNotFoundError",
     "ProviderRegistry",
     "RBRACE",
@@ -145,6 +149,7 @@ __all__ = [
     "expand",
     "from_dict",
     "from_json",
+    "parse",
     "to_dict",
     "to_json",
     "tokenize",

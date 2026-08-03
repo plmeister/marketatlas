@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from marketatlas.analysis.ast.expressions import wrap
@@ -14,10 +15,26 @@ class ProviderNotFoundError(LookupError):
     pass
 
 
+@dataclass(frozen=True)
+class ProviderContract:
+    """Fact-level contract of a provider (backlog 058).
+
+    ``inputs`` are the fact key names the provider consumes and ``outputs``
+    the fact key names it produces, both derived from the analyzer's runtime
+    ``requires()``/``produces()`` at registration time (with default
+    constructor arguments). Powers DSL shorthand disambiguation (backlog 057)
+    and, later, binding validation against declared inputs/outputs.
+    """
+
+    inputs: tuple[str, ...] = ()
+    outputs: tuple[str, ...] = ()
+
+
 class ProviderRegistry:
     def __init__(self) -> None:
         self._providers: dict[str, list[Provider]] = {}
         self._param_schemas: dict[str, tuple[ParamSpec, ...]] = {}
+        self._contracts: dict[str, ProviderContract] = {}
 
     def register_param_schema(self, key: str, schema: tuple[ParamSpec, ...]) -> None:
         """Attach a parameter schema to a provider name or capability key."""
@@ -31,11 +48,26 @@ class ProviderRegistry:
         """
         return self._param_schemas.get(key)
 
-    def _derive_and_register_schema(self, provider: Provider, cls: type) -> None:
+    def register_contract(self, key: str, contract: ProviderContract) -> None:
+        """Attach a fact-level contract to a provider name or capability key."""
+        self._contracts[key] = contract
+
+    def contract(self, key: str) -> ProviderContract | None:
+        """Return the contract keyed by provider name/capability, or ``None``."""
+        return self._contracts.get(key)
+
+    def capabilities(self) -> tuple[str, ...]:
+        """Sorted capability keys known to the registry."""
+        return tuple(sorted(self._providers.keys()))
+
+    def _register_metadata(self, provider: Provider, cls: type) -> None:
         schema = derive_param_schema(cls)
         if schema:
             self.register_param_schema(provider.name, schema)
             self.register_param_schema(provider.capability, schema)
+        contract = _derive_contract(cls)
+        self.register_contract(provider.name, contract)
+        self.register_contract(provider.capability, contract)
 
     def register_provider(self, provider: Provider) -> None:
         cap = provider.capability
@@ -67,7 +99,7 @@ class ProviderRegistry:
                 default_params=params,
             )
             self.register_provider(provider)
-            self._derive_and_register_schema(provider, capability_or_provider)
+            self._register_metadata(provider, capability_or_provider)
             return capability_or_provider
 
         if isinstance(capability_or_provider, str):
@@ -83,7 +115,7 @@ class ProviderRegistry:
                     default_params=params,
                 )
                 self.register_provider(provider)
-                self._derive_and_register_schema(provider, cls)
+                self._register_metadata(provider, cls)
                 return None
 
             def decorator(target_cls: type) -> type:
@@ -98,7 +130,7 @@ class ProviderRegistry:
                     default_params=params,
                 )
                 self.register_provider(provider)
-                self._derive_and_register_schema(provider, target_cls)
+                self._register_metadata(provider, target_cls)
                 return target_cls
 
             return decorator
@@ -124,6 +156,29 @@ class ProviderRegistry:
         for providers in self._providers.values():
             result.extend(providers)
         return result
+
+
+def _derive_contract(cls: type) -> ProviderContract:
+    """Derive a provider contract from an analyzer class at registration time.
+
+    Instantiates the class with default constructor arguments and reads its
+    ``requires()``/``produces()``, reducing each ``FactKey`` to its stable
+    name. Classes without those methods (signals, risk engines, opaque
+    providers) or that cannot be constructed with defaults yield an empty
+    contract — the contract describes fact-level wiring only where the class
+    exposes it (backlog 058).
+    """
+    requires = getattr(cls, "requires", None)
+    produces = getattr(cls, "produces", None)
+    if requires is None or produces is None:
+        return ProviderContract()
+    try:
+        instance = cls()
+    except Exception:
+        return ProviderContract()
+    inputs = tuple(str(fk.name) for fk in instance.requires())
+    outputs = tuple(str(fk.name) for fk in instance.produces())
+    return ProviderContract(inputs=inputs, outputs=outputs)
 
 
 def create_default_registry() -> ProviderRegistry:
