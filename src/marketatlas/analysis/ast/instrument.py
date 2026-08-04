@@ -2,14 +2,20 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
+from typing import TYPE_CHECKING
 
 from marketatlas.analysis.ast.models import Analysis
 from marketatlas.analysis.graph import AnalysisGraph
 from marketatlas.data.instrument import Instrument
 from marketatlas.data.store import MarketStore
+from marketatlas.data.types import Timeframe
 from marketatlas.frames.store import FrameStore
 from marketatlas.strategy.config import StrategyConfig
 from marketatlas.strategy.tradebook import TradeBook
+
+if TYPE_CHECKING:
+    from marketatlas.analysis.ast.requirements import DataRequirement
 
 
 @dataclass(frozen=True)
@@ -78,6 +84,36 @@ class TemplateGraph:
         if not instruments:
             raise ValueError("At least one instrument is required to instantiate a template")
         return tuple(self.instantiate(i) for i in instruments)
+
+    def required_timeframes(self) -> tuple[Timeframe, ...]:
+        """Effective timeframes this template needs (backlog 065).
+
+        Derived from the compiled ``StrategyConfig.timeframes``, which is the
+        declared ``Analysis.timeframes`` or the strategy base default
+        (``("1d",)``) when the template declares none — the exact set the
+        runtime will run against. Deterministic, declaration order.
+        """
+        from marketatlas.analysis.ast.requirements import _config_timeframes
+
+        return _config_timeframes(self._config)
+
+    def required_data(
+        self,
+        instruments: Sequence[Instrument],
+        start: datetime,
+        end: datetime,
+    ) -> tuple[DataRequirement, ...]:
+        """The ``(instrument, timeframe)`` data needs for a run (backlog 065).
+
+        Cartesian product over the template's effective timeframes and the
+        runtime instrument list, deduplicated by instrument identity and
+        deterministically ordered. The empty instrument list raises (matching
+        ``instantiate_all``); date range is carried so callers can check store
+        coverage before fetching.
+        """
+        from marketatlas.analysis.ast.requirements import _requirements_for
+
+        return _requirements_for(self._config, instruments, start, end)
 
     def _build_graph(self) -> AnalysisGraph:
         from marketatlas.strategy.loader import build_analyzers

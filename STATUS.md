@@ -59,3 +59,4 @@
 - [x] 061 — Timeframe declaration on analysis nodes (Definition.timeframe, Analysis.timeframes, DSL `timeframe` field)
 - [x] 062 — Cross-timeframe references (analyzer `bindings` overrides from references, FactKey `@tf` keys, signal requires carries source TF, output-vs-contract validation)
 - [x] 063 — Instrument runtime expansion (TemplateGraph recipe, per-instrument instantiation, isolated multi-instrument backtests)
+- [x] 065 — Data requirements inference (required_timeframes/required_data, DataRequirement, gap-only fetching via DataStore)

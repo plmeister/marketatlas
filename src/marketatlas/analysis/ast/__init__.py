@@ -85,6 +85,12 @@ from marketatlas.analysis.ast.registry import (
     ProviderRegistry,
     create_default_registry,
 )
+from marketatlas.analysis.ast.requirements import (
+    DataRequirement,
+    ensure_required_data,
+    required_data,
+    required_timeframes,
+)
 from marketatlas.analysis.ast.serialization import from_dict, from_json, to_dict, to_json
 from marketatlas.analysis.ast.validation import (
     Diagnostic,
@@ -109,6 +115,7 @@ __all__ = [
     "Diagnostic",
     "DiagnosticSeverity",
     "DslSyntaxError",
+    "DataRequirement",
     "Definition",
     "DslParseError",
     "EMA",
@@ -162,6 +169,7 @@ __all__ = [
     "construct",
     "create_default_registry",
     "derive_param_schema",
+    "ensure_required_data",
     "expand",
     "format_diagnostic",
     "format_errors",
@@ -170,6 +178,8 @@ __all__ = [
     "parse",
     "parse_with_positions",
     "render_snippet",
+    "required_data",
+    "required_timeframes",
     "to_dict",
     "to_json",
     "tokenize",

@@ -57,6 +57,19 @@ class Analysis:
     id: str = ""
     metadata: dict[str, str] | None = None
 
+    def required_timeframes(self) -> tuple[Timeframe, ...]:
+        """Timeframes this analysis needs (backlog 065), declaration order.
+
+        Thin wrapper over the ``timeframes`` field: converts the declared
+        ``TimeFrame`` resolutions to ``Timeframe`` values, deduplicated.
+        Empty when no ``TimeFrame`` definitions are declared — the effective
+        base timeframe is a runtime/``StrategyConfig`` concern that surfaces
+        on the compiled ``TemplateGraph``.
+        """
+        from marketatlas.analysis.ast.requirements import required_timeframes
+
+        return required_timeframes(self)
+
 
 def is_timeframe_definition(definition: Definition) -> bool:
     """Whether a definition produces a compile-time timeframe value.
