@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from marketatlas.analysis.ast.clone import clone, clone_expression
 from marketatlas.analysis.ast.diagnostics import SourceMap, with_position
@@ -38,7 +38,7 @@ from marketatlas.strategy.config import (
     SignalConfig,
     StrategyConfig,
 )
-from marketatlas.strategy.loader import build_analyzers
+from marketatlas.strategy.loader import ANALYZER_TYPES, build_analyzers
 
 _T = TypeVar("_T")
 
@@ -602,6 +602,11 @@ def _ast_to_config(analysis: Analysis) -> StrategyConfig:
     risk_config: RiskConfig = RiskConfig(algorithm="none")
     base_tf = analysis.timeframes[0] if analysis.timeframes else None
 
+    def_timeframes = {
+        d.name: _resolved_definition_timeframe(d, def_by_name)
+        for d in analysis.definitions
+    }
+
     for d in analysis.definitions:
         provider = providers.get(d.provider)
         if provider is None:
@@ -610,15 +615,27 @@ def _ast_to_config(analysis: Analysis) -> StrategyConfig:
         params: dict[str, object] = {}
         requires: list[str] = []
         timeframe: str | None = None
+        bindings: dict[str, str] = {}
 
         for p in d.parameters:
             value: object = p.value
             if isinstance(value, ReferenceExpression):
                 resolved = _resolve_reference(
-                    p.name, value, def_by_name, provider, d.name, requires
+                    p.name,
+                    value,
+                    def_by_name,
+                    def_timeframes,
+                    providers,
+                    provider,
+                    d.name,
+                    base_tf,
                 )
-                if resolved is not None:
-                    timeframe = resolved
+                if resolved.timeframe is not None:
+                    timeframe = resolved.timeframe
+                if resolved.requires is not None:
+                    requires.append(resolved.requires)
+                if resolved.binding is not None:
+                    bindings[p.name] = resolved.binding
                 continue
             if isinstance(value, LiteralExpression):
                 params[p.name] = value.value
@@ -633,6 +650,9 @@ def _ast_to_config(analysis: Analysis) -> StrategyConfig:
                     f"Non-literal expression for parameter '{p.name}' of definition "
                     f"'{d.name}' cannot be compiled yet: {type(value).__name__}"
                 )
+
+        if bindings:
+            params["bindings"] = bindings
 
         if provider.category == "analyzer":
             analyzer_configs.append(
@@ -668,22 +688,67 @@ def _ast_to_config(analysis: Analysis) -> StrategyConfig:
     return config
 
 
+@dataclass(frozen=True)
+class _ResolvedReference:
+    """Compile-time interpretation of a reference parameter (backlog 062).
+
+    A reference resolves to exactly one of three things:
+    * ``timeframe`` — value substitution: a ``TimeFrame`` definition fills the
+      consumer's ``AnalyzerConfig.timeframe`` slot (backlog 061);
+    * ``binding`` — an analyzer fact dependency: the consumed fact name with an
+      explicit ``name@timeframe`` suffix when it crosses timeframes, injected
+      into the analyzer's ``bindings`` so its ``requires()``/``analyze()``
+      resolve the right ``FactKey``;
+    * ``requires`` — a signal fact dependency: the consumed fact name, carrying
+      the source timeframe suffix for cross-timeframe references.
+    A reference on an opaque consumer (risk) contributes nothing.
+    """
+
+    timeframe: str | None = None
+    binding: str | None = None
+    requires: str | None = None
+
+
+def _resolved_definition_timeframe(
+    definition: Definition, def_by_name: dict[str, Definition]
+) -> str | None:
+    """The compile-time timeframe a definition declares (backlog 061/062).
+
+    ``None`` means "strategy base timeframe". Only analyzer definitions may
+    reference a ``TimeFrame`` definition; the reference-slot field is always
+    ``timeframe``.
+    """
+    for p in definition.parameters:
+        if not isinstance(p.value, ReferenceExpression):
+            continue
+        target = def_by_name.get(p.value.name)
+        if target is not None and is_timeframe_definition(target):
+            return _resolution_value(target)
+    return None
+
+
 def _resolve_reference(
     param_name: str,
     reference: ReferenceExpression,
     def_by_name: dict[str, Definition],
+    def_timeframes: dict[str, str | None],
+    providers: dict[str, Provider],
     provider: Provider,
     owner: str,
-    requires: list[str],
-) -> str | None:
-    """Resolve a reference parameter to a timeframe value, or None.
+    base_tf: str | None,
+) -> _ResolvedReference:
+    """Resolve a reference parameter to its compile-time interpretation.
 
-    A reference to a ``TimeFrame`` definition is a compile-time value: the
-    definition's ``resolution`` becomes the consumer's ``AnalyzerConfig``
-    timeframe (backlog 061). A reference to a fact-producing definition is a
-    dependency edge; on a signal the parameter name is the consumed fact name
-    and is added to ``requires``. Returns the resolved timeframe string, or
-    ``None`` when the reference is a fact dependency.
+    A reference to a ``TimeFrame`` definition is value substitution (backlog
+    061). A reference to a fact-producing definition is a dependency edge: on
+    an analyzer it becomes a ``bindings`` override carrying the source
+    timeframe when the reference crosses timeframes; on a signal it becomes a
+    ``requires`` entry with the source timeframe suffix. References are always
+    explicit declarations in the DSL — a consumer at ``1d`` referencing a
+    producer at ``1w`` is declared by the reference itself, so no separate
+    cross-timeframe opt-in exists (the fallback, an undeclared cross-timeframe
+    dependency, fails loudly at graph construction as an unsatisfied
+    dependency).
     """
     target = def_by_name.get(reference.name)
     if target is None:
@@ -696,10 +761,66 @@ def _resolve_reference(
                 f"Reference to TimeFrame definition '{reference.name}' on '{owner}' "
                 f"is only valid on analyzer definitions, not '{provider.category}'"
             )
-        return _resolution_value(target)
+        return _ResolvedReference(timeframe=_resolution_value(target))
+
+    source_tf = def_timeframes.get(target.name) or base_tf
+    if provider.category == "analyzer":
+        _check_fact_declared(param_name, target, source_tf, providers, owner)
+        consumer_tf = _resolved_definition_timeframe(def_by_name[owner], def_by_name) or base_tf
+        key = (
+            param_name
+            if source_tf is None or source_tf == consumer_tf
+            else f"{param_name}@{source_tf}"
+        )
+        return _ResolvedReference(binding=key)
     if provider.category == "signal":
-        requires.append(param_name)
-    return None
+        if source_tf is None or source_tf == base_tf:
+            entry = param_name
+        else:
+            entry = f"{param_name}@{source_tf}"
+        return _ResolvedReference(requires=entry)
+    return _ResolvedReference()
+
+
+def _check_fact_declared(
+    field: str,
+    target: Definition,
+    source_tf: str | None,
+    providers: dict[str, Provider],
+    owner: str,
+) -> None:
+    """Verify the consumed fact name is produced by the referenced definition.
+
+    Instantiates the target's analyzer with its declared (literal) parameters
+    at the source timeframe and reads ``produces()`` — precise for
+    parameterised fact names like ``ema_50`` where a static contract cannot
+    know the effective name (backlog 058 contracts are derived with default
+    args). Opaque providers (no analyzer class) are skipped rather than
+    false-positive.
+    """
+    provider = providers.get(target.provider)
+    if provider is None:
+        return
+    cls = ANALYZER_TYPES.get(provider.impl)
+    if cls is None:
+        return
+    params: dict[str, Any] = {}
+    for p in target.parameters:
+        if isinstance(p.value, LiteralExpression):
+            params[p.name] = p.value.value
+    if source_tf is not None:
+        params["timeframe"] = source_tf
+    try:
+        instance = cls(**params)
+    except Exception:
+        return
+    produced = {str(fk.name) for fk in instance.produces()}
+    if field not in produced:
+        known = ", ".join(sorted(produced)) if produced else "(none)"
+        raise CompilationError(
+            f"Reference to '{field}' from '{owner}' is not declared by provider "
+            f"'{target.provider}': definition '{target.name}' produces {known}"
+        )
 
 
 def _resolution_value(target: Definition) -> str:

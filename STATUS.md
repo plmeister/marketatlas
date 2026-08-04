@@ -57,3 +57,4 @@
 - [x] 058 — Provider contract metadata (inputs/outputs per provider, registry-held)
 - [x] 059 — Positioned diagnostics (Diagnostic.position, SourceMap, line:col formatter + caret snippet)
 - [x] 061 — Timeframe declaration on analysis nodes (Definition.timeframe, Analysis.timeframes, DSL `timeframe` field)
+- [x] 062 — Cross-timeframe references (analyzer `bindings` overrides from references, FactKey `@tf` keys, signal requires carries source TF, output-vs-contract validation)

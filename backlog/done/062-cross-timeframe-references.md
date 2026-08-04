@@ -1,6 +1,6 @@
 # 062: Cross-Timeframe References — Binding Semantics
 
-**Status:** pending  
+**Status:** done  
 **Epic:** ast  
 **Priority:** high
 
@@ -24,12 +24,34 @@ A consumer at `1d` referencing a producer at `1w` is legal and explicit: `trend 
 
 ## Acceptance Criteria
 
-- [ ] `trend@1d ← swings@1w` style analysis compiles; `AnalysisGraph.run` selects correct views per node
-- [ ] Single-timeframe analyses (existing 046 snapshots) compile unchanged — bindings additive, not breaking
-- [ ] Reference to unknown definition → error; reference whose output isn't declared by provider (058) → error
-- [ ] Cross-TF reference without explicit declaration → error (or auto-declared per 055 decision — document whichever)
-- [ ] Signal `requires` includes source timeframe
-- [ ] Tests: cross-TF wiring, resolution errors, contract mismatches, graph run correctness
+- [x] `trend@1d ← swings@1w` style analysis compiles; `AnalysisGraph.run` selects correct views per node
+- [x] Single-timeframe analyses (existing 046 snapshots) compile unchanged — bindings additive, not breaking
+- [x] Reference to unknown definition → error; reference whose output isn't declared by provider (058) → error
+- [x] Cross-TF reference without explicit declaration → error (or auto-declared per 055 decision — document whichever)
+- [x] Signal `requires` includes source timeframe
+- [x] Tests: cross-TF wiring, resolution errors, contract mismatches, graph run correctness
+
+## Resolution Notes
+
+- **Binding semantics:** a `field: producer` reference on an analyzer resolves to
+  the producer's declared timeframe (061) and is injected as an analyzer
+  `bindings` override (`name@timeframe` when the source timeframe differs from
+  the consumer's, bare `name` otherwise). `Analyzer._make_key` applies the
+  override (skipping the instance key so `produces()` stays stable) and parses
+  the `@timeframe` suffix into `FactKey`.
+- **Output validation:** implemented via `_check_fact_declared` (instantiate the
+  target analyzer with its literal params + source timeframe, check
+  `produces()`) rather than static 058 contracts — precise for parameterised
+  fact names like `ema_50`.
+- **Signals:** a signal reference to a non-base-timeframe definition emits a
+  `requires` entry `name@source_tf`; base-timeframe/single-TF entries stay bare
+  (`("atr_14",)` — existing 046 behavior preserved).
+- **Explicit declaration is the rule:** an undeclared cross-timeframe dependency
+  (consumer needs a fact only produced on another timeframe, no reference)
+  fails at graph construction with `UnsatisfiedDependencyError`. This documents
+  the 055 decision as *declarations only*.
+- **055/Runtime decision:** parser emits reference expressions; the compiler
+  resolves them to definitions + timeframes. No parser change needed.
 
 ## Technical Notes
 

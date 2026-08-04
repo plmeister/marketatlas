@@ -22,9 +22,9 @@ class PullbackSignal(Signal):
         self._atr_key = atr_key
 
     def evaluate(self, view: MarketView, facts: dict[FactKey, Fact]) -> TradeSignal | None:
-        pullback = facts.get(FactKey(self._pullback_key))
-        trend = facts.get(FactKey(self._trend_key))
-        atr = facts.get(FactKey(self._atr_key))
+        pullback = facts.get(self._fact_key(self._pullback_key))
+        trend = facts.get(self._fact_key(self._trend_key))
+        atr = facts.get(self._fact_key(self._atr_key))
 
         if not isinstance(pullback, PullbackFact):
             return None
