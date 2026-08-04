@@ -56,6 +56,23 @@ class ChoiceExpression(Expression):
         return f"ChoiceExpression({inner})"
 
 
+@dataclass(frozen=True, eq=True)
+class ReferenceExpression(Expression):
+    """A reference to a definition, used as a parameter value.
+
+    Passing a realised definition as a parameter (backlog 061): the compiler
+    interprets the reference by the referenced definition's category — a
+    ``TimeFrame`` definition resolves to its timeframe value; a fact-producing
+    definition (analyzer/signal) is a dependency edge. ``name`` is the
+    definition name, resolved against the analysis' definitions.
+    """
+
+    name: str
+
+    def __repr__(self) -> str:
+        return f"ReferenceExpression({self.name!r})"
+
+
 def Choice(values: Iterable[object]) -> ChoiceExpression:  # noqa: N802
     """Build a ``ChoiceExpression``, wrapping raw members as literals.
 

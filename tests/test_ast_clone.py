@@ -5,10 +5,10 @@ from marketatlas.analysis.ast.expressions import (
     ChoiceExpression,
     Expression,
     LiteralExpression,
+    ReferenceExpression,
 )
 from marketatlas.analysis.ast.models import (
     Analysis,
-    Binding,
     Capability,
     Definition,
     Parameter,
@@ -25,8 +25,10 @@ def _full_analysis() -> Analysis:
             Definition(
                 name="ema20",
                 provider="ema",
-                parameters=(Parameter(name="period", value=LiteralExpression(20)),),
-                bindings=(Binding(source="price", output="close", target="ema20", input="source"),),
+                parameters=(
+                    Parameter(name="period", value=LiteralExpression(20)),
+                    Parameter(name="source", value=ReferenceExpression("price")),
+                ),
                 id="def-1",
                 metadata={"author": "test"},
             ),
@@ -116,12 +118,12 @@ class TestNodeClone:
         assert c is not p
         assert c.value is not p.value
 
-    def test_binding_equal_and_independent(self) -> None:
-        b = Binding(source="price", output="close", target="ema", input="source")
-        c = clone(b)
-        assert isinstance(c, Binding)
-        assert c == b
-        assert c is not b
+    def test_reference_expression_equal_and_independent(self) -> None:
+        e = ReferenceExpression("price")
+        c = clone_expression(e)
+        assert isinstance(c, ReferenceExpression)
+        assert c == e
+        assert c is not e
 
     def test_provider_default_params_cloned(self) -> None:
         p = _full_analysis().providers[0]
@@ -180,6 +182,6 @@ class TestCloneTyping:
         assert isinstance(clone(a), Analysis)
         assert isinstance(clone(a.definitions[0]), Definition)
         assert isinstance(clone(a.definitions[0].parameters[0]), Parameter)
-        assert isinstance(clone(a.definitions[0].bindings[0]), Binding)
+        assert isinstance(clone(a.definitions[1].parameters[0].value), Expression)
         assert isinstance(clone(a.providers[0]), Provider)
         assert isinstance(clone(a.definitions[1].parameters[0].value), Expression)

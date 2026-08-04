@@ -1,6 +1,7 @@
 import pytest
 from marketatlas.analysis.ast.builder import AnalysisBuilder
-from marketatlas.analysis.ast.models import Binding, Parameter
+from marketatlas.analysis.ast.expressions import LiteralExpression, ReferenceExpression
+from marketatlas.analysis.ast.models import Parameter
 
 
 class TestAnalysisBuilder:
@@ -21,7 +22,6 @@ class TestAnalysisBuilder:
         assert d.name == "ema20"
         assert d.provider == "EMAAnalyzer"
         assert d.parameters == ()
-        assert d.bindings == ()
 
     def test_auto_creates_providers(self) -> None:
         analysis = (
@@ -71,26 +71,30 @@ class TestAnalysisBuilder:
             .build()
         )
         assert len(a.definitions[0].parameters) == 2
-        assert a.definitions[0].parameters[0] == Parameter(name="period", value=20)
-        assert a.definitions[0].parameters[1] == Parameter(name="source", value="close")
+        assert a.definitions[0].parameters[0] == Parameter(
+            name="period", value=LiteralExpression(20)
+        )
+        assert a.definitions[0].parameters[1] == Parameter(
+            name="source", value=LiteralExpression("close")
+        )
 
-    def test_with_bindings(self) -> None:
+    def test_with_reference(self) -> None:
         a = (
             AnalysisBuilder("test", "1.0.0")
             .define("atr14", "analyzer", "ATRAnalyzer")
             .with_param("period", 14)
             .define("swing", "analyzer", "SwingStructureAnalyzer")
             .with_param("lookback", 100)
-            .bind("atr14", "atr_14", "swing", "atr")
+            .with_reference("atr_14", "atr14")
             .build()
         )
         swing = a.definitions[1]
-        assert len(swing.bindings) == 1
-        assert swing.bindings[0] == Binding(
-            source="atr14", output="atr_14", target="swing", input="atr"
+        assert len(swing.parameters) == 2
+        assert swing.parameters[1] == Parameter(
+            name="atr_14", value=ReferenceExpression("atr14")
         )
 
-    def test_params_and_bindings(self) -> None:
+    def test_params_and_references(self) -> None:
         a = (
             AnalysisBuilder("test", "1.0.0")
             .define("ema20", "analyzer", "EMAAnalyzer")
@@ -101,7 +105,7 @@ class TestAnalysisBuilder:
             .define("swing", "analyzer", "SwingStructureAnalyzer")
             .with_param("lookback", 100)
             .with_param("min_separation_atr", 1.5)
-            .bind("atr14", "atr_14", "swing", "atr")
+            .with_reference("atr_14", "atr14")
             .build()
         )
         ema = a.definitions[0]
@@ -112,8 +116,8 @@ class TestAnalysisBuilder:
         assert atr.parameters[0].value == 14
         swing = a.definitions[2]
         assert swing.name == "swing"
-        assert len(swing.parameters) == 2
-        assert len(swing.bindings) == 1
+        assert len(swing.parameters) == 3
+        assert swing.parameters[2].value == ReferenceExpression("atr14")
 
     def test_with_metadata(self) -> None:
         a = (
@@ -130,21 +134,12 @@ class TestAnalysisBuilder:
         with pytest.raises(ValueError, match="Duplicate definition name: ema20"):
             builder.define("ema20", "analyzer", "EMAAnalyzer")
 
-    def test_bind_unknown_source_raises(self) -> None:
+    def test_with_reference_unknown_source_raises(self) -> None:
         builder = AnalysisBuilder("test", "1.0.0").define(
             "swing", "analyzer", "SwingStructureAnalyzer"
         )
         with pytest.raises(ValueError, match="Unknown source definition: atr14"):
-            builder.define("signal", "signal", "PullbackSignal").bind(
-                "atr14", "atr_14", "signal", "atr"
-            )
-
-    def test_bind_unknown_target_raises(self) -> None:
-        builder = AnalysisBuilder("test", "1.0.0").define("atr14", "analyzer", "ATRAnalyzer")
-        with pytest.raises(ValueError, match="Unknown target definition: unknown"):
-            builder.define("swing", "analyzer", "SwingStructureAnalyzer").bind(
-                "atr14", "atr_14", "unknown", "atr"
-            )
+            builder.with_reference("atr_14", "atr14")
 
     def test_immutable_analysis(self) -> None:
         a = AnalysisBuilder("test", "1.0.0").define("d", "a", "I").build()
@@ -200,11 +195,11 @@ class TestAnalysisBuilder:
             .define("swing", "analyzer", "SwingStructureAnalyzer")
             .with_param("lookback", 100)
             .with_param("min_separation_atr", 1.5)
-            .bind("atr14", "atr_14", "swing", "atr")
+            .with_reference("atr_14", "atr14")
             .define("signal", "signal", "PullbackSignal")
             .with_param("min_strength", 0.5)
-            .bind("swing", "four_swing_pullback", "signal", "pullback")
-            .bind("ema20", "ema_20", "signal", "trend")
+            .with_reference("four_swing_pullback", "swing")
+            .with_reference("trend", "ema20")
             .build()
         )
         assert analysis.name == "pullback_4swing"
@@ -220,11 +215,15 @@ class TestAnalysisBuilder:
 
         swing = analysis.definitions[2]
         assert swing.provider == "SwingStructureAnalyzer"
-        assert len(swing.bindings) == 1
-        assert swing.bindings[0].source == "atr14"
+        assert len(swing.parameters) == 3
+        assert swing.parameters[2].value == ReferenceExpression("atr14")
 
         signal = analysis.definitions[3]
         assert signal.provider == "PullbackSignal"
-        assert len(signal.bindings) == 2
-        assert signal.bindings[0].source == "swing"
-        assert signal.bindings[1].source == "ema20"
+        assert len(signal.parameters) == 3
+        assert signal.parameters[1] == Parameter(
+            name="four_swing_pullback", value=ReferenceExpression("swing")
+        )
+        assert signal.parameters[2] == Parameter(
+            name="trend", value=ReferenceExpression("ema20")
+        )

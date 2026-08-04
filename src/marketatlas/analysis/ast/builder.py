@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from marketatlas.analysis.ast.expressions import wrap
+from marketatlas.analysis.ast.expressions import ReferenceExpression, wrap
 from marketatlas.analysis.ast.models import (
     Analysis,
-    Binding,
     Definition,
     Parameter,
     Provider,
     derive_timeframes,
 )
-from marketatlas.data.types import Timeframe
 
 
 class _DefinitionBuilder:
@@ -18,23 +16,35 @@ class _DefinitionBuilder:
         self._name = name
         self._provider_name = provider_name
         self._parameters: list[Parameter] = []
-        self._bindings: list[Binding] = []
-        self._timeframe: Timeframe | None = None
 
     def with_param(self, name: str, value: object) -> _DefinitionBuilder:
         self._parameters.append(Parameter(name=name, value=wrap(value)))
         return self
 
-    def with_timeframe(self, timeframe: str | Timeframe) -> _DefinitionBuilder:
-        self._timeframe = _coerce_timeframe(timeframe)
+    def with_reference(self, name: str, source: str) -> _DefinitionBuilder:
+        """Pass the ``source`` definition as a reference parameter (backlog 061).
+
+        Equivalent to the DSL ``name: source``: the referenced definition is a
+        parameter value. A reference to a ``TimeFrame`` definition resolves to
+        the consumer's timeframe at compile time; a reference to a
+        fact-producing definition is a dependency edge (consumed as a fact
+        requirement on signal definitions).
+        """
+        self._builder._require_definition(source)
+        self._parameters.append(Parameter(name=name, value=ReferenceExpression(source)))
         return self
 
-    def bind(self, source: str, output: str, target: str, input: str) -> _DefinitionBuilder:
+    def with_timeframe(self, source: str) -> _DefinitionBuilder:
+        """Bind the definition's timeframe to a ``TimeFrame`` definition.
+
+        Equivalent to ``with_reference("timeframe", source)`` but validates up
+        front that ``source`` names a ``TimeFrame`` definition (backlog 061).
+        """
         if source not in self._builder._definitions:
             raise ValueError(f"Unknown source definition: {source}")
-        if target not in self._builder._definitions:
-            raise ValueError(f"Unknown target definition: {target}")
-        self._bindings.append(Binding(source=source, output=output, target=target, input=input))
+        if source not in self._builder._timeframe_defs:
+            raise ValueError(f"'{source}' is not a TimeFrame definition")
+        self._parameters.append(Parameter(name="timeframe", value=ReferenceExpression(source)))
         return self
 
     def define(
@@ -60,8 +70,6 @@ class _DefinitionBuilder:
             name=self._name,
             provider=self._provider_name,
             parameters=tuple(self._parameters),
-            bindings=tuple(self._bindings),
-            timeframe=self._timeframe,
         )
 
 
@@ -71,15 +79,11 @@ class AnalysisBuilder:
         self._version = version
         self._definitions: dict[str, _DefinitionBuilder] = {}
         self._providers: dict[str, Provider] = {}
+        self._timeframe_defs: set[str] = set()
         self._metadata: dict[str, str] = {}
-        self._base_timeframe: Timeframe | None = None
 
     def with_metadata(self, key: str, value: str) -> AnalysisBuilder:
         self._metadata[key] = value
-        return self
-
-    def with_timeframe(self, timeframe: str | Timeframe) -> AnalysisBuilder:
-        self._base_timeframe = _coerce_timeframe(timeframe)
         return self
 
     def define(
@@ -103,6 +107,10 @@ class AnalysisBuilder:
 
         if provider_name not in self._providers:
             raise ValueError(f"Unknown provider: {provider_name}")
+
+        provider = self._providers[provider_name]
+        if provider_name == "timeframe" or provider.category == "timeframe":
+            self._timeframe_defs.add(name)
 
         db = _DefinitionBuilder(self, name, provider_name)
         self._definitions[name] = db
@@ -128,16 +136,10 @@ class AnalysisBuilder:
             version=self._version,
             definitions=definitions,
             providers=tuple(self._providers.values()),
-            timeframes=derive_timeframes(self._base_timeframe, definitions),
+            timeframes=derive_timeframes(definitions),
             metadata=self._metadata if self._metadata else None,
         )
 
-
-def _coerce_timeframe(timeframe: str | Timeframe) -> Timeframe:
-    if isinstance(timeframe, Timeframe):
-        return timeframe
-    try:
-        return Timeframe(timeframe)
-    except ValueError:
-        valid = ", ".join(tf.value for tf in Timeframe)
-        raise ValueError(f"Invalid timeframe '{timeframe}'. Valid timeframes: {valid}") from None
+    def _require_definition(self, name: str) -> None:
+        if name not in self._definitions:
+            raise ValueError(f"Unknown source definition: {name}")

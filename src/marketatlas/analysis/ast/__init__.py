@@ -54,7 +54,6 @@ from marketatlas.analysis.ast.lexer import (
 from marketatlas.analysis.ast.models import (
     Analysis,
     BaseNode,
-    Binding,
     Capability,
     Definition,
     Parameter,
@@ -95,7 +94,6 @@ __all__ = [
     "Analysis",
     "AnalysisBuilder",
     "BaseNode",
-    "Binding",
     "COLON",
     "COMMA",
     "Capability",

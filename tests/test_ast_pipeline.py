@@ -364,7 +364,7 @@ class TestAstToConfig:
             AnalysisBuilder("mixed", "1.0")
             .define("ema20", "analyzer", "EMAAnalyzer")
             .define("sig", "signal", "PullbackSignal")
-            .bind("ema20", "ema_20", "sig", "trend_key")
+            .with_reference("trend", "ema20")
             .define("risk", "risk", "risk_based")
             .build()
         )

@@ -7,10 +7,10 @@ from marketatlas.analysis.ast.expressions import (
     ChoiceExpression,
     Expression,
     LiteralExpression,
+    ReferenceExpression,
 )
 from marketatlas.analysis.ast.models import (
     Analysis,
-    Binding,
     Capability,
     Definition,
     Parameter,
@@ -27,12 +27,15 @@ def clone_expression(expr: Expression) -> Expression:
 
     ``LiteralExpression`` payloads are deep-copied so mutable values (lists,
     dicts) never share state between the original and its clone.
-    ``ChoiceExpression`` members are cloned recursively.
+    ``ChoiceExpression`` members and ``ReferenceExpression`` names are cloned
+    recursively.
     """
     if isinstance(expr, LiteralExpression):
         return LiteralExpression(deepcopy(expr.value))
     if isinstance(expr, ChoiceExpression):
         return ChoiceExpression(tuple(clone_expression(v) for v in expr.values))
+    if isinstance(expr, ReferenceExpression):
+        return ReferenceExpression(expr.name)
     raise TypeError(f"Cannot clone unsupported expression node: {type(expr).__name__}")
 
 
@@ -46,10 +49,6 @@ def clone(node: Definition) -> Definition: ...
 
 @overload
 def clone(node: Parameter) -> Parameter: ...
-
-
-@overload
-def clone(node: Binding) -> Binding: ...
 
 
 @overload
@@ -72,10 +71,10 @@ def clone(node: object) -> object:
     """Return an equal, independent deep copy of an AST node.
 
     Every field of the returned node is freshly allocated: nested definitions,
-    parameters, bindings, providers, and expression trees are cloned
-    recursively, and ``metadata`` dicts are copied. Mutating a clone's payload
-    (or replacing a field) never affects the original. ``id``/``metadata`` are
-    preserved, so cloning a pure-literal AST is semantically a no-op.
+    parameters, providers, and expression trees are cloned recursively, and
+    ``metadata`` dicts are copied. Mutating a clone's payload (or replacing a
+    field) never affects the original. ``id``/``metadata`` are preserved, so
+    cloning a pure-literal AST is semantically a no-op.
     """
     if isinstance(node, Analysis):
         return Analysis(
@@ -92,20 +91,11 @@ def clone(node: object) -> object:
             name=node.name,
             provider=node.provider,
             parameters=tuple(clone(p) for p in node.parameters),
-            bindings=tuple(clone(b) for b in node.bindings),
-            timeframe=node.timeframe,
             id=node.id,
             metadata=_clone_metadata(node.metadata),
         )
     if isinstance(node, Parameter):
         return Parameter(name=node.name, value=clone_expression(node.value))
-    if isinstance(node, Binding):
-        return Binding(
-            source=node.source,
-            output=node.output,
-            target=node.target,
-            input=node.input,
-        )
     if isinstance(node, Provider):
         return Provider(
             name=node.name,

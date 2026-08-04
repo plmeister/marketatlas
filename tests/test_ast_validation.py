@@ -1,5 +1,6 @@
 import pytest
-from marketatlas.analysis.ast.models import Analysis, Binding, Definition, Parameter, Provider
+from marketatlas.analysis.ast.expressions import LiteralExpression, ReferenceExpression
+from marketatlas.analysis.ast.models import Analysis, Definition, Parameter, Provider
 from marketatlas.analysis.ast.validation import DiagnosticSeverity, ValidationResult, validate
 
 
@@ -65,7 +66,7 @@ class TestValidAST:
         r = validate(a)
         assert r.is_valid
 
-    def test_multiple_definitions_no_bindings(self) -> None:
+    def test_multiple_definitions_no_references(self) -> None:
         a = Analysis(
             name="test",
             version="1.0.0",
@@ -78,16 +79,16 @@ class TestValidAST:
         r = validate(a)
         assert r.is_valid
 
-    def test_with_bindings(self) -> None:
+    def test_with_references(self) -> None:
         atr = Definition(
             name="atr14",
             provider="ATRAnalyzer",
-            parameters=(Parameter(name="period", value=14),),
+            parameters=(Parameter(name="period", value=LiteralExpression(14)),),
         )
         swing = Definition(
             name="swing",
             provider="SwingStructureAnalyzer",
-            bindings=(Binding(source="atr14", output="atr_14", target="swing", input="atr"),),
+            parameters=(Parameter(name="atr_14", value=ReferenceExpression("atr14")),),
         )
         a = Analysis(name="test", version="1.0.0", providers=_providers(), definitions=(atr, swing))
         r = validate(a)
@@ -143,24 +144,24 @@ class TestValidAST:
         ema = Definition(
             name="ema20",
             provider="EMAAnalyzer",
-            parameters=(Parameter(name="period", value=20),),
+            parameters=(Parameter(name="period", value=LiteralExpression(20)),),
         )
         atr = Definition(
             name="atr14",
             provider="ATRAnalyzer",
-            parameters=(Parameter(name="period", value=14),),
+            parameters=(Parameter(name="period", value=LiteralExpression(14)),),
         )
         swing = Definition(
             name="swing",
             provider="SwingStructureAnalyzer",
-            bindings=(Binding(source="atr14", output="atr_14", target="swing", input="atr"),),
+            parameters=(Parameter(name="atr_14", value=ReferenceExpression("atr14")),),
         )
         signal = Definition(
             name="signal",
             provider="PullbackSignal",
-            bindings=(
-                Binding(source="swing", output="pullback", target="signal", input="pullback"),
-                Binding(source="ema20", output="ema_20", target="signal", input="trend"),
+            parameters=(
+                Parameter(name="four_swing_pullback", value=ReferenceExpression("swing")),
+                Parameter(name="trend", value=ReferenceExpression("ema20")),
             ),
         )
         a = Analysis(
@@ -233,8 +234,8 @@ class TestUnknownProvider:
         assert not r.is_valid
 
 
-class TestSelfReferencingBinding:
-    def test_self_referencing(self) -> None:
+class TestSelfReferencing:
+    def test_self_reference_cycle(self) -> None:
         a = Analysis(
             name="test",
             version="1.0.0",
@@ -243,39 +244,19 @@ class TestSelfReferencingBinding:
                 Definition(
                     name="a",
                     provider="A",
-                    bindings=(Binding(source="a", output="x", target="a", input="y"),),
+                    parameters=(Parameter(name="y", value=ReferenceExpression("a")),),
                 ),
             ),
         )
         r = validate(a)
         assert not r.is_valid
-        assert len(r.errors) == 1
-        assert "Self-referencing" in r.errors[0].message
+        cycle_errors = [e for e in r.errors if "Cyclic" in e.message]
+        assert len(cycle_errors) == 1
         assert r.errors[0].severity == DiagnosticSeverity.ERROR
-
-    def test_no_provider_needed_for_self_ref_check(self) -> None:
-        """Self-referencing binding check works alongside empty provider error."""
-        a = Analysis(
-            name="test",
-            version="1.0.0",
-            definitions=(
-                Definition(
-                    name="a",
-                    provider="",
-                    bindings=(Binding(source="a", output="x", target="a", input="y"),),
-                ),
-            ),
-        )
-        r = validate(a)
-        assert not r.is_valid
-        self_ref = [e for e in r.errors if "Self-referencing" in e.message]
-        assert len(self_ref) == 1
-        empty_prov = [e for e in r.errors if "empty provider" in e.message]
-        assert len(empty_prov) == 1
 
 
 class TestUnknownReferences:
-    def test_unknown_source(self) -> None:
+    def test_unknown_reference(self) -> None:
         a = Analysis(
             name="test",
             version="1.0.0",
@@ -283,48 +264,55 @@ class TestUnknownReferences:
                 Definition(
                     name="b",
                     provider="B",
-                    bindings=(Binding(source="unknown", output="x", target="b", input="y"),),
+                    parameters=(Parameter(name="y", value=ReferenceExpression("unknown")),),
                 ),
             ),
         )
         r = validate(a)
         assert not r.is_valid
-        source_errors = [e for e in r.errors if "Unknown source" in e.message]
+        source_errors = [e for e in r.errors if "Unknown reference" in e.message]
         assert len(source_errors) == 1
+        assert "references 'unknown'" in source_errors[0].message
 
-    def test_unknown_target(self) -> None:
+    def test_reference_to_signal_rejected(self) -> None:
+        sig = Definition(name="sig", provider="PullbackSignal")
         a = Analysis(
             name="test",
             version="1.0.0",
+            providers=_providers(),
             definitions=(
+                sig,
                 Definition(
-                    name="a",
-                    provider="A",
-                    bindings=(Binding(source="a", output="x", target="unknown", input="y"),),
+                    name="other",
+                    provider="EMAAnalyzer",
+                    parameters=(Parameter(name="x", value=ReferenceExpression("sig")),),
                 ),
             ),
         )
         r = validate(a)
         assert not r.is_valid
-        target_errors = [e for e in r.errors if "Unknown target" in e.message]
+        target_errors = [e for e in r.errors if "produces no consumable fact" in e.message]
         assert len(target_errors) == 1
 
-    def test_both_unknown(self) -> None:
+    def test_reference_to_risk_rejected(self) -> None:
+        risk = Definition(name="risk", provider="RiskEngine")
         a = Analysis(
             name="test",
             version="1.0.0",
-            providers=_ps("C"),
+            providers=_providers(),
             definitions=(
+                risk,
                 Definition(
-                    name="c",
-                    provider="C",
-                    bindings=(Binding(source="x", output="o", target="y", input="i"),),
+                    name="other",
+                    provider="EMAAnalyzer",
+                    parameters=(Parameter(name="x", value=ReferenceExpression("risk")),),
                 ),
             ),
         )
         r = validate(a)
         assert not r.is_valid
-        assert len(r.errors) == 2
+        target_errors = [e for e in r.errors if "produces no consumable fact" in e.message]
+        assert len(target_errors) == 1
 
 
 class TestCycleDetection:
@@ -337,12 +325,12 @@ class TestCycleDetection:
                 Definition(
                     name="a",
                     provider="A",
-                    bindings=(Binding(source="b", output="x", target="a", input="y"),),
+                    parameters=(Parameter(name="x", value=ReferenceExpression("b")),),
                 ),
                 Definition(
                     name="b",
                     provider="B",
-                    bindings=(Binding(source="a", output="x", target="b", input="y"),),
+                    parameters=(Parameter(name="y", value=ReferenceExpression("a")),),
                 ),
             ),
         )
@@ -360,17 +348,17 @@ class TestCycleDetection:
                 Definition(
                     name="a",
                     provider="A",
-                    bindings=(Binding(source="b", output="x", target="a", input="y"),),
+                    parameters=(Parameter(name="x", value=ReferenceExpression("b")),),
                 ),
                 Definition(
                     name="b",
                     provider="B",
-                    bindings=(Binding(source="c", output="x", target="b", input="y"),),
+                    parameters=(Parameter(name="y", value=ReferenceExpression("c")),),
                 ),
                 Definition(
                     name="c",
                     provider="C",
-                    bindings=(Binding(source="a", output="x", target="c", input="y"),),
+                    parameters=(Parameter(name="z", value=ReferenceExpression("a")),),
                 ),
             ),
         )
@@ -389,12 +377,12 @@ class TestCycleDetection:
                 Definition(
                     name="b",
                     provider="B",
-                    bindings=(Binding(source="a", output="x", target="b", input="y"),),
+                    parameters=(Parameter(name="x", value=ReferenceExpression("a")),),
                 ),
                 Definition(
                     name="c",
                     provider="C",
-                    bindings=(Binding(source="b", output="x", target="c", input="y"),),
+                    parameters=(Parameter(name="y", value=ReferenceExpression("b")),),
                 ),
             ),
         )
@@ -406,12 +394,12 @@ class TestCycleDetection:
         b1 = Definition(
             name="b1",
             provider="B1",
-            bindings=(Binding(source="src", output="x", target="b1", input="y"),),
+            parameters=(Parameter(name="x", value=ReferenceExpression("src")),),
         )
         b2 = Definition(
             name="b2",
             provider="B2",
-            bindings=(Binding(source="src", output="x", target="b2", input="y"),),
+            parameters=(Parameter(name="y", value=ReferenceExpression("src")),),
         )
         a = Analysis(
             name="test",
@@ -435,7 +423,7 @@ class TestUnusedDefinitions:
                 Definition(
                     name="ref",
                     provider="C",
-                    bindings=(Binding(source="used", output="x", target="ref", input="y"),),
+                    parameters=(Parameter(name="x", value=ReferenceExpression("used")),),
                 ),
             ),
         )
@@ -470,7 +458,7 @@ class TestUnusedDefinitions:
                 Definition(
                     name="b",
                     provider="B",
-                    bindings=(Binding(source="a", output="x", target="b", input="y"),),
+                    parameters=(Parameter(name="x", value=ReferenceExpression("a")),),
                 ),
             ),
         )
@@ -502,9 +490,7 @@ class TestMultipleErrors:
                 Definition(
                     name="self_ref",
                     provider="C",
-                    bindings=(
-                        Binding(source="self_ref", output="o", target="self_ref", input="i"),
-                    ),
+                    parameters=(Parameter(name="y", value=ReferenceExpression("self_ref")),),
                 ),
             ),
         )

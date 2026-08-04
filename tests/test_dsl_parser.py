@@ -2,17 +2,22 @@
 
 Parses the DSL grammar (055) over the lexer token stream (056) into a
 template ``Analysis``: literal params, list literals, ``ChoiceExpression``
-nodes (never expanded here), and ``Binding``s from reference/shorthand fields.
-Coverage is per-construct plus error paths with positioned messages and a
-round-trip through the compiler pipeline.
+nodes (never expanded here), and reference params from ``name: source`` fields
+and ``name,`` shorthand. Coverage is per-construct plus error paths with
+positioned messages and a round-trip through the compiler pipeline.
 """
 
 import pytest
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.ast.constructors import ATR, EMA, build_analysis
-from marketatlas.analysis.ast.expressions import Choice, LiteralExpression
+from marketatlas.analysis.ast.expressions import (
+    Choice,
+    ChoiceExpression,
+    LiteralExpression,
+    ReferenceExpression,
+)
 from marketatlas.analysis.ast.lexer import DslSyntaxError, SourcePosition
-from marketatlas.analysis.ast.models import Binding, Definition, Parameter
+from marketatlas.analysis.ast.models import Definition, Parameter
 from marketatlas.analysis.ast.parser import DslParseError, parse
 from marketatlas.analysis.ast.pipeline import (
     CompilationError,
@@ -57,7 +62,6 @@ class TestBasicDefinitions:
     def test_empty_fields(self) -> None:
         analysis = parse("trend := trend { }", name="demo")
         assert analysis.definitions[0].parameters == ()
-        assert analysis.definitions[0].bindings == ()
 
     def test_providers_populated_from_registry(self) -> None:
         analysis = parse("ema := ema { period: 20 }", name="demo")
@@ -157,25 +161,34 @@ class TestLists:
 
 
 class TestReferences:
-    def test_reference_produces_binding(self) -> None:
+    def test_reference_produces_param(self) -> None:
         analysis = parse(
             "ema := ema { period: 20 }\ntrend := trend { ema_20: ema }", name="demo"
         )
-        binding = analysis.definitions[1].bindings[0]
-        assert binding == Binding(source="ema", output="ema_20", target="trend", input="ema_20")
+        param = analysis.definitions[1].parameters[0]
+        assert param == Parameter(name="ema_20", value=ReferenceExpression("ema"))
 
     def test_reference_forward_declared_source(self) -> None:
         analysis = parse(
             "trend := trend { ema_20: ema }\nema := ema { period: 20 }", name="demo"
         )
-        binding = analysis.definitions[0].bindings[0]
-        assert binding == Binding(source="ema", output="ema_20", target="trend", input="ema_20")
+        param = analysis.definitions[0].parameters[0]
+        assert param == Parameter(name="ema_20", value=ReferenceExpression("ema"))
 
     def test_multiple_references_in_order(self) -> None:
         analysis = parse(
-            "ema := ema { period: 20 }\ntrend := trend { ema_20: ema }", name="demo"
+            "ema := ema { period: 20 }\n"
+            "swing := swings { lookback: 50 }\n"
+            "trend := trend { ema_20: ema }\n"
+            "pullback := detect_pullback { swing: swing, trend: trend }",
+            name="demo",
         )
-        assert [b.source for b in analysis.definitions[1].bindings] == ["ema"]
+        pullback = analysis.definitions[3]
+        assert [p.name for p in pullback.parameters] == ["swing", "trend"]
+        assert [p.value for p in pullback.parameters] == [
+            ReferenceExpression("swing"),
+            ReferenceExpression("trend"),
+        ]
 
 
 class TestShorthand:
@@ -183,14 +196,14 @@ class TestShorthand:
         analysis = parse(
             "atr_14 := atr { period: 14 }\nsr := sr { atr_14 }", name="demo"
         )
-        binding = analysis.definitions[1].bindings[0]
-        assert binding == Binding(source="atr_14", output="atr_14", target="sr", input="atr_14")
+        param = analysis.definitions[1].parameters[0]
+        assert param == Parameter(name="atr_14", value=ReferenceExpression("atr_14"))
 
     def test_shorthand_single_field_no_trailing_comma(self) -> None:
         analysis = parse(
             "atr_14 := atr { period: 14 }\nsr := sr { atr_14 }", name="demo"
         )
-        assert len(analysis.definitions[1].bindings) == 1
+        assert len(analysis.definitions[1].parameters) == 1
 
     def test_shorthand_must_be_provider_input(self) -> None:
         with pytest.raises(DslParseError) as exc:
@@ -213,8 +226,8 @@ class TestShorthand:
         )
         definition = analysis.definitions[1]
         assert definition.parameters[0].name == "level_tolerance_atr"
-        assert definition.bindings[0] == Binding(
-            source="atr_14", output="atr_14", target="sr", input="atr_14"
+        assert definition.parameters[1] == Parameter(
+            name="atr_14", value=ReferenceExpression("atr_14")
         )
 
 
@@ -261,11 +274,13 @@ class TestErrors:
         assert exc.value.position == SourcePosition(2, 1)
         assert "duplicate definition name 'ema'" in exc.value.message
 
-    def test_unknown_source_definition(self) -> None:
-        with pytest.raises(DslParseError) as exc:
-            parse("trend := trend { ema_20: ghost }", name="demo")
-        assert exc.value.position == SourcePosition(1, 26)
-        assert "unknown source definition 'ghost'" in exc.value.message
+    def test_unknown_reference_reported_by_pipeline(self) -> None:
+        analysis = parse("trend := trend { ema_20: ghost }", name="demo")
+        assert analysis.definitions[0].parameters[0] == Parameter(
+            name="ema_20", value=ReferenceExpression("ghost")
+        )
+        with pytest.raises(CompilationError, match="Unknown reference"):
+            _pipeline().expand(analysis)
 
     def test_missing_assign(self) -> None:
         with pytest.raises(DslParseError) as exc:
@@ -293,10 +308,11 @@ class TestErrors:
             parse("ema := ema { period: 20 } }", name="demo")
         assert "unexpected token" in exc.value.message
 
-    def test_reference_inside_choice_rejected(self) -> None:
-        with pytest.raises(DslParseError) as exc:
-            parse("x := ema { period: <ema | ema> }", name="demo")
-        assert "not allowed inside a choice" in exc.value.message
+    def test_reference_inside_choice_parses(self) -> None:
+        analysis = parse("x := ema { period: <ema | ema> }", name="demo")
+        value = analysis.definitions[0].parameters[0].value
+        assert isinstance(value, ChoiceExpression)
+        assert value.values[0] == ReferenceExpression("ema")
 
     def test_reference_inside_list_rejected(self) -> None:
         with pytest.raises(DslParseError) as exc:

@@ -18,6 +18,7 @@ from marketatlas.analysis.ast.models import (
 )
 from marketatlas.analysis.ast.param_schema import ParamSpec, format_type, type_compatible
 from marketatlas.analysis.ast.registry import ProviderRegistry, create_default_registry
+from marketatlas.data.types import Timeframe
 
 __all__ = [
     "ATR",
@@ -30,6 +31,7 @@ __all__ = [
     "SR",
     "SwingStructure",
     "Swings",
+    "TimeFrame",
     "Trend",
     "build_analysis",
     "construct",
@@ -112,7 +114,7 @@ def build_analysis(
         version=version,
         definitions=tuple(definitions),
         providers=tuple(providers),
-        timeframes=derive_timeframes(None, tuple(definitions)),
+        timeframes=derive_timeframes(tuple(definitions)),
     )
 
 
@@ -244,3 +246,33 @@ def ManageRisk(  # noqa: N802
 ) -> Definition:
     """Definition for the ``manage_risk`` provider (category ``risk``)."""
     return construct("manage_risk", name, **params)
+
+
+def TimeFrame(  # noqa: N802
+    name: str | None = None, resolution: object = None
+) -> Definition:
+    """Definition for the ``timeframe`` value-producing provider (backlog 061).
+
+    ``resolution`` is a timeframe string like ``"1w"`` (a ``Timeframe`` enum
+    is accepted and coerced to its string value). The definition is a
+    compile-time value: referenced by other definitions as a parameter value
+    (``timeframe: tf1w``) and resolved into ``AnalyzerConfig.timeframe``
+    during compilation.
+    """
+    if resolution is None:
+        raise ProviderConstructionError(
+            "Missing required parameter 'resolution' for provider 'timeframe'"
+        )
+    raw = resolution.value if isinstance(resolution, Timeframe) else resolution
+    if not isinstance(raw, str):
+        raise ProviderConstructionError(
+            f"Invalid resolution '{resolution}'. Expected a timeframe string"
+        )
+    try:
+        valid = Timeframe(raw).value
+    except ValueError:
+        available = ", ".join(tf.value for tf in Timeframe)
+        raise ProviderConstructionError(
+            f"Invalid resolution '{raw}'. Valid timeframes: {available}"
+        ) from None
+    return construct("timeframe", name, resolution=valid)

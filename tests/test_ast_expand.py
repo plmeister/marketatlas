@@ -3,11 +3,11 @@ from marketatlas.analysis.ast.expressions import (
     Choice,
     ChoiceExpression,
     LiteralExpression,
+    ReferenceExpression,
     wrap,
 )
 from marketatlas.analysis.ast.models import (
     Analysis,
-    Binding,
     Definition,
     Parameter,
     Provider,
@@ -214,29 +214,23 @@ class TestPurity:
 
 
 class TestStructurePreserved:
-    def test_bindings_preserved_in_variants(self) -> None:
-        binding = Binding(source="price", output="close", target="ema", input="source")
+    def test_reference_params_preserved_in_variants(self) -> None:
+        reference = Parameter(name="source", value=ReferenceExpression("price"))
         a = Analysis(
             name="test",
             version="1.0",
             definitions=(
-                Definition(
-                    name="price",
-                    provider="price",
-                    parameters=(),
-                    bindings=(),
-                ),
+                Definition(name="price", provider="price", parameters=()),
                 Definition(
                     name="ema",
                     provider="ema",
-                    parameters=(_param("period", Choice([50, 100])),),
-                    bindings=(binding,),
+                    parameters=(_param("period", Choice([50, 100])), reference),
                 ),
             ),
         )
         out = expand(a)
         for o in out:
-            assert o.definitions[1].bindings == (binding,)
+            assert o.definitions[1].parameters[1] == reference
 
     def test_providers_preserved(self) -> None:
         provider = Provider(
@@ -284,6 +278,24 @@ class TestStructurePreserved:
             value = restored["definitions"][0]["parameters"][0]["value"]  # type: ignore[index]
             assert isinstance(value, int)
             assert value in (50, 100)
+
+    def test_timeframes_recomputed_per_variant(self) -> None:
+        a = Analysis(
+            name="test",
+            version="1.0",
+            definitions=(
+                Definition(
+                    name="tf1w",
+                    provider="timeframe",
+                    parameters=(_param("resolution", "1w"),),
+                ),
+                _def("ema", _param("period", Choice([50, 100]))),
+            ),
+        )
+        out = expand(a)
+        assert len(out) == 2
+        for o in out:
+            assert o.timeframes == ("1w",)
 
 
 class TestDeterminism:

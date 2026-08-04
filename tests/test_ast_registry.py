@@ -1,4 +1,5 @@
 import pytest
+from marketatlas.analysis.ast.expressions import LiteralExpression
 from marketatlas.analysis.ast.models import Parameter, Provider
 from marketatlas.analysis.ast.registry import (
     ProviderNotFoundError,
@@ -97,7 +98,7 @@ class TestProviderRegistry:
             capability="compute_ema",
             category="analyzer",
             impl="CustomEMAAnalyzer",
-            default_params=(Parameter(name="period", value=20),),
+            default_params=(Parameter(name="period", value=LiteralExpression(20)),),
         )
         r.register_provider(p)
         resolved = r.resolve("compute_ema")
@@ -143,14 +144,16 @@ class TestDefaultRegistry:
     def test_contains_all_builtin_analyzers(self) -> None:
         r = create_default_registry()
         expected_caps = [
-            "compute_ema",
-            "compute_atr",
-            "analyze_trend",
-            "detect_swings",
-            "find_support_resistance",
+            "ema",
+            "atr",
+            "trend",
+            "swingstructure",
+            "swings",
+            "sr",
             "detect_pullback",
             "generate_signal",
             "manage_risk",
+            "timeframe",
         ]
         for cap in expected_caps:
             provider = r.resolve(cap)
@@ -159,21 +162,21 @@ class TestDefaultRegistry:
     def test_list_providers_count(self) -> None:
         r = create_default_registry()
         providers = r.list_providers()
-        assert len(providers) == 8
+        assert len(providers) == 10
 
     def test_default_params_present(self) -> None:
         r = create_default_registry()
-        ema = r.resolve("compute_ema")
+        ema = r.resolve("ema")
         assert len(ema.default_params) == 1
         assert ema.default_params[0].name == "period"
         assert ema.default_params[0].value == 20
 
-        atr = r.resolve("compute_atr")
+        atr = r.resolve("atr")
         assert len(atr.default_params) == 1
         assert atr.default_params[0].name == "period"
         assert atr.default_params[0].value == 14
 
-        swing = r.resolve("detect_swings")
+        swing = r.resolve("swingstructure")
         assert len(swing.default_params) == 1
         assert swing.default_params[0].name == "lookback"
         assert swing.default_params[0].value == 50

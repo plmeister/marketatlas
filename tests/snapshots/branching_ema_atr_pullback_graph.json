@@ -4,49 +4,49 @@
       "type": "EMAAnalyzer",
       "requires": [],
       "produces": [
-        "ema_20"
+        "ema_20_tf_1d"
       ]
     },
     {
       "type": "EMAAnalyzer",
       "requires": [],
       "produces": [
-        "ema_50"
+        "ema_50_tf_1d"
       ]
     },
     {
       "type": "ATRAnalyzer",
       "requires": [],
       "produces": [
-        "atr_14"
+        "atr_14_tf_1d"
       ]
     },
     {
       "type": "SwingStructureAnalyzer",
       "requires": [],
       "produces": [
-        "swing"
+        "swing_tf_1d"
       ]
     },
     {
       "type": "TrendAnalyzer",
       "requires": [
-        "ema_20",
-        "ema_50"
+        "ema_20_tf_1d",
+        "ema_50_tf_1d"
       ],
       "produces": [
-        "trend"
+        "trend_tf_1d"
       ]
     },
     {
       "type": "FourSwingPullbackDetector",
       "requires": [
-        "atr_14",
-        "swing",
-        "trend"
+        "atr_14_tf_1d",
+        "swing_tf_1d",
+        "trend_tf_1d"
       ],
       "produces": [
-        "four_swing_pullback"
+        "four_swing_pullback_tf_1d"
       ]
     }
   ]

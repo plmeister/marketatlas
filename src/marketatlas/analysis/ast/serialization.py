@@ -7,10 +7,10 @@ from marketatlas.analysis.ast.expressions import (
     ChoiceExpression,
     Expression,
     LiteralExpression,
+    ReferenceExpression,
 )
 from marketatlas.analysis.ast.models import (
     Analysis,
-    Binding,
     Definition,
     Parameter,
     Provider,
@@ -20,12 +20,16 @@ from marketatlas.data.types import Timeframe
 
 def _expression_to_dict(value: object, param_name: str = "") -> object:
     if isinstance(value, LiteralExpression):
+        if isinstance(value.value, Timeframe):
+            return value.value.value
         return value.value
     if isinstance(value, ChoiceExpression):
         return {
             "expr": "choice",
             "values": [_expression_to_dict(v, param_name) for v in value.values],
         }
+    if isinstance(value, ReferenceExpression):
+        return {"expr": "reference", "name": value.name}
     if isinstance(value, Expression):
         name_part = f" in parameter '{param_name}'" if param_name else ""
         raise ValueError(f"Unsupported expression node{name_part}: {type(value).__name__}")
@@ -33,28 +37,29 @@ def _expression_to_dict(value: object, param_name: str = "") -> object:
 
 
 def _dict_to_expression(value: object) -> Expression:
-    """Recursive deserializer for choice nodes; literals are wrapped."""
+    """Recursive deserializer for expression nodes; literals are wrapped."""
     if isinstance(value, Mapping) and value.get("expr") == "choice" and "values" in value:
         values = value["values"]
         assert isinstance(values, Sequence)
         return ChoiceExpression(tuple(_dict_to_expression(v) for v in values))
+    if isinstance(value, Mapping) and value.get("expr") == "reference" and "name" in value:
+        name = value["name"]
+        if not isinstance(name, str):
+            raise ValueError(f"Invalid reference expression: {value!r}")
+        return ReferenceExpression(name)
     if isinstance(value, Expression):
         return value
     return LiteralExpression(value)
 
 
 def _parameter_value_from_dict(value: object) -> object:
-    if isinstance(value, Mapping) and value.get("expr") == "choice" and "values" in value:
+    if isinstance(value, Mapping) and value.get("expr") in ("choice", "reference"):
         return _dict_to_expression(value)
     return value
 
 
 def _parameter_to_dict(p: Parameter) -> dict[str, object]:
     return {"name": p.name, "value": _expression_to_dict(p.value, p.name)}
-
-
-def _binding_to_dict(b: Binding) -> dict[str, str]:
-    return {"source": b.source, "output": b.output, "target": b.target, "input": b.input}
 
 
 def _provider_to_dict(p: Provider) -> dict[str, object]:
@@ -76,10 +81,6 @@ def _definition_to_dict(d: Definition) -> dict[str, object]:
     }
     if d.parameters:
         obj["parameters"] = [_parameter_to_dict(p) for p in d.parameters]
-    if d.bindings:
-        obj["bindings"] = [_binding_to_dict(b) for b in d.bindings]
-    if d.timeframe is not None:
-        obj["timeframe"] = d.timeframe.value
     if d.id:
         obj["id"] = d.id
     if d.metadata:
@@ -118,18 +119,6 @@ def _dict_to_parameter(d: Mapping[str, object]) -> Parameter:
     return Parameter(name=d["name"], value=_parameter_value_from_dict(d["value"]))  # type: ignore[arg-type]
 
 
-def _dict_to_binding(d: Mapping[str, object]) -> Binding:
-    for field in ("source", "output", "target", "input"):
-        if field not in d:
-            raise ValueError(f"Missing required field: {field}")
-    return Binding(
-        source=d["source"],  # type: ignore[arg-type]
-        output=d["output"],  # type: ignore[arg-type]
-        target=d["target"],  # type: ignore[arg-type]
-        input=d["input"],  # type: ignore[arg-type]
-    )
-
-
 def _dict_to_provider(d: Mapping[str, object]) -> Provider:
     for field in ("name", "capability", "category", "impl"):
         if field not in d:
@@ -153,31 +142,13 @@ def _dict_to_definition(d: Mapping[str, object]) -> Definition:
     params_raw = d.get("parameters", ())
     assert isinstance(params_raw, Sequence)
     params = tuple(_dict_to_parameter(p) for p in params_raw)
-    bindings_raw = d.get("bindings", ())
-    assert isinstance(bindings_raw, Sequence)
-    bindings = tuple(_dict_to_binding(b) for b in bindings_raw)
-    timeframe = _dict_to_timeframe(d.get("timeframe"))
     return Definition(
         name=d["name"],  # type: ignore[arg-type]
         provider=d["provider"],  # type: ignore[arg-type]
         parameters=params,
-        bindings=bindings,
-        timeframe=timeframe,
         id=d.get("id", ""),  # type: ignore[arg-type]
         metadata=d.get("metadata", None),  # type: ignore[arg-type]
     )
-
-
-def _dict_to_timeframe(value: object) -> Timeframe | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"Invalid timeframe: expected a string, got {type(value).__name__}")
-    try:
-        return Timeframe(value)
-    except ValueError:
-        valid = ", ".join(tf.value for tf in Timeframe)
-        raise ValueError(f"Invalid timeframe '{value}'. Valid timeframes: {valid}") from None
 
 
 def from_dict(data: Mapping[str, object]) -> Analysis:

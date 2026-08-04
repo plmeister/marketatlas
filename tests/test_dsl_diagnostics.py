@@ -176,10 +176,11 @@ class TestParseWithPositions:
         assert sm.parameters[("ema", "period")] == SourcePosition(2, 3)
         assert sm.parameters[("ema", "fast_key")] == SourcePosition(3, 3)
 
-    def test_parameter_positions_exclude_bindings(self) -> None:
+    def test_reference_param_positions_recorded(self) -> None:
         source = "ema := ema { period: 20 }\ntrend := trend { ema_20: ema }"
         _, sm = parse_with_positions(source, name="demo")
-        assert ("trend", "ema_20") not in sm.parameters
+        assert ("trend", "ema_20") in sm.parameters
+        assert sm.parameters[("trend", "ema_20")] == SourcePosition(2, 18)
 
     def test_source_text_preserved(self) -> None:
         source = "a := ema { period: 20 }"
@@ -207,8 +208,8 @@ class TestPipelinePositions:
         with pytest.raises(CompilationError) as exc:
             _positioned_pipeline(create_default_registry(), sm).run_to_ast(analysis)
         errors = exc.value.errors
-        assert any("Self-referencing binding" in d.message for d in errors)
-        self_ref = next(d for d in errors if "Self-referencing" in d.message)
+        assert any("Cyclic dependency detected" in d.message for d in errors)
+        self_ref = next(d for d in errors if "Cyclic dependency detected" in d.message)
         assert self_ref.position is not None
 
     def test_param_validation_error_positioned(self) -> None:

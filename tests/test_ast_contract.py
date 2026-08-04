@@ -120,5 +120,6 @@ class TestCapabilities:
             "sr",
             "swings",
             "swingstructure",
+            "timeframe",
             "trend",
         )

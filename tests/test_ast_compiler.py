@@ -1,5 +1,4 @@
 import pytest
-
 from marketatlas.analysis.analyzers.atr import ATRAnalyzer
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.ast.builder import AnalysisBuilder
@@ -60,7 +59,7 @@ class TestToConfig:
             AnalyzerConfig(type="ATRAnalyzer", params={"period": 14}),
         )
 
-    def test_signal_definition_with_bindings(self) -> None:
+    def test_signal_definition_with_references(self) -> None:
         a = (
             AnalysisBuilder("test", "1.0")
             .define("ema20", "analyzer", "EMAAnalyzer")
@@ -70,8 +69,8 @@ class TestToConfig:
             .with_param("period", 14)
             .define("signal", "signal", "PullbackSignal")
             .with_param("min_strength", 0.5)
-            .bind("trend", "trend", "signal", "trend_key")
-            .bind("atr14", "atr_14", "signal", "atr_key")
+            .with_reference("trend", "trend")
+            .with_reference("atr_14", "atr14")
             .build()
         )
         config = ASTCompiler.to_config(a)
@@ -109,7 +108,7 @@ class TestToConfig:
             .define("ema20", "analyzer", "EMAAnalyzer")
             .with_param("period", 20)
             .define("sig", "signal", "PullbackSignal")
-            .bind("ema20", "ema_20", "sig", "trend_key")
+            .with_reference("trend", "ema20")
             .define("risk", "risk", "risk_based")
             .build()
         )
@@ -133,9 +132,9 @@ class TestToConfig:
             AnalysisBuilder("dual", "1.0")
             .define("atr14", "analyzer", "ATRAnalyzer")
             .define("sig1", "signal", "PullbackSignal")
-            .bind("atr14", "atr_14", "sig1", "atr_key")
+            .with_reference("atr_14", "atr14")
             .define("sig2", "signal", "PullbackSignal")
-            .bind("atr14", "atr_14", "sig2", "atr_key")
+            .with_reference("atr_14", "atr14")
             .build()
         )
         config = ASTCompiler.to_config(a)
@@ -260,9 +259,9 @@ class TestCompile:
             .with_param("lookback", 100)
             .define("signal", "signal", "PullbackSignal")
             .with_param("min_strength", 0.5)
-            .bind("trend", "trend", "signal", "trend_key")
-            .bind("atr14", "atr_14", "signal", "atr_key")
-            .bind("swing", "four_swing_pullback", "signal", "pullback_key")
+            .with_reference("trend", "trend")
+            .with_reference("atr_14", "atr14")
+            .with_reference("four_swing_pullback", "swing")
             .define("risk", "risk", "risk_based")
             .with_param("risk_pct", 1.0)
             .build()

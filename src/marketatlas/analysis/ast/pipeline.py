@@ -11,10 +11,18 @@ from marketatlas.analysis.ast.expressions import (
     ChoiceExpression,
     Expression,
     LiteralExpression,
+    ReferenceExpression,
     choice_leaves,
 )
 from marketatlas.analysis.ast.lexer import SourcePosition
-from marketatlas.analysis.ast.models import Analysis, Definition, Parameter, Provider
+from marketatlas.analysis.ast.models import (
+    Analysis,
+    Definition,
+    Parameter,
+    Provider,
+    derive_timeframes,
+    is_timeframe_definition,
+)
 from marketatlas.analysis.ast.param_schema import format_type, type_compatible
 from marketatlas.analysis.ast.registry import ProviderRegistry
 from marketatlas.analysis.ast.validation import (
@@ -23,6 +31,7 @@ from marketatlas.analysis.ast.validation import (
     validate,
 )
 from marketatlas.analysis.graph import AnalysisGraph
+from marketatlas.data.types import Timeframe
 from marketatlas.strategy.config import (
     AnalyzerConfig,
     RiskConfig,
@@ -129,8 +138,6 @@ class RegistryResolutionPass(CompilerPass):
                     name=d.name,
                     provider=provider_name,
                     parameters=merged_params,
-                    bindings=d.bindings,
-                    timeframe=d.timeframe,
                     id=d.id,
                     metadata=d.metadata,
                 )
@@ -272,6 +279,12 @@ class ParamValidationPass(CompilerPass):
             declared = {p.name for p in d.parameters}
 
             for p in d.parameters:
+                if _is_reference_param(p):
+                    # A reference parameter is not a provider parameter: a
+                    # TimeFrame reference fills the compile-time timeframe slot
+                    # and a fact reference declares a dependency edge (backlog
+                    # 061). Neither is validated against the provider schema.
+                    continue
                 spec = known.get(p.name)
                 if spec is None:
                     known_str = ", ".join(sorted(known))
@@ -442,6 +455,13 @@ def _provider_map(analysis: Analysis) -> dict[str, Provider]:
     return {p.name: p for p in analysis.providers}
 
 
+def _is_reference_param(param: Parameter) -> bool:
+    """Whether a parameter value references a definition (backlog 061)."""
+    return any(
+        isinstance(leaf, ReferenceExpression) for leaf in choice_leaves(param.value)
+    )
+
+
 def _merge_default_params(
     provider: Provider, params: tuple[Parameter, ...]
 ) -> tuple[Parameter, ...]:
@@ -543,20 +563,9 @@ def expand(analysis: Analysis, source_map: SourceMap | None = None) -> tuple[Ana
         Analysis(
             name=template.name,
             version=template.version,
-            definitions=tuple(
-                Definition(
-                    name=d.name,
-                    provider=d.provider,
-                    parameters=params,
-                    bindings=d.bindings,
-                    timeframe=d.timeframe,
-                    id=d.id,
-                    metadata=d.metadata,
-                )
-                for d, params in zip(template.definitions, combo)
-            ),
+            definitions=_variant_definitions(template.definitions, combo),
             providers=template.providers,
-            timeframes=template.timeframes,
+            timeframes=_variant_timeframes(template.definitions, combo),
             id=template.id,
             metadata=template.metadata,
         )
@@ -564,8 +573,30 @@ def expand(analysis: Analysis, source_map: SourceMap | None = None) -> tuple[Ana
     )
 
 
+def _variant_definitions(
+    template: Sequence[Definition], combo: tuple[tuple[Parameter, ...], ...]
+) -> tuple[Definition, ...]:
+    return tuple(
+        Definition(
+            name=d.name,
+            provider=d.provider,
+            parameters=params,
+            id=d.id,
+            metadata=d.metadata,
+        )
+        for d, params in zip(template, combo)
+    )
+
+
+def _variant_timeframes(
+    template: Sequence[Definition], combo: tuple[tuple[Parameter, ...], ...]
+) -> tuple[str, ...]:
+    return derive_timeframes(_variant_definitions(template, combo))
+
+
 def _ast_to_config(analysis: Analysis) -> StrategyConfig:
     providers = _provider_map(analysis)
+    def_by_name = {d.name: d for d in analysis.definitions}
     analyzer_configs: list[AnalyzerConfig] = []
     signal_configs: list[SignalConfig] = []
     risk_config: RiskConfig = RiskConfig(algorithm="none")
@@ -577,31 +608,44 @@ def _ast_to_config(analysis: Analysis) -> StrategyConfig:
             raise CompilationError(f"Unknown provider: {d.provider}")
 
         params: dict[str, object] = {}
+        requires: list[str] = []
+        timeframe: str | None = None
+
         for p in d.parameters:
             value: object = p.value
+            if isinstance(value, ReferenceExpression):
+                resolved = _resolve_reference(
+                    p.name, value, def_by_name, provider, d.name, requires
+                )
+                if resolved is not None:
+                    timeframe = resolved
+                continue
             if isinstance(value, LiteralExpression):
-                value = value.value
+                params[p.name] = value.value
             elif isinstance(value, ChoiceExpression):
                 raise CompilationError(
                     f"Parameter '{p.name}' of definition '{d.name}' is a "
                     f"ChoiceExpression and cannot be compiled until expanded "
                     f"(template expansion, backlog 050)."
                 )
-            elif isinstance(value, Expression):
+            else:
                 raise CompilationError(
                     f"Non-literal expression for parameter '{p.name}' of definition "
                     f"'{d.name}' cannot be compiled yet: {type(value).__name__}"
                 )
-            params[p.name] = value
 
-        tf = d.timeframe.value if d.timeframe is not None else base_tf
         if provider.category == "analyzer":
             analyzer_configs.append(
-                AnalyzerConfig(type=provider.impl, params=params, timeframe=tf)
+                AnalyzerConfig(
+                    type=provider.impl,
+                    params=params,
+                    timeframe=timeframe if timeframe is not None else base_tf,
+                )
             )
         elif provider.category == "signal":
-            requires = tuple(b.output for b in d.bindings)
-            signal_configs.append(SignalConfig(type=provider.impl, requires=requires, rules=params))
+            signal_configs.append(
+                SignalConfig(type=provider.impl, requires=tuple(requires), rules=params)
+            )
         elif provider.category == "risk":
             risk_config = RiskConfig(algorithm=provider.impl, params=params)
 
@@ -622,3 +666,64 @@ def _ast_to_config(analysis: Analysis) -> StrategyConfig:
             risk=config.risk,
         )
     return config
+
+
+def _resolve_reference(
+    param_name: str,
+    reference: ReferenceExpression,
+    def_by_name: dict[str, Definition],
+    provider: Provider,
+    owner: str,
+    requires: list[str],
+) -> str | None:
+    """Resolve a reference parameter to a timeframe value, or None.
+
+    A reference to a ``TimeFrame`` definition is a compile-time value: the
+    definition's ``resolution`` becomes the consumer's ``AnalyzerConfig``
+    timeframe (backlog 061). A reference to a fact-producing definition is a
+    dependency edge; on a signal the parameter name is the consumed fact name
+    and is added to ``requires``. Returns the resolved timeframe string, or
+    ``None`` when the reference is a fact dependency.
+    """
+    target = def_by_name.get(reference.name)
+    if target is None:
+        raise CompilationError(
+            f"Unknown reference: definition '{owner}' references '{reference.name}'"
+        )
+    if is_timeframe_definition(target):
+        if provider.category != "analyzer":
+            raise CompilationError(
+                f"Reference to TimeFrame definition '{reference.name}' on '{owner}' "
+                f"is only valid on analyzer definitions, not '{provider.category}'"
+            )
+        return _resolution_value(target)
+    if provider.category == "signal":
+        requires.append(param_name)
+    return None
+
+
+def _resolution_value(target: Definition) -> str:
+    for p in target.parameters:
+        if p.name == "resolution":
+            value = p.value.value if isinstance(p.value, LiteralExpression) else p.value
+            tf = _coerce_timeframe(value)
+            if tf is None:
+                raise CompilationError(
+                    f"TimeFrame definition '{target.name}' has invalid resolution "
+                    f"{value!r}"
+                )
+            return tf.value
+    raise CompilationError(
+        f"TimeFrame definition '{target.name}' is missing the 'resolution' parameter"
+    )
+
+
+def _coerce_timeframe(value: object) -> Timeframe | None:
+    if isinstance(value, Timeframe):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        return Timeframe(value)
+    except ValueError:
+        return None

@@ -181,6 +181,25 @@ def _derive_contract(cls: type) -> ProviderContract:
     return ProviderContract(inputs=inputs, outputs=outputs)
 
 
+def _register_timeframe(registry: ProviderRegistry) -> None:
+    """Register the ``timeframe`` value-producing capability (backlog 061).
+
+    A ``TimeFrame`` definition is a compile-time value, never a runtime
+    analyzer: its ``resolution`` param (a simple string literal like ``"1w"``)
+    is resolved by the compiler and injected into ``AnalyzerConfig.timeframe``.
+    Provider name doubles as the capability key so
+    ``Definition.provider == "timeframe"`` stays the marker through registry
+    resolution. No impl class and no fact contract — the definition produces
+    nothing at runtime.
+    """
+    schema = (ParamSpec(name="resolution", required=True, expected_type=str),)
+    registry.register_provider(
+        Provider(name="timeframe", capability="timeframe", category="timeframe", impl="TimeFrame")
+    )
+    registry.register_param_schema("timeframe", schema)
+    registry.register_contract("timeframe", ProviderContract())
+
+
 def create_default_registry() -> ProviderRegistry:
     from marketatlas.analysis.analyzers.atr import ATRAnalyzer
     from marketatlas.analysis.analyzers.ema import EMAAnalyzer
@@ -193,6 +212,7 @@ def create_default_registry() -> ProviderRegistry:
     from marketatlas.strategy.risk import RiskEngine
 
     registry = ProviderRegistry()
+    _register_timeframe(registry)
     registry.register("ema", EMAAnalyzer, default_params={"period": 20})
     registry.register("atr", ATRAnalyzer, default_params={"period": 14})
     registry.register("trend", TrendAnalyzer)

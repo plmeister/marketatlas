@@ -1,8 +1,8 @@
 import pytest
+from marketatlas.analysis.ast.expressions import LiteralExpression, ReferenceExpression
 from marketatlas.analysis.ast.models import (
     Analysis,
     BaseNode,
-    Binding,
     Capability,
     Definition,
     Parameter,
@@ -24,22 +24,22 @@ class TestBaseNode:
 
 class TestParameter:
     def test_construction(self) -> None:
-        p = Parameter(name="period", value=20)
+        p = Parameter(name="period", value=LiteralExpression(20))
         assert p.name == "period"
-        assert p.value == 20
+        assert p.value == LiteralExpression(20)
 
     def test_frozen(self) -> None:
-        p = Parameter(name="period", value=20)
+        p = Parameter(name="period", value=LiteralExpression(20))
         with pytest.raises(AttributeError):
             p.name = "new_name"  # type: ignore[misc]
 
     def test_string_value(self) -> None:
-        p = Parameter(name="source", value="close")
-        assert p.value == "close"
+        p = Parameter(name="source", value=LiteralExpression("close"))
+        assert p.value == LiteralExpression("close")
 
     def test_float_value(self) -> None:
-        p = Parameter(name="threshold", value=1.5)
-        assert p.value == 1.5
+        p = Parameter(name="threshold", value=LiteralExpression(1.5))
+        assert p.value == LiteralExpression(1.5)
 
 
 class TestCapability:
@@ -72,7 +72,7 @@ class TestProvider:
         assert p.impl == "EMAAnalyzer"
 
     def test_with_default_params(self) -> None:
-        params = (Parameter(name="period", value=20),)
+        params = (Parameter(name="period", value=LiteralExpression(20)),)
         p = Provider(
             name="EMAAnalyzer",
             capability="compute_ema",
@@ -93,18 +93,19 @@ class TestProvider:
             p.name = "new"  # type: ignore[misc]
 
 
-class TestBinding:
+class TestReferenceExpression:
     def test_construction(self) -> None:
-        b = Binding(source="atr14", output="atr_14", target="swing", input="atr")
-        assert b.source == "atr14"
-        assert b.output == "atr_14"
-        assert b.target == "swing"
-        assert b.input == "atr"
+        e = ReferenceExpression("atr14")
+        assert e.name == "atr14"
 
     def test_frozen(self) -> None:
-        b = Binding(source="a", output="x", target="b", input="y")
+        e = ReferenceExpression("atr14")
         with pytest.raises(AttributeError):
-            b.source = "new"  # type: ignore[misc]
+            e.name = "new"  # type: ignore[misc]
+
+    def test_equality(self) -> None:
+        assert ReferenceExpression("a") == ReferenceExpression("a")
+        assert ReferenceExpression("a") != ReferenceExpression("b")
 
 
 class TestDefinition:
@@ -113,22 +114,24 @@ class TestDefinition:
         assert d.name == "ema20"
         assert d.provider == "EMAAnalyzer"
         assert d.parameters == ()
-        assert d.bindings == ()
         assert d.id == ""
         assert d.metadata is None
 
     def test_with_parameters(self) -> None:
-        params = (Parameter(name="period", value=20), Parameter(name="source", value="close"))
+        params = (
+            Parameter(name="period", value=LiteralExpression(20)),
+            Parameter(name="source", value=LiteralExpression("close")),
+        )
         d = Definition(name="ema20", provider="EMAAnalyzer", parameters=params)
         assert len(d.parameters) == 2
         assert d.parameters[0].name == "period"
-        assert d.parameters[1].value == "close"
+        assert d.parameters[1].value == LiteralExpression("close")
 
-    def test_with_bindings(self) -> None:
-        bindings = (Binding(source="atr14", output="atr_14", target="swing", input="atr"),)
-        d = Definition(name="swing", provider="SwingStructureAnalyzer", bindings=bindings)
-        assert len(d.bindings) == 1
-        assert d.bindings[0].source == "atr14"
+    def test_with_reference_param(self) -> None:
+        params = (Parameter(name="atr_14", value=ReferenceExpression("atr14")),)
+        d = Definition(name="swing", provider="SwingStructureAnalyzer", parameters=params)
+        assert len(d.parameters) == 1
+        assert d.parameters[0].value == ReferenceExpression("atr14")
 
     def test_with_metadata(self) -> None:
         d = Definition(name="t", provider="I", metadata={"key": "val"})
@@ -177,7 +180,7 @@ class TestAnalysis:
             Definition(
                 name="ema20",
                 provider="EMAAnalyzer",
-                parameters=(Parameter(name="period", value=20),),
+                parameters=(Parameter(name="period", value=LiteralExpression(20)),),
             ),
         )
         a = Analysis(name="test", version="1.0", definitions=defs, providers=providers)
@@ -200,14 +203,16 @@ class TestAnalysis:
             a.name = "new"  # type: ignore[misc]
 
     def test_round_trip_definition(self) -> None:
-        params = (Parameter(name="period", value=20),)
-        bindings = (Binding(source="a", output="x", target="b", input="y"),)
-        d = Definition(name="ema20", provider="EMAAnalyzer", parameters=params, bindings=bindings)
+        params = (
+            Parameter(name="period", value=LiteralExpression(20)),
+            Parameter(name="atr_14", value=ReferenceExpression("atr14")),
+        )
+        d = Definition(name="ema20", provider="EMAAnalyzer", parameters=params)
         a = Analysis(name="test", version="1.0", definitions=(d,))
         restored = a.definitions[0]
         assert restored == d
-        assert restored.parameters[0].value == 20
-        assert restored.bindings[0].source == "a"
+        assert restored.parameters[0].value == LiteralExpression(20)
+        assert restored.parameters[1].value == ReferenceExpression("atr14")
 
     def test_multiple_definitions(self) -> None:
         defs = tuple(Definition(name=f"d{i}", provider="Analyzer") for i in range(5))
@@ -247,24 +252,22 @@ class TestComplexAnalysis:
                     name="ema20",
                     provider="EMAAnalyzer",
                     parameters=(
-                        Parameter(name="period", value=20),
-                        Parameter(name="source", value="close"),
+                        Parameter(name="period", value=LiteralExpression(20)),
+                        Parameter(name="source", value=LiteralExpression("close")),
                     ),
                 ),
                 Definition(
                     name="atr14",
                     provider="ATRAnalyzer",
-                    parameters=(Parameter(name="period", value=14),),
+                    parameters=(Parameter(name="period", value=LiteralExpression(14)),),
                 ),
                 Definition(
                     name="swing",
                     provider="SwingStructureAnalyzer",
                     parameters=(
-                        Parameter(name="lookback", value=100),
-                        Parameter(name="min_separation_atr", value=1.5),
-                    ),
-                    bindings=(
-                        Binding(source="atr14", output="atr_14", target="swing", input="atr"),
+                        Parameter(name="lookback", value=LiteralExpression(100)),
+                        Parameter(name="min_separation_atr", value=LiteralExpression(1.5)),
+                        Parameter(name="atr_14", value=ReferenceExpression("atr14")),
                     ),
                 ),
             ),
@@ -278,9 +281,8 @@ class TestComplexAnalysis:
         ema = analysis.definitions[0]
         assert ema.name == "ema20"
         assert ema.provider == "EMAAnalyzer"
-        assert ema.parameters[0].value == 20
+        assert ema.parameters[0].value == LiteralExpression(20)
 
         swing = analysis.definitions[2]
-        assert len(swing.bindings) == 1
-        assert swing.bindings[0].source == "atr14"
-        assert swing.bindings[0].output == "atr_14"
+        assert len(swing.parameters) == 3
+        assert swing.parameters[2].value == ReferenceExpression("atr14")

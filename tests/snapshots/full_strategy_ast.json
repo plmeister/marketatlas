@@ -43,14 +43,13 @@
         {
           "name": "lookback",
           "value": 100
-        }
-      ],
-      "bindings": [
+        },
         {
-          "source": "atr14",
-          "output": "atr_14",
-          "target": "swing",
-          "input": "atr"
+          "name": "atr_14",
+          "value": {
+            "expr": "reference",
+            "name": "atr14"
+          }
         }
       ]
     },
@@ -61,26 +60,27 @@
         {
           "name": "min_strength",
           "value": 0.5
-        }
-      ],
-      "bindings": [
-        {
-          "source": "trend",
-          "output": "trend",
-          "target": "signal",
-          "input": "trend_key"
         },
         {
-          "source": "atr14",
-          "output": "atr_14",
-          "target": "signal",
-          "input": "atr_key"
+          "name": "trend",
+          "value": {
+            "expr": "reference",
+            "name": "trend"
+          }
         },
         {
-          "source": "swing",
-          "output": "four_swing_pullback",
-          "target": "signal",
-          "input": "pullback_key"
+          "name": "atr_14",
+          "value": {
+            "expr": "reference",
+            "name": "atr14"
+          }
+        },
+        {
+          "name": "four_swing_pullback",
+          "value": {
+            "expr": "reference",
+            "name": "swing"
+          }
         }
       ]
     },

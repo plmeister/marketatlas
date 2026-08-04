@@ -1,14 +1,24 @@
 import json
+from typing import Any, cast
 
 import pytest
+from marketatlas.analysis.ast.expressions import (
+    Choice,
+    LiteralExpression,
+    ReferenceExpression,
+)
 from marketatlas.analysis.ast.models import (
     Analysis,
-    Binding,
     Definition,
     Parameter,
     Provider,
 )
 from marketatlas.analysis.ast.serialization import from_dict, from_json, to_dict, to_json
+from marketatlas.data.types import Timeframe
+
+
+def _serialized(a: Analysis) -> dict[str, Any]:
+    return cast(dict[str, Any], to_dict(a))
 
 
 def _providers() -> tuple[Provider, ...]:
@@ -31,7 +41,7 @@ def _providers() -> tuple[Provider, ...]:
 class TestToDict:
     def test_minimal_analysis(self) -> None:
         a = Analysis(name="test", version="1.0.0")
-        d = to_dict(a)
+        d = _serialized(a)
         assert d == {"name": "test", "version": "1.0.0"}
 
     def test_with_definitions(self) -> None:
@@ -40,7 +50,7 @@ class TestToDict:
             version="1.0.0",
             definitions=(Definition(name="ema20", provider="EMAAnalyzer"),),
         )
-        d = to_dict(a)
+        d = _serialized(a)
         assert d["name"] == "test"
         assert len(d["definitions"]) == 1
         assert d["definitions"][0] == {"name": "ema20", "provider": "EMAAnalyzer"}
@@ -54,17 +64,17 @@ class TestToDict:
                     name="ema20",
                     provider="EMAAnalyzer",
                     parameters=(
-                        Parameter(name="period", value=20),
-                        Parameter(name="source", value="close"),
+                        Parameter(name="period", value=LiteralExpression(20)),
+                        Parameter(name="source", value=LiteralExpression("close")),
                     ),
                 ),
             ),
         )
-        d = to_dict(a)
+        d = _serialized(a)
         params = d["definitions"][0]["parameters"]
         assert params == [{"name": "period", "value": 20}, {"name": "source", "value": "close"}]
 
-    def test_with_bindings(self) -> None:
+    def test_with_reference_param(self) -> None:
         a = Analysis(
             name="test",
             version="1.0.0",
@@ -72,17 +82,29 @@ class TestToDict:
                 Definition(
                     name="swing",
                     provider="SwingStructureAnalyzer",
-                    bindings=(
-                        Binding(source="atr14", output="atr_14", target="swing", input="atr"),
-                    ),
+                    parameters=(Parameter(name="atr_14", value=ReferenceExpression("atr14")),),
                 ),
             ),
         )
-        d = to_dict(a)
-        bindings = d["definitions"][0]["bindings"]
-        assert bindings == [
-            {"source": "atr14", "output": "atr_14", "target": "swing", "input": "atr"}
-        ]
+        d = _serialized(a)
+        params = d["definitions"][0]["parameters"]
+        assert params == [{"name": "atr_14", "value": {"expr": "reference", "name": "atr14"}}]
+
+    def test_with_choice_param(self) -> None:
+        a = Analysis(
+            name="test",
+            version="1.0.0",
+            definitions=(
+                Definition(
+                    name="ema20",
+                    provider="EMAAnalyzer",
+                    parameters=(Parameter(name="period", value=Choice([50, 100])),),
+                ),
+            ),
+        )
+        d = _serialized(a)
+        params = d["definitions"][0]["parameters"]
+        assert params == [{"name": "period", "value": {"expr": "choice", "values": [50, 100]}}]
 
     def test_with_providers(self) -> None:
         a = Analysis(
@@ -90,7 +112,7 @@ class TestToDict:
             version="1.0.0",
             providers=_providers(),
         )
-        d = to_dict(a)
+        d = _serialized(a)
         assert len(d["providers"]) == 3
         assert d["providers"][0] == {
             "name": "EMAAnalyzer",
@@ -105,43 +127,68 @@ class TestToDict:
             capability="compute_ema",
             category="analyzer",
             impl="EMAAnalyzer",
-            default_params=(Parameter(name="period", value=20),),
+            default_params=(Parameter(name="period", value=LiteralExpression(20)),),
         )
         a = Analysis(name="test", version="1.0", providers=(p,))
-        d = to_dict(a)
+        d = _serialized(a)
         assert d["providers"][0]["default_params"] == [{"name": "period", "value": 20}]
+
+    def test_with_timeframes(self) -> None:
+        a = Analysis(name="test", version="1.0", timeframes=("1w",))
+        d = _serialized(a)
+        assert d["timeframes"] == ["1w"]
 
     def test_with_id(self) -> None:
         a = Analysis(name="t", version="1.0", id="analysis1")
-        d = to_dict(a)
+        d = _serialized(a)
         assert d["id"] == "analysis1"
 
     def test_with_metadata(self) -> None:
         a = Analysis(name="t", version="1.0", metadata={"author": "Scott"})
-        d = to_dict(a)
+        d = _serialized(a)
         assert d["metadata"] == {"author": "Scott"}
 
     def test_empty_ids_omitted(self) -> None:
         a = Analysis(name="t", version="1.0")
-        d = to_dict(a)
+        d = _serialized(a)
         assert "id" not in d
 
     def test_empty_metadata_omitted(self) -> None:
         a = Analysis(name="t", version="1.0")
-        d = to_dict(a)
+        d = _serialized(a)
         assert "metadata" not in d
 
     def test_definition_with_metadata(self) -> None:
         d_def = Definition(name="t", provider="I", metadata={"key": "val"})
         a = Analysis(name="t", version="1.0", definitions=(d_def,))
-        d = to_dict(a)
+        d = _serialized(a)
         assert d["definitions"][0]["metadata"] == {"key": "val"}
 
     def test_definition_with_id(self) -> None:
         d_def = Definition(name="t", provider="I", id="def1")
         a = Analysis(name="t", version="1.0", definitions=(d_def,))
-        d = to_dict(a)
+        d = _serialized(a)
         assert d["definitions"][0]["id"] == "def1"
+
+    def test_timeframe_literal_serializes_as_string(self) -> None:
+        a = Analysis(
+            name="test",
+            version="1.0",
+            definitions=(
+                Definition(
+                    name="tf",
+                    provider="timeframe",
+                    parameters=(
+                        Parameter(
+                            name="resolution",
+                            value=LiteralExpression(Timeframe("1w")),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        d = _serialized(a)
+        assert d["definitions"][0]["parameters"] == [{"name": "resolution", "value": "1w"}]
 
 
 class TestFromDict:
@@ -155,7 +202,7 @@ class TestFromDict:
         assert a.metadata is None
 
     def test_full_strategy(self) -> None:
-        data = {
+        data: dict[str, Any] = {
             "name": "pullback_4swing",
             "version": "1.0.0",
             "providers": [
@@ -195,9 +242,7 @@ class TestFromDict:
                     "parameters": [
                         {"name": "lookback", "value": 100},
                         {"name": "min_separation_atr", "value": 1.5},
-                    ],
-                    "bindings": [
-                        {"source": "atr14", "output": "atr_14", "target": "swing", "input": "atr"}
+                        {"name": "atr_14", "value": {"expr": "reference", "name": "atr14"}},
                     ],
                 },
             ],
@@ -213,11 +258,11 @@ class TestFromDict:
         ema = a.definitions[0]
         assert ema.name == "ema20"
         assert ema.provider == "EMAAnalyzer"
-        assert ema.parameters[0].value == 20
+        assert ema.parameters[0].value == LiteralExpression(20)
 
         swing = a.definitions[2]
-        assert len(swing.bindings) == 1
-        assert swing.bindings[0].source == "atr14"
+        assert len(swing.parameters) == 3
+        assert swing.parameters[2].value == ReferenceExpression("atr14")
 
     def test_missing_name_raises(self) -> None:
         with pytest.raises(ValueError, match="Missing required field: name"):
@@ -237,22 +282,8 @@ class TestFromDict:
                 {
                     "name": "test",
                     "version": "1.0",
-                    "definitions": [{"name": "d", "provider": "P", "parameters": [{"value": 20}]}],
-                }
-            )
-
-    def test_binding_missing_field_raises(self) -> None:
-        with pytest.raises(ValueError, match="Missing required field"):
-            from_dict(
-                {
-                    "name": "test",
-                    "version": "1.0",
                     "definitions": [
-                        {
-                            "name": "d",
-                            "provider": "P",
-                            "bindings": [{"source": "a", "output": "x", "target": "b"}],
-                        }
+                        {"name": "d", "provider": "P", "parameters": [{"value": 20}]}
                     ],
                 }
             )
@@ -267,6 +298,10 @@ class TestFromDict:
                 }
             )
 
+    def test_invalid_timeframe_raises(self) -> None:
+        with pytest.raises(ValueError, match="Invalid timeframe '13m'"):
+            from_dict({"name": "test", "version": "1.0", "timeframes": ["13m"]})
+
     def test_round_trip(self) -> None:
         original = Analysis(
             name="pullback_4swing",
@@ -277,21 +312,21 @@ class TestFromDict:
                     name="ema20",
                     provider="EMAAnalyzer",
                     parameters=(
-                        Parameter(name="period", value=20),
-                        Parameter(name="source", value="close"),
+                        Parameter(name="period", value=LiteralExpression(20)),
+                        Parameter(name="source", value=LiteralExpression("close")),
                     ),
                 ),
                 Definition(
                     name="atr14",
                     provider="ATRAnalyzer",
-                    parameters=(Parameter(name="period", value=14),),
+                    parameters=(Parameter(name="period", value=LiteralExpression(14)),),
                 ),
                 Definition(
                     name="swing",
                     provider="SwingStructureAnalyzer",
-                    parameters=(Parameter(name="lookback", value=100),),
-                    bindings=(
-                        Binding(source="atr14", output="atr_14", target="swing", input="atr"),
+                    parameters=(
+                        Parameter(name="lookback", value=LiteralExpression(100)),
+                        Parameter(name="atr_14", value=ReferenceExpression("atr14")),
                     ),
                 ),
             ),
@@ -299,8 +334,8 @@ class TestFromDict:
         )
         restored = from_dict(to_dict(original))
         assert restored == original
-        assert restored.definitions[0].parameters[0].value == 20
-        assert restored.definitions[2].bindings[0].source == "atr14"
+        assert restored.definitions[0].parameters[0].value == LiteralExpression(20)
+        assert restored.definitions[2].parameters[1].value == ReferenceExpression("atr14")
         assert restored.metadata == original.metadata
         assert len(restored.providers) == 3
 
@@ -365,7 +400,7 @@ class TestFromJson:
                 Definition(
                     name="ema20",
                     provider="EMAAnalyzer",
-                    parameters=(Parameter(name="period", value=20),),
+                    parameters=(Parameter(name="period", value=LiteralExpression(20)),),
                 ),
             ),
             metadata={"author": "Scott"},
@@ -383,8 +418,8 @@ class TestFromJson:
                     name="ema20",
                     provider="EMAAnalyzer",
                     parameters=(
-                        Parameter(name="period", value=20),
-                        Parameter(name="source", value="close"),
+                        Parameter(name="period", value=LiteralExpression(20)),
+                        Parameter(name="source", value=LiteralExpression("close")),
                     ),
                     id="def_ema20",
                     metadata={"label": "Fast EMA"},
@@ -392,9 +427,9 @@ class TestFromJson:
                 Definition(
                     name="atr14",
                     provider="ATRAnalyzer",
-                    parameters=(Parameter(name="period", value=14),),
-                    bindings=(
-                        Binding(source="ema20", output="ema_20", target="atr14", input="trend"),
+                    parameters=(
+                        Parameter(name="period", value=LiteralExpression(14)),
+                        Parameter(name="trend", value=ReferenceExpression("ema20")),
                     ),
                 ),
             ),
@@ -406,7 +441,7 @@ class TestFromJson:
         assert restored.id == "analysis_v2"
         assert restored.definitions[0].id == "def_ema20"
         assert restored.definitions[0].metadata == {"label": "Fast EMA"}
-        assert restored.definitions[1].bindings[0].source == "ema20"
+        assert restored.definitions[1].parameters[1].value == ReferenceExpression("ema20")
 
 
 class TestEdgeCases:
@@ -418,12 +453,12 @@ class TestEdgeCases:
                 Definition(
                     name="d",
                     provider="I",
-                    parameters=(Parameter(name="threshold", value=1.5),),
+                    parameters=(Parameter(name="threshold", value=LiteralExpression(1.5)),),
                 ),
             ),
         )
         restored = from_json(to_json(a))
-        assert restored.definitions[0].parameters[0].value == 1.5
+        assert restored.definitions[0].parameters[0].value == LiteralExpression(1.5)
 
     def test_bool_values(self) -> None:
         a = Analysis(
@@ -433,7 +468,7 @@ class TestEdgeCases:
                 Definition(
                     name="d",
                     provider="I",
-                    parameters=(Parameter(name="enabled", value=True),),
+                    parameters=(Parameter(name="enabled", value=LiteralExpression(True)),),
                 ),
             ),
         )
@@ -448,12 +483,28 @@ class TestEdgeCases:
                 Definition(
                     name="d",
                     provider="I",
-                    parameters=(Parameter(name="optional", value=None),),
+                    parameters=(Parameter(name="optional", value=LiteralExpression(None)),),
                 ),
             ),
         )
         restored = from_json(to_json(a))
-        assert restored.definitions[0].parameters[0].value is None
+        assert restored.definitions[0].parameters[0].value == LiteralExpression(None)
+
+    def test_choice_round_trip(self) -> None:
+        a = Analysis(
+            name="t",
+            version="1.0",
+            definitions=(
+                Definition(
+                    name="d",
+                    provider="I",
+                    parameters=(Parameter(name="period", value=Choice([50, 100])),),
+                ),
+            ),
+        )
+        restored = from_json(to_json(a))
+        assert restored == a
+        assert restored.definitions[0].parameters[0].value == Choice([50, 100])
 
     def test_empty_definition_list(self) -> None:
         a = Analysis(name="t", version="1.0", definitions=())

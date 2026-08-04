@@ -12,29 +12,29 @@ Grammar::
     definition := IDENT ':=' IDENT '{' fields '}'
     fields    := (field (',' field)*)?          // trailing comma allowed
     field     := IDENT ':' value                // parameter
-               | IDENT ':' IDENT                // reference binding (backlog 062)
-               | IDENT ','                      // shorthand dependency
-    value     := literal | list | choice
+               | IDENT ','                      // shorthand reference
+    value     := literal | reference | list | choice
     literal   := INT | FLOAT | STRING | 'true' | 'false' | 'null'
+    reference := IDENT                          // not a reserved literal
     list      := '[' (literal (',' literal)*)? ']'
     choice    := '<' value ('|' value)* '>'     // nested choices allowed
 
-Field disambiguation (backlog 055 decision): an unquoted identifier on the
-right of ``:`` is a *reference* to another definition and becomes a
-``Binding``; every other value is a ``Parameter``. ``true``/``false``/``null``
-are reserved literals, never references. A bare ``name,`` field is a
-*shorthand*: it must name a provider input (derived from the provider
-contract, backlog 058) and expands to
-``Binding(source=name, output=name, target=self, input=name)``.
+A field value is a *simple literal* (int, float, string, bool, null, list) or
+a *reference* to another definition (backlog 061): ``ema_20: ema`` passes the
+``ema`` definition as a parameter, ``timeframe: tf1w`` the ``tf1w``
+definition. A bare ``name,`` field is a *shorthand* reference to the definition
+of the same name — it must name a provider input (derived from the provider
+contract, backlog 058) and expands to ``name: name``.
 
-Both binding forms carry the *fact name* in the field name: ``ema_20: ema``
-wires the fact ``ema_20`` produced by definition ``ema`` into this
-definition's ``ema_20`` slot — the binding is
-``Binding(source="ema", output="ema_20", target=self, input="ema_20")``.
-This is the ``name: name`` mapping of backlog 055: source/output/target/input
-are all plain names, so no provider-contract lookup is needed at parse time
-and period-parameterised fact names (``ema := ema { period: 50 }`` producing
-``ema_50``) stay correct.
+Timeframes are not special to the DSL: ``tf1w := timeframe { resolution: "1w" }``
+is an ordinary definition, and a node links to it through an ordinary
+reference parameter. The compiler interprets a reference by the referenced
+definition's category — a ``TimeFrame`` definition resolves to its timeframe
+value; a fact-producing definition (analyzer/signal) is a dependency edge
+(backlog 062). The fact name is carried by the field name: ``ema_20: ema``
+means the node depends on the fact ``ema_20`` produced by ``ema``, so
+period-parameterised fact names (``ema := ema { period: 50 }`` producing
+``ema_50``) stay correct without a provider-contract lookup at parse time.
 
 ``Type`` resolves as a registry capability key. Each definition keeps the
 capability as its ``provider`` field and the analysis' ``providers`` list is
@@ -45,12 +45,16 @@ self-contained and serializable (backlog 039/046) and equals a
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import NoReturn
 
 from marketatlas.analysis.ast.constructors import build_analysis
 from marketatlas.analysis.ast.diagnostics import SourceMap
-from marketatlas.analysis.ast.expressions import ChoiceExpression, Expression, LiteralExpression
+from marketatlas.analysis.ast.expressions import (
+    ChoiceExpression,
+    Expression,
+    LiteralExpression,
+    ReferenceExpression,
+)
 from marketatlas.analysis.ast.lexer import (
     ASSIGN,
     COLON,
@@ -70,15 +74,11 @@ from marketatlas.analysis.ast.lexer import (
     Token,
     tokenize,
 )
-from marketatlas.analysis.ast.models import Analysis, Binding, Definition, Parameter, Provider
+from marketatlas.analysis.ast.models import Analysis, Definition, Parameter
 from marketatlas.analysis.ast.registry import ProviderRegistry, create_default_registry
-from marketatlas.data.types import Timeframe
 
 #: Identifiers treated as literal values, never references.
 _RESERVED = frozenset({"true", "false", "null"})
-
-#: Reserved per-definition field declaring the node's timeframe (backlog 061).
-_TIMEFRAME_FIELD = "timeframe"
 
 
 class DslParseError(Exception):
@@ -90,17 +90,6 @@ class DslParseError(Exception):
         super().__init__(f"{position.line}:{position.col}: {message}")
 
 
-@dataclass(frozen=True)
-class _RawBinding:
-    """Binding discovered during field parsing, resolved after the whole
-    analysis is parsed (references may target later definitions)."""
-
-    source: str
-    target: str
-    input: str
-    position: SourcePosition
-
-
 class _Parser:
     def __init__(self, source: str, registry: ProviderRegistry, name: str, version: str) -> None:
         self._tokens = tokenize(source)
@@ -110,7 +99,6 @@ class _Parser:
         self._version = version
         self._def_positions: dict[str, SourcePosition] = {}
         self._param_positions: dict[tuple[str, str], SourcePosition] = {}
-        self._raw_bindings: list[_RawBinding] = []
         self._source = source
 
     @property
@@ -157,20 +145,6 @@ class _Parser:
         if self._peek().kind:
             token = self._peek()
             self._error(f"unexpected token {token.lexeme!r}", token.position)
-
-        bindings_map = self._resolve_bindings(definitions)
-        definitions = [
-            Definition(
-                name=d.name,
-                provider=d.provider,
-                parameters=d.parameters,
-                bindings=bindings_map[d.name],
-                timeframe=d.timeframe,
-                id=d.id,
-                metadata=d.metadata,
-            )
-            for d in definitions
-        ]
         return build_analysis(
             self._name, definitions, version=self._version, registry=self._registry
         )
@@ -186,45 +160,28 @@ class _Parser:
 
         self._expect(ASSIGN, f"expected ':=' after definition name '{name}'")
         type_tok = self._expect_ident(f"expected a provider type after ':=' for '{name}'")
-        provider = self._resolve_type(type_tok)
+        self._resolve_type(type_tok)
         self._expect(LBRACE, f"expected '{{' after type '{type_tok.lexeme}'")
-        params, timeframe = self._parse_fields(name, provider)
+        params = self._parse_fields(name, type_tok.lexeme)
         self._expect(RBRACE, f"expected '}}' to close definition '{name}'")
         return Definition(
             name=name,
             provider=type_tok.lexeme,
             parameters=params,
-            timeframe=timeframe,
         )
 
-    def _parse_fields(
-        self, target_name: str, target_provider: Provider
-    ) -> tuple[tuple[Parameter, ...], Timeframe | None]:
+    def _parse_fields(self, target_name: str, target_capability: str) -> tuple[Parameter, ...]:
         params: list[Parameter] = []
-        timeframe: Timeframe | None = None
         while self._peek().kind != RBRACE:
             field_tok = self._expect_ident("expected a field name or '}'")
-            if field_tok.lexeme == _TIMEFRAME_FIELD:
-                timeframe = self._parse_timeframe_field(field_tok)
-            elif self._peek().kind == COLON:
+            if self._peek().kind == COLON:
                 self._advance()
-                if self._peek().kind == IDENT and self._peek().lexeme not in _RESERVED:
-                    ref_tok = self._advance()
-                    self._raw_bindings.append(
-                        _RawBinding(
-                            source=ref_tok.lexeme,
-                            target=target_name,
-                            input=field_tok.lexeme,
-                            position=ref_tok.position,
-                        )
-                    )
-                else:
-                    self._param_positions[(target_name, field_tok.lexeme)] = field_tok.position
-                    params.append(
-                        Parameter(field_tok.lexeme, self._parse_value("as a parameter value"))
-                    )
+                self._param_positions[(target_name, field_tok.lexeme)] = field_tok.position
+                params.append(
+                    Parameter(field_tok.lexeme, self._parse_value("as a parameter value"))
+                )
             elif self._peek().kind in (COMMA, RBRACE):
-                self._shorthand(field_tok, target_name, target_provider)
+                self._shorthand(field_tok, target_capability, target_name, params)
             else:
                 self._error(
                     f"expected ':', ',' or '}}' after field name {field_tok.lexeme!r}",
@@ -234,42 +191,27 @@ class _Parser:
                 self._advance()
             elif self._peek().kind != RBRACE:
                 self._error("expected ',' or '}}'", self._peek().position)
-        return tuple(params), timeframe
+        return tuple(params)
 
-    def _parse_timeframe_field(self, field_tok: Token) -> Timeframe:
-        self._expect(COLON, f"expected ':' after reserved field '{_TIMEFRAME_FIELD}'")
-        token = self._peek()
-        if token.kind != STRING:
-            self._error("timeframe must be a quoted string like \"1h\"", token.position)
-        self._advance()
-        try:
-            return Timeframe(token.value)
-        except ValueError:
-            valid = ", ".join(tf.value for tf in Timeframe)
-            self._error(
-                f"invalid timeframe '{token.value}'. Valid timeframes: {valid}",
-                token.position,
-            )
-
-    def _shorthand(self, field_tok: Token, target_name: str, target_provider: Provider) -> None:
-        contract = self._registry.contract(target_provider.capability) or self._registry.contract(
-            target_provider.name
-        )
+    def _shorthand(
+        self,
+        field_tok: Token,
+        target_capability: str,
+        target_name: str,
+        params: list[Parameter],
+    ) -> None:
+        contract = self._registry.contract(target_capability)
         inputs = contract.inputs if contract is not None else ()
         if field_tok.lexeme not in inputs:
             known = ", ".join(inputs) if inputs else "(none)"
             self._error(
-                f"shorthand dependency '{field_tok.lexeme}' is not a declared input of "
-                f"provider '{target_provider.capability}'. Declared inputs: {known}",
+                f"shorthand reference '{field_tok.lexeme}' is not a declared input of "
+                f"provider '{target_capability}'. Declared inputs: {known}",
                 field_tok.position,
             )
-        self._raw_bindings.append(
-            _RawBinding(
-                source=field_tok.lexeme,
-                target=target_name,
-                input=field_tok.lexeme,
-                position=field_tok.position,
-            )
+        self._param_positions[(target_name, field_tok.lexeme)] = field_tok.position
+        params.append(
+            Parameter(field_tok.lexeme, ReferenceExpression(field_tok.lexeme))
         )
 
     def _parse_value(self, context: str) -> Expression:
@@ -278,19 +220,15 @@ class _Parser:
             self._advance()
             return LiteralExpression(token.value)
         if token.kind == IDENT:
-            if token.lexeme == "true":
+            if token.lexeme in _RESERVED:
                 self._advance()
-                return LiteralExpression(True)
-            if token.lexeme == "false":
-                self._advance()
-                return LiteralExpression(False)
-            if token.lexeme == "null":
-                self._advance()
+                if token.lexeme == "true":
+                    return LiteralExpression(True)
+                if token.lexeme == "false":
+                    return LiteralExpression(False)
                 return LiteralExpression(None)
-            self._error(
-                f"reference '{token.lexeme}' not allowed {context}",
-                token.position,
-            )
+            self._advance()
+            return ReferenceExpression(token.lexeme)
         if token.kind == LBRACKET:
             return self._parse_list()
         if token.kind == LT:
@@ -347,33 +285,15 @@ class _Parser:
 
     # -- helpers -------------------------------------------------------
 
-    def _resolve_type(self, type_tok: Token) -> Provider:
+    def _resolve_type(self, type_tok: Token) -> None:
         try:
-            return self._registry.resolve(type_tok.lexeme)
+            self._registry.resolve(type_tok.lexeme)
         except LookupError:
             available = ", ".join(self._registry.capabilities())
             self._error(
                 f"unknown provider type '{type_tok.lexeme}'. Available capabilities: {available}",
                 type_tok.position,
             )
-
-    def _resolve_bindings(self, definitions: list[Definition]) -> dict[str, tuple[Binding, ...]]:
-        result: dict[str, tuple[Binding, ...]] = {d.name: () for d in definitions}
-        for raw in self._raw_bindings:
-            if raw.source not in self._def_positions:
-                self._error(
-                    f"unknown source definition '{raw.source}' referenced by " f"'{raw.target}'",
-                    raw.position,
-                )
-            result[raw.target] = result[raw.target] + (
-                Binding(
-                    source=raw.source,
-                    output=raw.input,
-                    target=raw.target,
-                    input=raw.input,
-                ),
-            )
-        return result
 
 
 def parse_with_positions(
