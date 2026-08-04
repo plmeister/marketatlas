@@ -14,6 +14,7 @@ from marketatlas.analysis.ast.expressions import (
     ReferenceExpression,
     choice_leaves,
 )
+from marketatlas.analysis.ast.instrument import TemplateGraph
 from marketatlas.analysis.ast.lexer import SourcePosition
 from marketatlas.analysis.ast.models import (
     Analysis,
@@ -424,6 +425,34 @@ class Pipeline:
         """
         return tuple(self._graph(v) for v in self.expand(analysis))
 
+    def compile_template(self, analysis: Analysis) -> TemplateGraph:
+        """Stages 1-3 + config: compile to an instrument-neutral template.
+
+        The single-concrete-AST entry point for backlog 063: the resulting
+        ``TemplateGraph`` holds the recipe (concrete ``Analysis`` +
+        ``StrategyConfig``) and materializes fresh, isolated per-instrument
+        graphs via ``instantiate``. Multi-output templates raise — use
+        ``compile_templates``.
+        """
+        variants = self.expand(analysis)
+        if len(variants) != 1:
+            raise CompilationError(
+                f"Template expansion produced {len(variants)} concrete analyses. "
+                "Pipeline.compile_template requires a single concrete AST; use "
+                "Pipeline.compile_templates for multi-output templates."
+            )
+        concrete = variants[0]
+        return TemplateGraph(concrete, _ast_to_config(concrete))
+
+    def compile_templates(self, analysis: Analysis) -> tuple[TemplateGraph, ...]:
+        """Compile every concrete AST to its own instrument-neutral template.
+
+        Multi-output path for choice templates: one ``TemplateGraph`` per
+        concrete AST (backlog 063), matching the explicit multi-return
+        convention of ``compile_all``.
+        """
+        return tuple(TemplateGraph(v, _ast_to_config(v)) for v in self.expand(analysis))
+
     def run(self, analysis: Analysis) -> AnalysisGraph:
         """Run the full pipeline for a single concrete AST.
 
@@ -457,9 +486,7 @@ def _provider_map(analysis: Analysis) -> dict[str, Provider]:
 
 def _is_reference_param(param: Parameter) -> bool:
     """Whether a parameter value references a definition (backlog 061)."""
-    return any(
-        isinstance(leaf, ReferenceExpression) for leaf in choice_leaves(param.value)
-    )
+    return any(isinstance(leaf, ReferenceExpression) for leaf in choice_leaves(param.value))
 
 
 def _merge_default_params(
@@ -603,8 +630,7 @@ def _ast_to_config(analysis: Analysis) -> StrategyConfig:
     base_tf = analysis.timeframes[0] if analysis.timeframes else None
 
     def_timeframes = {
-        d.name: _resolved_definition_timeframe(d, def_by_name)
-        for d in analysis.definitions
+        d.name: _resolved_definition_timeframe(d, def_by_name) for d in analysis.definitions
     }
 
     for d in analysis.definitions:
@@ -830,8 +856,7 @@ def _resolution_value(target: Definition) -> str:
             tf = _coerce_timeframe(value)
             if tf is None:
                 raise CompilationError(
-                    f"TimeFrame definition '{target.name}' has invalid resolution "
-                    f"{value!r}"
+                    f"TimeFrame definition '{target.name}' has invalid resolution " f"{value!r}"
                 )
             return tf.value
     raise CompilationError(

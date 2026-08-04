@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from marketatlas.analysis.ast.diagnostics import SourceMap
+from marketatlas.analysis.ast.instrument import TemplateGraph
 from marketatlas.analysis.ast.models import Analysis
 from marketatlas.analysis.ast.pipeline import (
     ParamValidationPass,
@@ -66,6 +67,37 @@ class ASTCompiler:
         if registry is None:
             registry = create_default_registry()
         return ASTCompiler._pipeline(registry).compile_all(analysis)
+
+    @staticmethod
+    def compile_template(
+        analysis: Analysis,
+        registry: ProviderRegistry | None = None,
+    ) -> TemplateGraph:
+        """Compile a single concrete AST to an instrument-neutral template.
+
+        Backlog 063: the ``TemplateGraph`` holds the recipe (concrete
+        ``Analysis`` + ``StrategyConfig``) and materializes fresh, isolated
+        per-instrument ``AnalysisGraph`` objects on demand. Templates that
+        expand to multiple concrete ASTs raise — use ``compile_templates``.
+        """
+        if registry is None:
+            registry = create_default_registry()
+        return ASTCompiler._pipeline(registry).compile_template(analysis)
+
+    @staticmethod
+    def compile_templates(
+        analysis: Analysis,
+        registry: ProviderRegistry | None = None,
+    ) -> tuple[TemplateGraph, ...]:
+        """Compile every concrete AST to its own ``TemplateGraph``.
+
+        Multi-output path for choice templates (backlog 063): one template per
+        concrete AST, matching the explicit multi-return convention of
+        ``compile_all`` (backlog 051).
+        """
+        if registry is None:
+            registry = create_default_registry()
+        return ASTCompiler._pipeline(registry).compile_templates(analysis)
 
     @staticmethod
     def compile_dsl(

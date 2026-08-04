@@ -31,6 +31,12 @@ from marketatlas.analysis.ast.expressions import (
     unwrap,
     wrap,
 )
+from marketatlas.analysis.ast.instrument import (
+    InstrumentBacktestResult,
+    InstrumentGraph,
+    TemplateGraph,
+    backtest_template,
+)
 from marketatlas.analysis.ast.lexer import (
     ASSIGN,
     COLON,
@@ -112,6 +118,8 @@ __all__ = [
     "GenerateSignal",
     "GraphGenerationPass",
     "IDENT",
+    "InstrumentBacktestResult",
+    "InstrumentGraph",
     "INT",
     "LBRACE",
     "LBRACKET",
@@ -138,11 +146,13 @@ __all__ = [
     "SwingStructure",
     "Swings",
     "TemplateExpansionPass",
+    "TemplateGraph",
     "Token",
     "Trend",
     "ValidationPass",
     "ValidationResult",
     "build_analysis",
+    "backtest_template",
     "choice_leaves",
     "clone",
     "clone_expression",
