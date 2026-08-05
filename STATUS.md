@@ -52,6 +52,7 @@
 - [x] 052 — Provider param schema validation (registry-derived, post-resolution, per-leaf Choice type checks)
 - [x] 053 — Provider construction API (`EMA(period=20)` factories + `build_analysis` composition)
 - [x] 054 — Compiler golden tests (choice expansion, inline expected outputs)
+- [x] 055 — DSL grammar specification (docs/dsl.md: EBNF, semantics, design decisions, pipeline mapping)
 - [x] 056 — DSL lexer (token stream + positioned SourcePosition, DslSyntaxError)
 - [x] 057 — DSL parser (template AST from text, reference/shorthand bindings)
 - [x] 058 — Provider contract metadata (inputs/outputs per provider, registry-held)
