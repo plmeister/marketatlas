@@ -7,9 +7,8 @@ from typing import Any
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle
 from marketatlas.evidence.model import EvidenceEntry
-from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact, EMAFact
-from marketatlas.facts.structural import TrendDirection, TrendFact
+from marketatlas.facts.structural import TrendDirection, TrendFact, SwingStructureFact
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.frames.store import FrameStore
 
@@ -41,7 +40,9 @@ def _extract_ema_lines(
                 key = f"EMA{fact.period}"
                 if key not in series:
                     series[key] = []
-                series[key].append({"time": _ts_to_time(frame.timestamp.timestamp()), "value": fact.value})
+                series[key].append(
+                    {"time": _ts_to_time(frame.timestamp.timestamp()), "value": fact.value}
+                )
     return series
 
 
@@ -50,7 +51,9 @@ def _extract_atr(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
     for frame in frames:
         for fact in frame.facts.values():
             if isinstance(fact, ATRFact):
-                result.append({"time": _ts_to_time(frame.timestamp.timestamp()), "value": fact.value})
+                result.append(
+                    {"time": _ts_to_time(frame.timestamp.timestamp()), "value": fact.value}
+                )
                 break
     return result
 
@@ -75,21 +78,19 @@ def _extract_trend_markers(
     return bullish, bearish, neutral
 
 
-def _extract_pullbacks(
+def _extract_zigzags(
     frames: list[AnalysisFrame],
 ) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
+    print("extracting zigzags")
     for frame in frames:
         for fact in frame.facts.values():
-            if isinstance(fact, PullbackFact) and fact.status == PullbackStatus.DETECTED:
-                is_bull = fact.direction == TrendDirection.BULLISH
+            print(f"extracted zigzag in frame {frame.timestamp.timestamp()}")
+            if isinstance(fact, SwingStructureFact):
                 result.append(
                     {
                         "time": _ts_to_time(frame.timestamp.timestamp()),
-                        "position": "belowBar" if is_bull else "aboveBar",
-                        "color": "#22c55e" if is_bull else "#ef4444",
-                        "shape": "arrowUp" if is_bull else "arrowDown",
-                        "text": f"Pullback ({fact.retracement_atr:.1f} ATR)",
+                        "points": fact.points,
                     }
                 )
                 break
@@ -276,7 +277,7 @@ class HTMLRenderer:
 
         ema_series = _extract_ema_lines(viz_frames)
         atr_data = _extract_atr(viz_frames)
-        pullbacks = _extract_pullbacks(viz_frames)
+        zigzag = _extract_zigzags(viz_frames)
         evidence_map = _build_candle_evidence_map(viz_frames)
 
         title = f"{self._store.symbol.name} — {self._store.timeframe.value}"
@@ -288,7 +289,7 @@ class HTMLRenderer:
             data_json=json.dumps(candles),
             ema_json=json.dumps(ema_series),
             atr_json=json.dumps(atr_data),
-            pullbacks_json=json.dumps(pullbacks),
+            pullbacks_json=json.dumps(zigzag),
             evidence_json=json.dumps(evidence_map),
         )
 

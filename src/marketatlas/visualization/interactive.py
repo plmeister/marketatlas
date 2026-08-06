@@ -8,7 +8,13 @@ from typing import Any
 from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact, EMAFact
-from marketatlas.facts.structural import SRFact, SwingFact, TrendDirection, TrendFact
+from marketatlas.facts.structural import (
+    SRFact,
+    SwingFact,
+    TrendDirection,
+    TrendFact,
+    SwingStructureFact,
+)
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.strategy.tradebook import TradeBook
 from marketatlas.visualization.context import RenderContext
@@ -139,33 +145,19 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
                     "direction": fact.direction.value,
                     "strength": fact.strength,
                 }
-            elif isinstance(fact, PullbackFact):
+            elif isinstance(fact, SwingStructureFact):
                 # Match swing_pattern prices to SwingFact swings for indices/times
-                swing_indices: list[int] = []
-                swing_times: list[str] = []
-                for fk, fv in frame.facts.items():
-                    if isinstance(fv, SwingFact):
-                        price_to_idx = {s.price: s.index for s in fv.swings}
-                        price_to_time = {
-                            s.price: s.timestamp.strftime("%Y-%m-%d") for s in fv.swings
-                        }
-                        swing_indices = [
-                            price_to_idx[p] for p in fact.swing_pattern if p in price_to_idx
-                        ]
-                        swing_times = [
-                            price_to_time[p] for p in fact.swing_pattern if p in price_to_time
-                        ]
-                        break
                 facts[label] = {
-                    "type": "pullback",
-                    "status": fact.status.value,
-                    "direction": fact.direction.value,
-                    "retracement_atr": fact.retracement_atr,
-                    "confirmation_strength": fact.confirmation_strength,
-                    "deviation_pct": fact.deviation_pct,
-                    "swing_pattern": list(fact.swing_pattern),
-                    "swing_pattern_indices": swing_indices,
-                    "swing_pattern_times": swing_times,
+                    "type": "swingstructure",
+                    "points": [
+                        {
+                            "price": s.price,
+                            "index": s.index,
+                            "type": s.type.value,
+                            "time": s.timestamp.strftime("%Y-%m-%d"),
+                        }
+                        for s in fact.points
+                    ],
                 }
             elif isinstance(fact, SRFact):
                 levels = [
@@ -444,14 +436,10 @@ class InteractiveRenderer:
         }
 
         title = ctx.title or f"{ctx.store.symbol.name} — {ctx.store.timeframe.value}"
-        meta = (
-            f"{len(candles)} candles | {len(frames)} frames | "
-            f"{len(ctx.tradebook.trades)} trades"
-        )
+        meta = f"{len(candles)} candles | {len(frames)} frames | {len(ctx.tradebook.trades)} trades"
 
         js_modules = "".join(
-            (_JS_BASE_DIR / m).read_text(encoding="utf-8") + "\n"
-            for m in _BASE_MODULE_NAMES
+            (_JS_BASE_DIR / m).read_text(encoding="utf-8") + "\n" for m in _BASE_MODULE_NAMES
         )
         js_entry = _JS_TEMPLATE_PATH.read_text(encoding="utf-8")
         js_template = js_modules + js_entry
@@ -477,9 +465,7 @@ class InteractiveRenderer:
             "MIN_TOUCHES": json.dumps(ctx.min_touches),
         }
         for name in sorted(_JS_PLACEHOLDERS, key=len, reverse=True):
-            js_template = js_template.replace(
-                f"null; // @data:{name}", data_map[name] + ";"
-            )
+            js_template = js_template.replace(f"null; // @data:{name}", data_map[name] + ";")
 
         html = _INTERACTIVE_TEMPLATE.format(
             title=title,

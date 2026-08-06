@@ -202,10 +202,11 @@ def _register_timeframe(registry: ProviderRegistry) -> None:
 
 def create_default_registry() -> ProviderRegistry:
     from marketatlas.analysis.analyzers.atr import ATRAnalyzer
+    from marketatlas.analysis.analyzers.atr_series import ATRSeriesAnalyzer
     from marketatlas.analysis.analyzers.ema import EMAAnalyzer
     from marketatlas.analysis.analyzers.sr import SupportResistanceAnalyzer
-    from marketatlas.analysis.analyzers.swing import SwingStructureAnalyzer
     from marketatlas.analysis.analyzers.swing_basic import BasicSwingAnalyzer
+    from marketatlas.analysis.analyzers.swing_structure import SwingStructureAnalyzer
     from marketatlas.analysis.analyzers.trend import TrendAnalyzer
     from marketatlas.analysis.patterns.four_swing_pullback import FourSwingPullbackDetector
     from marketatlas.analysis.signals.pullback_signal import PullbackSignal
@@ -215,8 +216,9 @@ def create_default_registry() -> ProviderRegistry:
     _register_timeframe(registry)
     registry.register("ema", EMAAnalyzer, default_params={"period": 20})
     registry.register("atr", ATRAnalyzer, default_params={"period": 14})
+    registry.register("atr_series", ATRSeriesAnalyzer, default_params={"period": 14})
     registry.register("trend", TrendAnalyzer)
-    registry.register("swingstructure", SwingStructureAnalyzer, default_params={"lookback": 50})
+    registry.register("swingstructure", SwingStructureAnalyzer, default_params={"window": 50})
     registry.register("swings", BasicSwingAnalyzer, default_params={"lookback": 50})
     registry.register("sr", SupportResistanceAnalyzer)
     registry.register("detect_pullback", FourSwingPullbackDetector)

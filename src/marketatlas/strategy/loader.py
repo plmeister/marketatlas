@@ -6,10 +6,11 @@ from typing import Any
 import yaml
 
 from marketatlas.analysis.analyzers.atr import ATRAnalyzer
+from marketatlas.analysis.analyzers.atr_series import ATRSeriesAnalyzer
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.analyzers.sr import SupportResistanceAnalyzer
-from marketatlas.analysis.analyzers.swing import SwingStructureAnalyzer
 from marketatlas.analysis.analyzers.swing_basic import BasicSwingAnalyzer
+from marketatlas.analysis.analyzers.swing_structure import SwingStructureAnalyzer
 from marketatlas.analysis.analyzers.trend import TrendAnalyzer
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
@@ -20,6 +21,7 @@ from .config import AnalyzerConfig, RiskConfig, SignalConfig, StrategyConfig
 ANALYZER_TYPES: dict[str, type[Analyzer]] = {
     "EMAAnalyzer": EMAAnalyzer,
     "ATRAnalyzer": ATRAnalyzer,
+    "ATRSeriesAnalyzer": ATRSeriesAnalyzer,
     "TrendAnalyzer": TrendAnalyzer,
     "SwingStructureAnalyzer": SwingStructureAnalyzer,
     "BasicSwingAnalyzer": BasicSwingAnalyzer,

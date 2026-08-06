@@ -1,3 +1,5 @@
+from bisect import bisect_right
+from datetime import datetime
 from typing import Any
 
 from marketatlas.analysis.base import Analyzer
@@ -6,21 +8,21 @@ from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
-from marketatlas.facts.primitive import ATRFact
-from marketatlas.facts.structural import SRFact, SRLevel, SwingFact, SwingPoint, SwingType
+from marketatlas.facts.primitive import ATRPoint, ATRSeriesFact
+from marketatlas.facts.structural import SRFact, SRLevel, SwingFact, SwingType
 
 
 class SupportResistanceAnalyzer(Analyzer):
     def __init__(
         self,
         swing_key: str = "swing",
-        atr_key: str = "atr_14",
+        atr_series_key: str = "atr_14_series",
         level_tolerance_atr: float = 0.5,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self._swing_key = swing_key
-        self._atr_key = atr_key
+        self._atr_series_key = atr_series_key
         self._level_tolerance_atr = level_tolerance_atr
 
     @property
@@ -30,7 +32,7 @@ class SupportResistanceAnalyzer(Analyzer):
     def requires(self) -> tuple[FactKey, ...]:
         return (
             self._make_key(self._swing_key),
-            self._make_key(self._atr_key),
+            self._make_key(self._atr_series_key),
         )
 
     def produces(self) -> tuple[FactKey, ...]:
@@ -38,7 +40,7 @@ class SupportResistanceAnalyzer(Analyzer):
 
     def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
         swing_fact = facts.get(self._make_key(self._swing_key))
-        atr_fact = facts.get(self._make_key(self._atr_key))
+        atr_series = facts.get(self._make_key(self._atr_series_key))
 
         if not isinstance(swing_fact, SwingFact) or not swing_fact.swings:
             evidence: tuple[EvidenceEntry, ...] = (
@@ -59,10 +61,10 @@ class SupportResistanceAnalyzer(Analyzer):
                 evidence=evidence,
             )
 
-        if not isinstance(atr_fact, ATRFact) or atr_fact.value <= 0:
+        if not isinstance(atr_series, ATRSeriesFact) or not atr_series.points:
             evidence = (
                 EvidenceEntry(
-                    text="No S/R levels — ATR unavailable or zero",
+                    text="No S/R levels — ATR series unavailable or empty",
                     level=EvidenceLevel.INFO,
                     source="SupportResistanceAnalyzer",
                 ),
@@ -78,12 +80,22 @@ class SupportResistanceAnalyzer(Analyzer):
                 evidence=evidence,
             )
 
-        tolerance = self._level_tolerance_atr * atr_fact.value
+        atr_lookup = _ATRLookup(atr_series.points)
+        tolerance_at = lambda ts: self._level_tolerance_atr * atr_lookup.at(ts)  # noqa: E731
+
         cluster_low = self._cluster_swings(
-            tuple([s for s in swing_fact.swings if s.type == SwingType.LOW]), tolerance
+            [
+                (s.price, tolerance_at(s.timestamp))
+                for s in swing_fact.swings
+                if s.type == SwingType.LOW
+            ]
         )
         cluster_high = self._cluster_swings(
-            tuple([s for s in swing_fact.swings if s.type == SwingType.HIGH]), tolerance
+            [
+                (s.price, tolerance_at(s.timestamp))
+                for s in swing_fact.swings
+                if s.type == SwingType.HIGH
+            ]
         )
 
         levels: list[SRLevel] = []
@@ -149,23 +161,49 @@ class SupportResistanceAnalyzer(Analyzer):
         )
 
     @staticmethod
-    def _cluster_swings(swings: tuple[SwingPoint, ...], tolerance: float) -> list[list[float]]:
-        points = sorted(
-            [(s.price, s.type) for s in swings],
-            key=lambda x: x[0],
-        )
-        if not points:
-            return []
+    def _cluster_swings(points: list[tuple[float, float]]) -> list[list[float]]:
+        """Cluster ``(price, tolerance)`` points by overlapping bands.
 
+        Each swing occupies a band ``price ± tolerance`` sized by the ATR at
+        its own candle. Swings whose bands overlap form one level. Sorting by
+        price keeps the merge greedy and order-independent — a swing's band
+        never shifts with the current cursor, so a pair that clusters today
+        still clusters tomorrow.
+        """
         clusters: list[list[float]] = []
-        current_cluster: list[float] = [points[0][0]]
+        current_cluster: list[float] = []
+        cluster_hi = float("-inf")
 
-        for price, _ in points[1:]:
-            if price - current_cluster[-1] <= tolerance:
+        for price, tolerance in sorted(points, key=lambda p: p[0]):
+            band_lo = price - tolerance
+            band_hi = price + tolerance
+            if current_cluster and band_lo <= cluster_hi:
                 current_cluster.append(price)
+                cluster_hi = max(cluster_hi, band_hi)
             else:
-                clusters.append(current_cluster)
+                if current_cluster:
+                    clusters.append(current_cluster)
                 current_cluster = [price]
+                cluster_hi = band_hi
 
-        clusters.append(current_cluster)
+        if current_cluster:
+            clusters.append(current_cluster)
         return clusters
+
+
+class _ATRLookup:
+    """Timestamp → ATR lookup over a per-candle series (sorted by time).
+
+    A query falls back to the latest series point at or before the requested
+    time, and to the first point when the request predates the series.
+    """
+
+    def __init__(self, points: tuple[ATRPoint, ...]) -> None:
+        self._timestamps = tuple(p.timestamp for p in points)
+        self._values = tuple(p.value for p in points)
+
+    def at(self, timestamp: datetime) -> float:
+        if not self._timestamps:
+            return 0.0
+        idx = bisect_right(self._timestamps, timestamp)
+        return self._values[idx - 1] if idx > 0 else self._values[0]

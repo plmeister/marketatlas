@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from marketatlas.analysis.analyzers.sr import SupportResistanceAnalyzer
 from marketatlas.analysis.factkey import FactKey
@@ -7,7 +7,7 @@ from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
-from marketatlas.facts.primitive import ATRFact
+from marketatlas.facts.primitive import ATRPoint, ATRSeriesFact
 from marketatlas.facts.structural import (
     SRFact,
     SwingFact,
@@ -34,37 +34,42 @@ def _make_store(candles_data: list[tuple[float, float, float, float]]) -> Market
     return MarketStore(data)
 
 
-def _atr_fact(value: float = 2.0) -> ATRFact:
-    return ATRFact(
+def _atr_series_fact(value: float = 2.0) -> ATRSeriesFact:
+    return ATRSeriesFact(
         timestamp=BASE,
-        evidence=(
-            EvidenceEntry(
-                text=f"ATR14 = {value:.2f}",
-                level=EvidenceLevel.INFO,
-                source="ATRAnalyzer",
-            ),
-        ),
-        value=value,
+        evidence=(),
+        points=(ATRPoint(timestamp=BASE, value=value),),
+        period=14,
+    )
+
+
+def _atr_series_fact_at(points: list[tuple[datetime, float]]) -> ATRSeriesFact:
+    return ATRSeriesFact(
+        timestamp=BASE,
+        evidence=(),
+        points=tuple(ATRPoint(timestamp=ts, value=v) for ts, v in points),
         period=14,
     )
 
 
 def _make_swings(
     prices_and_types: list[tuple[float, SwingType]],
+    timestamps: list[datetime] | None = None,
 ) -> tuple[SwingPoint, ...]:
+    ts = timestamps if timestamps is not None else [BASE] * len(prices_and_types)
     return tuple(
         SwingPoint(
             price=price,
             index=i,
             type=stype,
-            timestamp=BASE,
+            timestamp=ts[i],
         )
         for i, (price, stype) in enumerate(prices_and_types)
     )
 
 
-def _keyed_facts(swings: SwingFact, atr: ATRFact) -> dict[FactKey, Fact]:
-    return {FactKey("swing"): swings, FactKey("atr_14"): atr}
+def _keyed_facts(swings: SwingFact, atr: ATRSeriesFact) -> dict[FactKey, Fact]:
+    return {FactKey("swing"): swings, FactKey("atr_14_series"): atr}
 
 
 def _swings_fact(swings: tuple[SwingPoint, ...]) -> SwingFact:
@@ -76,7 +81,7 @@ class TestSupportResistanceAnalyzer:
         analyzer = SupportResistanceAnalyzer()
         reqs = analyzer.requires()
         assert FactKey("swing") in reqs
-        assert FactKey("atr_14") in reqs
+        assert FactKey("atr_14_series") in reqs
 
     def test_produces(self) -> None:
         analyzer = SupportResistanceAnalyzer()
@@ -88,7 +93,7 @@ class TestSupportResistanceAnalyzer:
         view = MarketView(store, cursor=4, window_size=4)
         analyzer = SupportResistanceAnalyzer()
         sf = _swings_fact(())
-        result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact()))
+        result = analyzer.analyze(view, _keyed_facts(sf, _atr_series_fact()))
         fact = result.facts[0]
         assert isinstance(fact, SRFact)
         assert len(fact.levels) == 0
@@ -99,7 +104,7 @@ class TestSupportResistanceAnalyzer:
         view = MarketView(store, cursor=4, window_size=4)
         analyzer = SupportResistanceAnalyzer()
         sf = _swings_fact(_make_swings([(100.0, SwingType.HIGH), (90.0, SwingType.LOW)]))
-        bad_atr = ATRFact(timestamp=BASE, evidence=(), value=0.0, period=14)
+        bad_atr = ATRSeriesFact(timestamp=BASE, evidence=(), points=(), period=14)
         result = analyzer.analyze(view, _keyed_facts(sf, bad_atr))
         fact = result.facts[0]
         assert isinstance(fact, SRFact)
@@ -111,7 +116,7 @@ class TestSupportResistanceAnalyzer:
         view = MarketView(store, cursor=4, window_size=4)
         analyzer = SupportResistanceAnalyzer()
         sf = _swings_fact(_make_swings([(95.0, SwingType.LOW)]))
-        result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact(2.0)))
+        result = analyzer.analyze(view, _keyed_facts(sf, _atr_series_fact(2.0)))
         fact = result.facts[0]
         assert isinstance(fact, SRFact)
         assert len(fact.levels) == 1
@@ -135,7 +140,7 @@ class TestSupportResistanceAnalyzer:
                 ]
             )
         )
-        result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact(2.0)))
+        result = analyzer.analyze(view, _keyed_facts(sf, _atr_series_fact(2.0)))
         fact = result.facts[0]
         assert isinstance(fact, SRFact)
         # Two clusters: {100.0, 100.5} and {90.0}
@@ -143,6 +148,53 @@ class TestSupportResistanceAnalyzer:
         clustered = [lv for lv in fact.levels if lv.strength == 2]
         assert len(clustered) == 1
         assert abs(clustered[0].price - 100.25) < 0.01
+
+    def test_clustering_uses_atr_at_swing_time(self) -> None:
+        """Tolerance is anchored to ATR at each swing's timestamp, not the cursor ATR."""
+        candles = [(100.0, 101.0, 99.0, 100.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5)
+        ts_old = BASE
+        ts_recent = BASE + timedelta(days=1)
+        sf = _swings_fact(
+            _make_swings(
+                [(100.0, SwingType.LOW), (105.0, SwingType.LOW)],
+                timestamps=[ts_old, ts_recent],
+            )
+        )
+        # Scalar cursor-ATR would give both swings tolerance 1.0 (0.5 * 2.0),
+        # leaving 5.0 gap unmerged. Anchored: old swing 1.0, recent swing 5.0
+        # (0.5 * 10.0) -> bands overlap -> merge.
+        atr = _atr_series_fact_at([(ts_old, 2.0), (ts_recent, 10.0)])
+        result = analyzer.analyze(view, _keyed_facts(sf, atr))
+        fact = result.facts[0]
+        assert isinstance(fact, SRFact)
+        assert len(fact.levels) == 1
+        assert fact.levels[0].strength == 2
+        assert abs(fact.levels[0].price - 102.5) < 0.01
+
+    def test_atr_lookup_falls_back_to_latest_available(self) -> None:
+        """Swing older than every series point uses the oldest known ATR."""
+        candles = [(100.0, 101.0, 99.0, 100.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5)
+        ts_old = BASE
+        ts_recent = BASE + timedelta(days=1)
+        sf = _swings_fact(
+            _make_swings(
+                [(100.0, SwingType.LOW), (104.0, SwingType.LOW)],
+                timestamps=[ts_old, ts_recent],
+            )
+        )
+        atr = _atr_series_fact_at([(ts_recent, 10.0)])
+        result = analyzer.analyze(view, _keyed_facts(sf, atr))
+        fact = result.facts[0]
+        assert isinstance(fact, SRFact)
+        # Old swing falls back to oldest known ATR (10.0 -> tol 5.0) so it merges.
+        assert len(fact.levels) == 1
+        assert fact.levels[0].strength == 2
 
     def test_support_below_resistance_above(self) -> None:
         """Levels below current close are support, above are resistance."""
@@ -159,7 +211,7 @@ class TestSupportResistanceAnalyzer:
                 ]
             )
         )
-        result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact(2.0)))
+        result = analyzer.analyze(view, _keyed_facts(sf, _atr_series_fact(2.0)))
         fact = result.facts[0]
         assert isinstance(fact, SRFact)
         support = [lv for lv in fact.levels if lv.type == "support"]
@@ -184,7 +236,7 @@ class TestSupportResistanceAnalyzer:
                 ]
             )
         )
-        result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact(2.0)))
+        result = analyzer.analyze(view, _keyed_facts(sf, _atr_series_fact(2.0)))
         fact = result.facts[0]
         assert isinstance(fact, SRFact)
         prices = [lv.price for lv in fact.levels]
@@ -203,7 +255,7 @@ class TestSupportResistanceAnalyzer:
                 ]
             )
         )
-        result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact(2.0)))
+        result = analyzer.analyze(view, _keyed_facts(sf, _atr_series_fact(2.0)))
         assert any("2 S/R levels" in e.text for e in result.evidence)
 
     def test_evidence_nearest_support(self) -> None:
@@ -220,7 +272,7 @@ class TestSupportResistanceAnalyzer:
                 ]
             )
         )
-        result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact(2.0)))
+        result = analyzer.analyze(view, _keyed_facts(sf, _atr_series_fact(2.0)))
         assert any("Nearest support" in e.text for e in result.evidence)
 
     def test_evidence_nearest_resistance(self) -> None:
@@ -237,7 +289,7 @@ class TestSupportResistanceAnalyzer:
                 ]
             )
         )
-        result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact(2.0)))
+        result = analyzer.analyze(view, _keyed_facts(sf, _atr_series_fact(2.0)))
         assert any("Nearest resistance" in e.text for e in result.evidence)
 
     def test_fact_timestamp_matches_view(self) -> None:
@@ -246,16 +298,16 @@ class TestSupportResistanceAnalyzer:
         view = MarketView(store, cursor=4, window_size=4)
         analyzer = SupportResistanceAnalyzer()
         sf = _swings_fact(_make_swings([(95.0, SwingType.LOW)]))
-        result = analyzer.analyze(view, _keyed_facts(sf, _atr_fact(2.0)))
+        result = analyzer.analyze(view, _keyed_facts(sf, _atr_series_fact(2.0)))
         assert result.facts[0].timestamp == BASE
 
     def test_custom_keys(self) -> None:
         candles = [(100.0, 101.0, 99.0, 100.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
-        analyzer = SupportResistanceAnalyzer(swing_key="swing_custom", atr_key="atr_custom")
+        analyzer = SupportResistanceAnalyzer(swing_key="swing_custom", atr_series_key="atr_custom")
         sf = _swings_fact(_make_swings([(95.0, SwingType.LOW)]))
-        atr = _atr_fact(2.0)
+        atr = _atr_series_fact(2.0)
         facts: dict[FactKey, Fact] = {FactKey("swing_custom"): sf, FactKey("atr_custom"): atr}
         result = analyzer.analyze(view, facts)
         fact = result.facts[0]

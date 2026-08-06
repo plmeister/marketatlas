@@ -45,3 +45,8 @@ class SRLevel:
 @dataclass(frozen=True)
 class SRFact(Fact):
     levels: tuple[SRLevel, ...]
+
+
+@dataclass(frozen=True)
+class SwingStructureFact(Fact):
+    points: tuple[SwingPoint, ...]
