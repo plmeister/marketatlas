@@ -7,7 +7,7 @@ from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import ATRFact
-from marketatlas.facts.structural import SRFact, SRLevel, SwingFact, SwingPoint
+from marketatlas.facts.structural import SRFact, SRLevel, SwingFact, SwingPoint, SwingType
 
 
 class SupportResistanceAnalyzer(Analyzer):
@@ -79,14 +79,24 @@ class SupportResistanceAnalyzer(Analyzer):
             )
 
         tolerance = self._level_tolerance_atr * atr_fact.value
-        clusters = self._cluster_swings(swing_fact.swings, tolerance)
+        cluster_low = self._cluster_swings(
+            tuple([s for s in swing_fact.swings if s.type == SwingType.LOW]), tolerance
+        )
+        cluster_high = self._cluster_swings(
+            tuple([s for s in swing_fact.swings if s.type == SwingType.HIGH]), tolerance
+        )
 
-        current_price = view.current.close
         levels: list[SRLevel] = []
-        for cluster_prices in clusters:
+        for cluster_prices in cluster_low:
             avg_price = sum(cluster_prices) / len(cluster_prices)
             strength = len(cluster_prices)
-            level_type = "support" if avg_price < current_price else "resistance"
+            level_type = "support"
+            levels.append(SRLevel(price=avg_price, strength=strength, type=level_type))
+
+        for cluster_prices in cluster_high:
+            avg_price = sum(cluster_prices) / len(cluster_prices)
+            strength = len(cluster_prices)
+            level_type = "resistance"
             levels.append(SRLevel(price=avg_price, strength=strength, type=level_type))
 
         levels.sort(key=lambda lv: lv.price)
@@ -110,7 +120,7 @@ class SupportResistanceAnalyzer(Analyzer):
             nearest = support_levels[-1]
             evidence_list.append(
                 EvidenceEntry(
-                    text=(f"Nearest support: {nearest.price:.2f} " f"({nearest.strength} touches)"),
+                    text=(f"Nearest support: {nearest.price:.2f} ({nearest.strength} touches)"),
                     level=EvidenceLevel.SIGNAL,
                     source="SupportResistanceAnalyzer",
                 ),
@@ -120,9 +130,7 @@ class SupportResistanceAnalyzer(Analyzer):
             nearest = resistance_levels[0]
             evidence_list.append(
                 EvidenceEntry(
-                    text=(
-                        f"Nearest resistance: {nearest.price:.2f} " f"({nearest.strength} touches)"
-                    ),
+                    text=(f"Nearest resistance: {nearest.price:.2f} ({nearest.strength} touches)"),
                     level=EvidenceLevel.SIGNAL,
                     source="SupportResistanceAnalyzer",
                 ),

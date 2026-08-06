@@ -38,7 +38,7 @@ class SwingStructureAnalyzer(Analyzer):
         return (self._make_key(self.instance_key),)
 
     def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
-        all_candles: tuple[Candle, ...] = tuple(view.store.slice(0, view.cursor)) + (view.current,)
+        all_candles: tuple[Candle, ...] = view.series_through_cursor() + (view.current,)
 
         if len(all_candles) < self._left_bars + self._right_bars + 1:
             evidence = (
