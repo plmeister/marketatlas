@@ -39,6 +39,11 @@ class MarketView:
         start = max(0, self.cursor - self.window_size)
         return candles[start:self.cursor]
 
+    def series_through_cursor(self) -> tuple[Candle, ...]:
+        if self.view_timeframe is None:
+            return self.store.slice(0, self.cursor)
+        return self._series()[:self.cursor]
+
     @property
     def prices(self) -> tuple[float, ...]:
         return tuple(c.close for c in self.history) + (self.current.close,)

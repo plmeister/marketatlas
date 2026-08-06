@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from marketatlas.analysis.analyzers.atr import ATRAnalyzer
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.analyzers.trend import TrendAnalyzer
@@ -131,6 +130,26 @@ class TestLoadStrategy:
         path = _write_yaml(tmp_path, yaml_str)
         config = load_strategy(path)
         assert config.version == "1.0"
+
+    def test_dsl_file_loads(self, tmp_path: Path) -> None:
+        path = tmp_path / "trend.dsl"
+        path.write_text(
+            "ema := ema { period: 20 }\n"
+            "atr_14 := atr { period: 14 }\n"
+            "trend := trend { ema_20: ema, ema_50: ema50 }\n"
+            "ema50 := ema { period: 50 }\n"
+        )
+        config = load_strategy(path)
+        assert config.name == "trend"
+        assert config.version == "1.0"
+        types = [ac.type for ac in config.analyzers]
+        assert types == ["EMAAnalyzer", "ATRAnalyzer", "TrendAnalyzer", "EMAAnalyzer"]
+
+    def test_dsl_choice_template_rejected(self, tmp_path: Path) -> None:
+        path = tmp_path / "choice.dsl"
+        path.write_text("ema := ema { period: <20 | 50> }\n")
+        with pytest.raises(ConfigError, match="single concrete AST"):
+            load_strategy(path)
 
     def test_default_timeframes(self, tmp_path: Path) -> None:
         yaml_str = "strategy:\n  name: test\n"

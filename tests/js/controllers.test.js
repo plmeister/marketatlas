@@ -88,6 +88,25 @@ test('stepBackward goes back and clamps at 0', () => {
   assert.strictEqual(model.currentFrame, 0);
 });
 
+test('stepping on a coarser TF advances to the next visible candle', () => {
+  const model = makeModel();
+  model.switchTF('1w');
+  const pb = new PlaybackController(model, {}, { speed: 100, render: () => {} });
+  pb.stepForward(); // weekly bar 2024-01-06 first becomes visible at frame 4
+  assert.strictEqual(model.currentFrame, 4);
+  pb.stepForward(); // no weekly bar after frame 4's date in this fixture
+  assert.strictEqual(model.currentFrame, model.frames.length - 1);
+});
+
+test('stepping back on a coarser TF lands before the current weekly candle', () => {
+  const model = makeModel();
+  model.switchTF('1w');
+  const pb = new PlaybackController(model, {}, { speed: 100, render: () => {} });
+  model.goTo(4);
+  pb.stepBackward(); // last frame before weekly bar 2024-01-06
+  assert.strictEqual(model.currentFrame, 3);
+});
+
 test('jumpToStart and jumpToEnd pause and position', () => {
   const model = makeModel();
   const pb = new PlaybackController(model, {}, { speed: 100, render: () => {} });

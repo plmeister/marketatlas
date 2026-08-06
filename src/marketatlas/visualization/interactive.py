@@ -67,21 +67,17 @@ def _extract_atr_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
 def _extract_sr_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for frame in frames:
-        sr_fact: SRFact | None = None
-        for fact_type_key, fact in frame.facts.items():
-            if isinstance(fact, SRFact):
-                sr_fact = fact
-                break
         levels = []
-        if sr_fact is not None:
-            for lv in sr_fact.levels:
-                levels.append(
-                    {
-                        "price": lv.price,
-                        "strength": lv.strength,
-                        "type": lv.type,
-                    }
-                )
+        for fact in frame.facts.values():
+            if isinstance(fact, SRFact):
+                for lv in fact.levels:
+                    levels.append(
+                        {
+                            "price": lv.price,
+                            "strength": lv.strength,
+                            "type": lv.type,
+                        }
+                    )
         result.append(
             {
                 "time": _ts_to_time(frame.timestamp.timestamp()),
@@ -127,6 +123,12 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
         facts: dict[str, Any] = {}
         for fact_type_key, fact in frame.facts.items():
             label = fact_type_key.name
+            if label in facts:
+                label = (
+                    f"{label}_{fact_type_key.timeframe.value}"
+                    if fact_type_key.timeframe is not None
+                    else f"{label}_{len(facts)}"
+                )
             if isinstance(fact, EMAFact):
                 facts[label] = {"type": "ema", "value": fact.value, "period": fact.period}
             elif isinstance(fact, ATRFact):
@@ -181,7 +183,15 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
                     }
                     for s in fact.swings
                 ]
-                facts[label] = {"type": "swing", "swings": swings}
+                facts[label] = {
+                    "type": "swing",
+                    "swings": swings,
+                    "timeframe": (
+                        fact_type_key.timeframe.value
+                        if fact_type_key.timeframe is not None
+                        else None
+                    ),
+                }
         result.append(facts)
     return result
 

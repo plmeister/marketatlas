@@ -123,6 +123,41 @@ class AppModel {
   goPrev() { this.currentFrame = this._clamp(this.currentFrame - 1); return this.currentFrame; }
   goTo(idx) { this.currentFrame = this._clamp(idx); return this.currentFrame; }
 
+  // --- Step sizing ---
+  // Frames advance on the primary TF (e.g. 1d) while the chart may show a
+  // coarser TF (e.g. 1w). Stepping one frame then lands mid-candle and no new
+  // candle becomes visible. These helpers return the index that reveals the
+  // next/previous candle on the active TF (a step of 1 when TFs match).
+  _viewCandles() {
+    return this.candlesByTF[this.activeTF] || this.candles;
+  }
+
+  nextStepIndex(fromIdx) {
+    const curTime = this.frameTime(fromIdx);
+    if (curTime === null) return fromIdx;
+    const nextBar = this._viewCandles().find(c => _t(c.time) > _t(curTime));
+    if (!nextBar) return this.frames.length - 1;
+    for (let i = fromIdx + 1; i < this.frames.length; i++) {
+      if (this.frameTime(i) >= nextBar.time) return i;
+    }
+    return this.frames.length - 1;
+  }
+
+  prevStepIndex(fromIdx) {
+    const curTime = this.frameTime(fromIdx);
+    if (curTime === null) return fromIdx;
+    const viewCandles = this._viewCandles();
+    let lastVisible = null;
+    for (let i = viewCandles.length - 1; i >= 0; i--) {
+      if (_t(viewCandles[i].time) <= _t(curTime)) { lastVisible = viewCandles[i].time; break; }
+    }
+    if (lastVisible === null) return 0;
+    for (let i = fromIdx - 1; i >= 0; i--) {
+      if (this.frameTime(i) < lastVisible) return i;
+    }
+    return 0;
+  }
+
   switchTF(tf) {
     if (!this.candlesByTF[tf]) return false;
     this.activeTF = tf;

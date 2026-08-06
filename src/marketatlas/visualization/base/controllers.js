@@ -40,13 +40,13 @@ class PlaybackController {
 
   stepForward() {
     this._pause();
-    this.model.goNext();
+    this.model.goTo(this.model.nextStepIndex(this.model.currentFrame));
     this.render();
   }
 
   stepBackward() {
     this._pause();
-    this.model.goPrev();
+    this.model.goTo(this.model.prevStepIndex(this.model.currentFrame));
     this.render();
   }
 

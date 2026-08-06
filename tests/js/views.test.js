@@ -138,6 +138,21 @@ test('updateSR shows SR price lines on secondary TF', () => {
   assert.strictEqual(cv.srPriceLines.length, 1);
 });
 
+test('updateSR replaces previous frame lines instead of stacking', () => {
+  const model = makeModel();
+  const cv = new ChartView(model, makeContainers());
+  cv.build('1d');
+  cv.updateSR(1); // 1 level
+  assert.strictEqual(cv.srPriceLines.length, 1);
+  assert.strictEqual(cv.candleSeries.priceLines.length, 1);
+  cv.updateSR(2); // still 1 level — old line must be detached, not added to
+  assert.strictEqual(cv.srPriceLines.length, 1);
+  assert.strictEqual(cv.candleSeries.priceLines.length, 1);
+  cv.updateSR(3); // 2 levels
+  assert.strictEqual(cv.srPriceLines.length, 2);
+  assert.strictEqual(cv.candleSeries.priceLines.length, 2);
+});
+
 // --- updateZigzag() ---
 test('updateZigzag draws bullish pullback pattern on primary TF', () => {
   const model = makeModel();
@@ -236,7 +251,7 @@ test('updateMarkers places swing markers at native swing times', () => {
   const model = makeModel();
   const cv = new ChartView(model, makeContainers());
   cv.build('1d');
-  cv.updateMarkers(5); // frame 5 has swing facts at 1d indices 4,5
+  cv.updateMarkers(5); // frame 5 has 1d swing facts at 1d indices 4,5
   const swingTimes = cv.candleSeries.markers
     .filter(m => m.color === '#f59e0b' || m.color === '#3b82f6')
     .map(m => m.time)
@@ -244,16 +259,36 @@ test('updateMarkers places swing markers at native swing times', () => {
   assert.deepStrictEqual(swingTimes, ['2024-01-05', '2024-01-06']);
 });
 
-test('updateMarkers on secondary TF keeps native swing times (not remapped via 1w candles)', () => {
+test('updateMarkers on 1d view filters out 1w swings', () => {
+  const model = makeModel();
+  const cv = new ChartView(model, makeContainers());
+  cv.build('1d');
+  cv.updateMarkers(3); // frame 3 has a 1w swing only
+  const swingMarkers = cv.candleSeries.markers
+    .filter(m => m.color === '#f59e0b' || m.color === '#3b82f6');
+  assert.deepStrictEqual(swingMarkers, []);
+});
+
+test('updateMarkers on 1w view shows 1w swings and hides 1d swings', () => {
   const model = makeModel();
   model.switchTF('1w');
   const cv = new ChartView(model, makeContainers());
   cv.build('1w');
-  cv.updateMarkers(5);
+  cv.updateMarkers(3); // frame 3 has a 1w swing at 1w candle 2024-01-06
   const swingMarkers = cv.candleSeries.markers
     .filter(m => m.color === '#f59e0b' || m.color === '#3b82f6');
-  // Markers keep the swing's native 1d time; LC drops them when no 1w candle matches.
-  assert.deepStrictEqual(swingMarkers.map(m => m.time).sort(), ['2024-01-05', '2024-01-06']);
+  assert.deepStrictEqual(swingMarkers.map(m => m.time).sort(), ['2024-01-06']);
+});
+
+test('updateMarkers on 1w view hides 1d swings from current frame', () => {
+  const model = makeModel();
+  model.switchTF('1w');
+  const cv = new ChartView(model, makeContainers());
+  cv.build('1w');
+  cv.updateMarkers(5); // frame 5 has 1d swings only
+  const swingMarkers = cv.candleSeries.markers
+    .filter(m => m.color === '#f59e0b' || m.color === '#3b82f6');
+  assert.deepStrictEqual(swingMarkers, []);
 });
 
 console.log('\nInfoPanelView Tests\n');

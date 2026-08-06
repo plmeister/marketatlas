@@ -34,10 +34,10 @@ class ChartView {
   }
 
   destroy() {
+    this._clearPriceLines();
     if (this.chart) { this.chart.remove(); this.chart = null; }
     if (this.atrChart) { this.atrChart.remove(); this.atrChart = null; }
     if (this.volumeChart) { this.volumeChart.remove(); this.volumeChart = null; }
-    this._clearPriceLines();
     this.candleSeries = null;
     this.emaSeriesMap = {};
     this.zigzagBull = null;
@@ -47,8 +47,11 @@ class ChartView {
   }
 
   _clearPriceLines() {
-    this.srPriceLines.forEach(pl => { try { pl.remove(); } catch(e) {} });
-    this.tradePriceLines.forEach(pl => { try { pl.remove(); } catch(e) {} });
+    // lightweight-charts 4.1.3: lines have no remove(); detach via the series.
+    if (this.candleSeries) {
+      this.srPriceLines.forEach(pl => this.candleSeries.removePriceLine(pl));
+      this.tradePriceLines.forEach(pl => this.candleSeries.removePriceLine(pl));
+    }
     this.srPriceLines = [];
     this.tradePriceLines = [];
   }
@@ -281,12 +284,14 @@ class ChartView {
       markers.push({ time: pb.time, position: pb.position, color: pb.color, shape: pb.shape, text: pb.text });
     }
 
-    // Swing markers — swings carry their own native time (they belong to the
-    // TF they were detected on, not the current view TF). LightweightCharts
-    // silently drops markers whose time is not a candle on the active TF.
+    // Swing markers — only show swings detected on the active TF. Swings from
+    // other timeframes (e.g. 1w swings on a 1d view) stay hidden; each TF's
+    // swings carry their own native candle time so markers align to the right
+    // bars on their own TF.
     const facts = this.model.frameFacts(idx);
+    const activeTF = this.model.activeTF;
     Object.values(facts).forEach(val => {
-      if (val.type === 'swing' && val.swings) {
+      if (val.type === 'swing' && val.swings && val.timeframe === activeTF) {
         val.swings.forEach(sw => {
           if (!sw.time) return;
           const isHigh = sw.type === 'high';

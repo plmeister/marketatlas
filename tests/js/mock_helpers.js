@@ -45,12 +45,16 @@ class MockSeries {
   setMarkers(m) { this.markers = m; }
   data() { return this._data; }
   createPriceLine(o) {
+    // v4.1.3: the returned line has NO remove() — only series.removePriceLine().
     const pl = Object.assign({ removed: false }, o);
-    pl.remove = () => { pl.removed = true; };
     this.priceLines.push(pl);
     return pl;
   }
-  removePriceLine(pl) { pl.removed = true; }
+  removePriceLine(pl) {
+    pl.removed = true;
+    const i = this.priceLines.indexOf(pl);
+    if (i >= 0) this.priceLines.splice(i, 1);
+  }
 }
 
 class MockChart {

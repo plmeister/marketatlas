@@ -225,6 +225,31 @@ test('goTo sets specific frame', () => {
   assert.strictEqual(model.currentFrame, 0);
 });
 
+// --- Step sizing (coarser view TF) ---
+test('nextStepIndex advances 1 frame when view TF matches frame TF', () => {
+  assert.strictEqual(model.nextStepIndex(0), 1);
+  assert.strictEqual(model.nextStepIndex(3), 4);
+});
+
+test('nextStepIndex advances to next visible candle on 1w view', () => {
+  model.switchTF('1w');
+  assert.strictEqual(model.nextStepIndex(0), 4); // weekly bar 2024-01-06 revealed at frame 4
+  assert.strictEqual(model.nextStepIndex(4), model.frames.length - 1); // no further weekly bar
+  model.switchTF('1d');
+});
+
+test('prevStepIndex steps 1 frame back when view TF matches frame TF', () => {
+  assert.strictEqual(model.prevStepIndex(3), 2);
+  assert.strictEqual(model.prevStepIndex(0), 0);
+});
+
+test('prevStepIndex lands before current weekly candle on 1w view', () => {
+  model.switchTF('1w');
+  assert.strictEqual(model.prevStepIndex(4), 3); // before weekly bar 2024-01-06
+  assert.strictEqual(model.prevStepIndex(0), 0);
+  model.switchTF('1d');
+});
+
 // --- Frame queries ---
 test('frameTime returns time string', () => {
   assert.strictEqual(model.frameTime(0), '2024-01-01');

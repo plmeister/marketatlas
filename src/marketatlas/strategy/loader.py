@@ -33,6 +33,8 @@ class ConfigError(Exception):
 
 
 def load_strategy(path: Path) -> StrategyConfig:
+    if path.suffix == ".dsl":
+        return _load_dsl(path)
     raw = yaml.safe_load(path.read_text())
     if not isinstance(raw, dict):
         raise ConfigError(f"Expected YAML mapping, got {type(raw).__name__}")
@@ -59,6 +61,19 @@ def load_strategy(path: Path) -> StrategyConfig:
         signals=signals,
         risk=risk,
     )
+
+
+def _load_dsl(path: Path) -> StrategyConfig:
+    from marketatlas.analysis.ast.compiler import ASTCompiler
+    from marketatlas.analysis.ast.parser import parse_with_positions
+
+    source = path.read_text()
+    analysis, _ = parse_with_positions(source, name=path.stem)
+    try:
+        template = ASTCompiler.compile_template(analysis)
+    except Exception as e:
+        raise ConfigError(f"Error compiling DSL '{path.name}': {e}") from e
+    return template.config
 
 
 def validate_config(config: StrategyConfig) -> list[str]:

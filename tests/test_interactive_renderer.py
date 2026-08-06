@@ -241,6 +241,33 @@ class TestExtractSR:
         assert len(result) == 1
         assert result[0]["levels"] == []
 
+    def test_merges_levels_across_timeframes(self) -> None:
+        candle = _make_candle(0)
+        sr_daily = SRFact(
+            timestamp=candle.timestamp,
+            evidence=(),
+            levels=(SRLevel(price=90.0, strength=2, type="support"),),
+        )
+        sr_weekly = SRFact(
+            timestamp=candle.timestamp,
+            evidence=(),
+            levels=(SRLevel(price=110.0, strength=3, type="resistance"),),
+        )
+        frame = AnalysisFrame(
+            timestamp=candle.timestamp,
+            candle=candle,
+            facts={
+                FactKey("sr", timeframe=Timeframe.D1): sr_daily,
+                FactKey("sr", timeframe=Timeframe.W1): sr_weekly,
+            },
+            evidence=(),
+        )
+        result = _extract_sr_per_frame([frame])
+        assert result[0]["levels"] == [
+            {"price": 90.0, "strength": 2, "type": "support"},
+            {"price": 110.0, "strength": 3, "type": "resistance"},
+        ]
+
     def test_empty(self) -> None:
         assert _extract_sr_per_frame([]) == []
 
@@ -391,6 +418,41 @@ class TestExtractFactsPerFrame:
         point = result[0]["swing"]["swings"][0]
         assert point["time"] == ts.strftime("%Y-%m-%d")
         assert point["index"] == 0  # index kept for reference
+
+    def test_multi_timeframe_swings_kept_separate(self) -> None:
+        candle = _make_candle(0)
+        ts = candle.timestamp
+        swing_daily = SwingFact(
+            timestamp=ts,
+            evidence=(),
+            swings=(
+                SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=ts),
+                SwingPoint(price=105.0, index=2, type=SwingType.HIGH, timestamp=ts),
+            ),
+        )
+        swing_weekly = SwingFact(
+            timestamp=ts,
+            evidence=(),
+            swings=(
+                SwingPoint(price=90.0, index=1, type=SwingType.LOW, timestamp=ts),
+            ),
+        )
+        frame = AnalysisFrame(
+            timestamp=candle.timestamp,
+            candle=candle,
+            facts={
+                FactKey("swing", timeframe=Timeframe.D1): swing_daily,
+                FactKey("swing", timeframe=Timeframe.W1): swing_weekly,
+            },
+            evidence=(),
+        )
+        result = _extract_facts_per_frame([frame])
+        swing_entries = {
+            v["timeframe"]: v for v in result[0].values() if isinstance(v, dict) and v.get("type") == "swing"
+        }
+        assert set(swing_entries) == {"1d", "1w"}
+        assert len(swing_entries["1d"]["swings"]) == 2
+        assert len(swing_entries["1w"]["swings"]) == 1
 
     def test_empty(self) -> None:
         assert _extract_facts_per_frame([]) == []
