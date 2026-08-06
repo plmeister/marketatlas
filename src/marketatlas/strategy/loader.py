@@ -14,7 +14,7 @@ from marketatlas.analysis.analyzers.swing_structure import SwingStructureAnalyze
 from marketatlas.analysis.analyzers.trend import TrendAnalyzer
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
-from marketatlas.analysis.patterns.four_swing_pullback import FourSwingPullbackDetector
+from marketatlas.analysis.patterns import FourSwingPullbackDetector, PullbackPatternAnalyzer
 
 from .config import AnalyzerConfig, RiskConfig, SignalConfig, StrategyConfig
 
@@ -27,6 +27,7 @@ ANALYZER_TYPES: dict[str, type[Analyzer]] = {
     "BasicSwingAnalyzer": BasicSwingAnalyzer,
     "SupportResistanceAnalyzer": SupportResistanceAnalyzer,
     "FourSwingPullbackDetector": FourSwingPullbackDetector,
+    "PullbackPatternAnalyzer": PullbackPatternAnalyzer,
 }
 
 

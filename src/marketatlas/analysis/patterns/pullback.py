@@ -3,52 +3,75 @@ from typing import Any
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.result import AnalysisResult
-from marketatlas.data.types import Candle
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
 from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact
-from marketatlas.facts.structural import TrendDirection, TrendFact
+from marketatlas.facts.structural import TrendDirection, TrendFact, SwingStructureFact, SwingType
 
 
-class PullbackDetector(Analyzer):
+class PullbackPatternAnalyzer(Analyzer):
     def __init__(
         self,
-        min_retracement_atr: float = 0.5,
-        max_retracement_atr: float = 2.0,
-        swing_lookback: int = 20,
-        trend_key: str = "trend",
-        atr_key: str = "atr_14",
+        swingstructure_key: str = "swing_structure",
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
-        self._min_retracement_atr = min_retracement_atr
-        self._max_retracement_atr = max_retracement_atr
-        self._swing_lookback = swing_lookback
-        self._trend_key = trend_key
-        self._atr_key = atr_key
+        self._swingstructure_key = swingstructure_key
 
     @property
     def instance_key(self) -> str:
-        return "pullback"
+        return "pullback_pattern"
 
     def requires(self) -> tuple[FactKey, ...]:
-        return (
-            self._make_key(self._trend_key),
-            self._make_key(self._atr_key),
-        )
+        return (self._make_key(self._swingstructure_key),)
 
     def produces(self) -> tuple[FactKey, ...]:
         return (self._make_key(self.instance_key),)
 
     def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
-        trend = facts[self._make_key(self._trend_key)]
-        assert isinstance(trend, TrendFact)
-        atr_fact = facts[self._make_key(self._atr_key)]
-        assert isinstance(atr_fact, ATRFact)
 
-        if trend.direction == TrendDirection.NEUTRAL or atr_fact.value <= 0:
+        struct = facts.get(self._make_key(self._swingstructure_key), None)
+
+        if struct is None:
+            evidence = (
+                EvidenceEntry(
+                    text="No pullback — not enough structured swings found",
+                    level=EvidenceLevel.INFO,
+                    source="PullbackDetector",
+                ),
+            )
+            return AnalysisResult(
+                facts=(
+                    PullbackFact(
+                        timestamp=view.current.timestamp,
+                        evidence=evidence,
+                        direction=TrendDirection.NEUTRAL,
+                    ),
+                ),
+                evidence=evidence,
+            )
+
+        assert isinstance(struct, SwingStructureFact)
+        lows = [s for s in struct.points if s.type == SwingType.LOW]
+        highs = [s for s in struct.points if s.type == SwingType.HIGH]
+
+        all_higher_lows = all(b.price > a.price for a, b in zip(lows, lows[1:]))
+        all_lower_lows = all(b.price < a.price for a, b in zip(lows, lows[1:]))
+
+        all_higher_highs = all(b.price > a.price for a, b in zip(highs, highs[1:]))
+        all_lower_highs = all(b.price < a.price for a, b in zip(highs, highs[1:]))
+
+        direction = TrendDirection.NEUTRAL
+        if all_higher_lows and all_higher_highs:
+            # this is a bullish pullback pattern
+            direction = TrendDirection.BULLISH
+        elif all_lower_lows and all_lower_highs:
+            # this is a bearish pullback pattern
+            direction = TrendDirection.BEARISH
+        else:
+            # no clear pullback pattern detected
             evidence = (
                 EvidenceEntry(
                     text="No pullback — trend is neutral or ATR is zero",
@@ -61,186 +84,25 @@ class PullbackDetector(Analyzer):
                     PullbackFact(
                         timestamp=view.current.timestamp,
                         evidence=evidence,
-                        status=PullbackStatus.INVALIDATED,
-                        retracement_atr=0.0,
-                        direction=trend.direction,
+                        direction=direction,
                     ),
                 ),
                 evidence=evidence,
             )
-
-        all_candles: tuple[Candle, ...] = view.history + (view.current,)
-        lookback = min(self._swing_lookback, len(all_candles))
-        window = all_candles[-lookback:]
-
-        swing_high_price, swing_high_idx = self._find_swing_high(window)
-        swing_low_price, swing_low_idx = self._find_swing_low(window)
-
-        if swing_high_price is None or swing_low_price is None:
-            evidence = (
-                EvidenceEntry(
-                    text="Insufficient swing points for pullback detection",
-                    level=EvidenceLevel.WARNING,
-                    source="PullbackDetector",
-                ),
-            )
-            return AnalysisResult(
-                facts=(
-                    PullbackFact(
-                        timestamp=view.current.timestamp,
-                        evidence=evidence,
-                        status=PullbackStatus.INVALIDATED,
-                        retracement_atr=0.0,
-                        direction=trend.direction,
-                    ),
-                ),
-                evidence=evidence,
-            )
-
-        current_price = view.current.close
-        atr = atr_fact.value
-
-        if trend.direction == TrendDirection.BULLISH:
-            retracement_distance = swing_high_price - current_price
-        else:
-            retracement_distance = current_price - swing_low_price
-
-        retracement_range = swing_high_price - swing_low_price
-
-        if retracement_range <= 0:
-            evidence = (
-                EvidenceEntry(
-                    text="Swing range is zero — no pullback",
-                    level=EvidenceLevel.INFO,
-                    source="PullbackDetector",
-                ),
-            )
-            return AnalysisResult(
-                facts=(
-                    PullbackFact(
-                        timestamp=view.current.timestamp,
-                        evidence=evidence,
-                        status=PullbackStatus.INVALIDATED,
-                        retracement_atr=0.0,
-                        direction=trend.direction,
-                    ),
-                ),
-                evidence=evidence,
-            )
-
-        retracement_pct = retracement_distance / retracement_range
-        retracement_atr = retracement_distance / atr
-
-        status = self._determine_status(retracement_atr)
-
-        evidence_entries: list[EvidenceEntry] = [
+        evidence = (
             EvidenceEntry(
-                text=f"Pullback {status.value} in {trend.direction.value} trend",
-                level=(
-                    EvidenceLevel.SIGNAL
-                    if status == PullbackStatus.DETECTED
-                    else EvidenceLevel.INFO
-                ),
-                source="PullbackDetector",
-            ),
-            EvidenceEntry(
-                text=(
-                    f"Retracement: {retracement_atr:.2f} ATR "
-                    f"from swing high {swing_high_price:.2f}"
-                ),
+                text=f"pullback detected {direction}",
                 level=EvidenceLevel.INFO,
                 source="PullbackDetector",
             ),
-            EvidenceEntry(
-                text=f"Current price {current_price:.2f}, swing low {swing_low_price:.2f}",
-                level=EvidenceLevel.INFO,
-                source="PullbackDetector",
-            ),
-            EvidenceEntry(
-                text=f"Retracement depth: {retracement_pct:.1%} of swing range",
-                level=EvidenceLevel.INFO,
-                source="PullbackDetector",
-            ),
-        ]
-
-        if status == PullbackStatus.DETECTED:
-            evidence_entries.append(
-                EvidenceEntry(
-                    text="Waiting for reversal confirmation",
-                    level=EvidenceLevel.SIGNAL,
-                    source="PullbackDetector",
-                    annotation_hint="mark_pullback_start",
-                )
-            )
-        elif status == PullbackStatus.CONFIRMED:
-            evidence_entries.append(
-                EvidenceEntry(
-                    text="Reversal candle detected",
-                    level=EvidenceLevel.SIGNAL,
-                    source="PullbackDetector",
-                    annotation_hint="mark_pullback_confirm",
-                )
-            )
-        elif status == PullbackStatus.INVALIDATED:
-            if retracement_atr >= self._max_retracement_atr:
-                evidence_entries.append(
-                    EvidenceEntry(
-                        text="Retracement exceeds maximum — trend may be broken",
-                        level=EvidenceLevel.WARNING,
-                        source="PullbackDetector",
-                    )
-                )
-            else:
-                evidence_entries.append(
-                    EvidenceEntry(
-                        text="Retracement below minimum threshold",
-                        level=EvidenceLevel.INFO,
-                        source="PullbackDetector",
-                    )
-                )
-
-        evidence_result: tuple[EvidenceEntry, ...] = tuple(evidence_entries)
-
+        )
         return AnalysisResult(
             facts=(
                 PullbackFact(
                     timestamp=view.current.timestamp,
-                    evidence=evidence_result,
-                    status=status,
-                    retracement_atr=round(retracement_atr, 4),
-                    direction=trend.direction,
+                    evidence=evidence,
+                    direction=direction,
                 ),
             ),
-            evidence=evidence_result,
+            evidence=evidence,
         )
-
-    def _determine_status(self, retracement_atr: float) -> PullbackStatus:
-        if retracement_atr >= self._max_retracement_atr:
-            return PullbackStatus.INVALIDATED
-        if retracement_atr >= self._min_retracement_atr:
-            return PullbackStatus.DETECTED
-        return PullbackStatus.INVALIDATED
-
-    @staticmethod
-    def _find_swing_high(
-        candles: tuple[Candle, ...],
-    ) -> tuple[float | None, int]:
-        for i in range(len(candles) - 2, 0, -1):
-            if candles[i].high > candles[i - 1].high and candles[i].high > candles[i + 1].high:
-                return candles[i].high, i
-        if len(candles) >= 2:
-            best_idx = max(range(len(candles)), key=lambda i: candles[i].high)
-            return candles[best_idx].high, best_idx
-        return None, -1
-
-    @staticmethod
-    def _find_swing_low(
-        candles: tuple[Candle, ...],
-    ) -> tuple[float | None, int]:
-        for i in range(len(candles) - 2, 0, -1):
-            if candles[i].low < candles[i - 1].low and candles[i].low < candles[i + 1].low:
-                return candles[i].low, i
-        if len(candles) >= 2:
-            best_idx = min(range(len(candles)), key=lambda i: candles[i].low)
-            return candles[best_idx].low, best_idx
-        return None, -1
