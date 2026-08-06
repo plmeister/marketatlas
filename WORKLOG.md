@@ -2,6 +2,7 @@
 
 ## Completed
 
+- **060** — DSL integration tests (text → graph): new `tests/test_dsl_integration.py` — 40 end-to-end golden tests over the full path DSL text → lexer → parser → pipeline (validation/registry/param-schema → choice expansion → concrete validation → graph) → `AnalysisGraph`, organised by pipeline stage (Stage0 Parse → Stage4 Graph/Config + end-to-end). Spec fixtures (single/linear-forward-ref/branching-shorthand/pullback tree/full 7-analyzer strategy with choice + literal variants/timeframe refs); parse==builder-equivalent assertion; expansion counts (single/nested/cartesian ordering/list-literal/choice-over-reference); graph edges + execution order; positioned error fixtures (unknown type, unknown/mistyped param, missing timeframe resolution, unknown reference, empty choice at parse + expansion, duplicate names, duplicate fact producer, undeclared dependency); `compile_dsl` determinism and graph isolation. 40 new tests. 1239 total (9 pre-existing failures in html_renderer/no_readahead/signal_system untouched).
 - **001** — Project scaffolding and data model foundation
 - **006** — Fact type system: base Fact, primitive facts (EMA/SMA/ATR/RSI/Volume), structural facts (Trend), pattern facts (Pullback). 19 tests passing.
 - **003** — Parquet data loading: MarketRepository loads OHLCV from Parquet files into MarketData. Symbol listing, column validation, clear errors. 8 tests.
