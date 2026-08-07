@@ -35,11 +35,10 @@ def _cross_tf_source() -> str:
         'tf1w := timeframe { resolution: "1w" }\n'
         "ema20 := ema { timeframe: tf1w, period: 20 }\n"
         "ema50 := ema { timeframe: tf1w, period: 50 }\n"
-        "atr_14 := atr { timeframe: tf1d, period: 14 }\n"
         "swing := swings { timeframe: tf1w, lookback: 50 }\n"
         "trend := trend { timeframe: tf1d, ema_20: ema20, ema_50: ema50 }\n"
-        "pullback := detect_pullback { timeframe: tf1d, "
-        "swing: swing, trend: trend, atr_14: atr_14 }\n"
+        "alternate := swingstructure { timeframe: tf1d, swing: swing }\n"
+        "pullback := pullbackpattern { timeframe: tf1d, swing_structure: alternate }\n"
     )
 
 
@@ -81,20 +80,20 @@ class TestCompile:
             FactKey("ema_20", timeframe=Timeframe("1w")),
             FactKey("ema_50", timeframe=Timeframe("1w")),
         )
-        pullback = by_name["FourSwingPullbackDetector"]
-        assert FactKey("swing", timeframe=Timeframe("1w")) in pullback.requires()
-        assert FactKey("trend", timeframe=Timeframe("1d")) in pullback.requires()
-        assert FactKey("atr_14", timeframe=Timeframe("1d")) in pullback.requires()
+        alternate = by_name["SwingStructureAnalyzer"]
+        assert FactKey("swing", timeframe=Timeframe("1w")) in alternate.requires()
+        pullback = by_name["PullbackPatternAnalyzer"]
+        assert FactKey("swing_structure", timeframe=Timeframe("1d")) in pullback.requires()
 
     def test_same_tf_reference_keeps_plain_binding(self) -> None:
         source = (
             'tf1d := timeframe { resolution: "1d" }\n'
-            "atr_14 := atr { timeframe: tf1d, period: 14 }\n"
-            "pullback := detect_pullback { timeframe: tf1d, atr_14: atr_14 }\n"
+            "swing := swings { timeframe: tf1d, lookback: 50 }\n"
+            "alternate := swingstructure { timeframe: tf1d, swing: swing }\n"
         )
         config = _ast_to_config(parse(source, name="demo"))
-        pullback = config.analyzers[1]
-        assert pullback.params["bindings"] == {"atr_14": "atr_14"}
+        alternate = config.analyzers[1]
+        assert alternate.params["bindings"] == {"swing": "swing"}
 
     def test_config_bindings_injected(self) -> None:
         config = _ast_to_config(parse(_cross_tf_source(), name="demo"))
@@ -103,10 +102,11 @@ class TestCompile:
             "ema_20": "ema_20@1w",
             "ema_50": "ema_50@1w",
         }
-        assert by_type["FourSwingPullbackDetector"].params["bindings"] == {
+        assert by_type["SwingStructureAnalyzer"].params["bindings"] == {
             "swing": "swing@1w",
-            "trend": "trend",
-            "atr_14": "atr_14",
+        }
+        assert by_type["PullbackPatternAnalyzer"].params["bindings"] == {
+            "swing_structure": "swing_structure",
         }
 
 
@@ -143,9 +143,9 @@ class TestErrors:
     def test_reference_to_undeclared_output_named(self) -> None:
         source = (
             "swing := swings { lookback: 50 }\n"
-            "sr := sr { swing: swing, atr_14: swing }\n"
+            "sr := sr { swing: swing, atr_14_series: swing }\n"
         )
-        with pytest.raises(CompilationError, match="atr_14"):
+        with pytest.raises(CompilationError, match="atr_14_series"):
             _ast_to_config(parse(source, name="demo"))
 
     def test_unknown_reference_raises(self) -> None:
@@ -156,9 +156,8 @@ class TestErrors:
         source = (
             'tf1d := timeframe { resolution: "1d" }\n'
             'tf1w := timeframe { resolution: "1w" }\n'
-            "swing := swings { timeframe: tf1w, lookback: 50 }\n"
-            "atr_14 := atr { timeframe: tf1d, period: 14 }\n"
-            "pullback := detect_pullback { timeframe: tf1d, atr_14: atr_14 }\n"
+            "alternate := swingstructure { timeframe: tf1w }\n"
+            "swing := swings { timeframe: tf1d, lookback: 50 }\n"
         )
         with pytest.raises(UnsatisfiedDependencyError, match="swing"):
             ASTCompiler.compile(parse(source, name="demo"))
@@ -184,8 +183,8 @@ class TestGraphRun:
         assert "ema_50_tf_1w" in names
         assert "swing_tf_1w" in names
         assert "trend_tf_1d" in names
-        assert "atr_14_tf_1d" in names
-        assert "four_swing_pullback_tf_1d" in names
+        assert "swing_structure_tf_1d" in names
+        assert "pullback_pattern_tf_1d" in names
 
     def test_single_tf_analysis_unchanged(self) -> None:
         source = (

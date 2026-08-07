@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from marketatlas.analysis.analyzers.swing import SwingStructureAnalyzer
+from marketatlas.analysis.analyzers.swing_structure import SwingStructureAnalyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe

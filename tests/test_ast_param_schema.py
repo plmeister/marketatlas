@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
-from marketatlas.analysis.analyzers.swing import SwingStructureAnalyzer
+from marketatlas.analysis.analyzers.swing_structure import SwingStructureAnalyzer
 from marketatlas.analysis.ast.expressions import Choice, wrap
 from marketatlas.analysis.ast.models import Analysis, Definition, Parameter, Provider
 from marketatlas.analysis.ast.param_schema import (
@@ -41,11 +41,8 @@ class TestDeriveParamSchema:
 
     def test_swing_schema(self) -> None:
         schema = {s.name: s for s in derive_param_schema(SwingStructureAnalyzer)}
-        assert schema["lookback"] == ParamSpec(name="lookback", required=False, expected_type=int)
-        assert schema["min_swing_atr"].expected_type is float
-        assert schema["atr_key"].expected_type is str
-        assert schema["left_bars"].expected_type is int
-        assert schema["right_bars"].expected_type is int
+        assert schema["window"] == ParamSpec(name="window", required=False, expected_type=int)
+        assert schema["swing_key"].expected_type is str
         assert "kwargs" not in schema
 
     def test_risk_schema_from_future_annotations(self) -> None:
@@ -153,7 +150,7 @@ class TestDefaultRegistrySchemas:
         r = create_default_registry()
         assert {s.name for s in r.param_schema("ema") or ()} == {"period"}
         assert {s.name for s in r.param_schema("atr") or ()} == {"period"}
-        assert "lookback" in {s.name for s in r.param_schema("swingstructure") or ()}
+        assert "window" in {s.name for s in r.param_schema("swingstructure") or ()}
         assert "level_tolerance_atr" in {s.name for s in r.param_schema("sr") or ()}
         risk = {s.name for s in r.param_schema("manage_risk") or ()}
         assert {"risk_pct", "min_rr", "max_rr"} <= risk

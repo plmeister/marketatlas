@@ -179,29 +179,33 @@ class TestReferences:
         analysis = parse(
             "ema := ema { period: 20 }\n"
             "swing := swings { lookback: 50 }\n"
-            "trend := trend { ema_20: ema }\n"
-            "pullback := detect_pullback { swing: swing, trend: trend }",
+            "atr_14_series := atr_series { period: 14 }\n"
+            "sr := sr { swing: swing, atr_14_series: atr_14_series }",
             name="demo",
         )
-        pullback = analysis.definitions[3]
-        assert [p.name for p in pullback.parameters] == ["swing", "trend"]
-        assert [p.value for p in pullback.parameters] == [
+        sr = analysis.definitions[3]
+        assert [p.name for p in sr.parameters] == ["swing", "atr_14_series"]
+        assert [p.value for p in sr.parameters] == [
             ReferenceExpression("swing"),
-            ReferenceExpression("trend"),
+            ReferenceExpression("atr_14_series"),
         ]
 
 
 class TestShorthand:
     def test_shorthand_dependency(self) -> None:
         analysis = parse(
-            "atr_14 := atr { period: 14 }\nsr := sr { atr_14 }", name="demo"
+            "atr_14_series := atr_series { period: 14 }\nsr := sr { atr_14_series }",
+            name="demo",
         )
         param = analysis.definitions[1].parameters[0]
-        assert param == Parameter(name="atr_14", value=ReferenceExpression("atr_14"))
+        assert param == Parameter(
+            name="atr_14_series", value=ReferenceExpression("atr_14_series")
+        )
 
     def test_shorthand_single_field_no_trailing_comma(self) -> None:
         analysis = parse(
-            "atr_14 := atr { period: 14 }\nsr := sr { atr_14 }", name="demo"
+            "atr_14_series := atr_series { period: 14 }\nsr := sr { atr_14_series }",
+            name="demo",
         )
         assert len(analysis.definitions[1].parameters) == 1
 
@@ -217,17 +221,18 @@ class TestShorthand:
             parse("x := sr { bogus }", name="demo")
         err = exc.value
         assert "not a declared input of provider 'sr'" in err.message
-        assert "swing, atr_14" in err.message
+        assert "swing, atr_14_series" in err.message
 
     def test_mixed_shorthand_and_params(self) -> None:
         analysis = parse(
-            "atr_14 := atr { period: 14 }\nsr := sr { level_tolerance_atr: 0.5, atr_14 }",
+            "atr_14_series := atr_series { period: 14 }\n"
+            "sr := sr { level_tolerance_atr: 0.5, atr_14_series }",
             name="demo",
         )
         definition = analysis.definitions[1]
         assert definition.parameters[0].name == "level_tolerance_atr"
         assert definition.parameters[1] == Parameter(
-            name="atr_14", value=ReferenceExpression("atr_14")
+            name="atr_14_series", value=ReferenceExpression("atr_14_series")
         )
 
 
@@ -334,13 +339,13 @@ class TestPipelineIntegration:
     def test_spec_template_parses_expands_and_compiles(self) -> None:
         source = """
         ema := ema { period: <20 | 50> }
-        atr_14 := atr { period: 14 }
+        atr_14_series := atr_series { period: 14 }
         swing := swings { lookback: 50 }
         trend := trend { ema_20: ema, ema_50: ema50 }
         ema50 := ema { period: 50 }
-        sr := sr { swing, atr_14 }
-        pullback := detect_pullback { swing, trend, atr_14 }
-        signal := generate_signal { four_swing_pullback: pullback, trend: trend, atr_14: atr_14 }
+        sr := sr { swing, atr_14_series }
+        alternate := swingstructure { swing }
+        pullback := pullbackpattern { swing_structure: alternate }
         """
         analysis = parse(source, name="strategy")
         expanded = _pipeline().expand(analysis)
@@ -356,23 +361,24 @@ class TestPipelineIntegration:
         source = """
         ema20 := ema { period: 20 }
         ema50 := ema { period: 50 }
-        atr_14 := atr { period: 14 }
+        atr_14_series := atr_series { period: 14 }
         swing := swings { lookback: 50 }
         trend := trend { ema_20: ema20, ema_50: ema50 }
-        sr := sr { swing, atr_14 }
-        pullback := detect_pullback { swing, trend, atr_14 }
-        signal := generate_signal { four_swing_pullback: pullback, trend: trend, atr_14: atr_14 }
+        sr := sr { swing, atr_14_series }
+        alternate := swingstructure { swing }
+        pullback := pullbackpattern { swing_structure: alternate }
         """
         graph = ASTCompiler.compile(parse(source, name="strategy"))
         assert isinstance(graph, AnalysisGraph)
         names = sorted(type(a).__name__ for a in graph._analyzers)
         assert names == [
-            "ATRAnalyzer",
+            "ATRSeriesAnalyzer",
             "BasicSwingAnalyzer",
             "EMAAnalyzer",
             "EMAAnalyzer",
-            "FourSwingPullbackDetector",
+            "PullbackPatternAnalyzer",
             "SupportResistanceAnalyzer",
+            "SwingStructureAnalyzer",
             "TrendAnalyzer",
         ]
 

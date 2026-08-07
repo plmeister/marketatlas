@@ -55,12 +55,12 @@ def _store(n: int = 140, seed: int = 0) -> MarketStore:
 _FULL_STRATEGY = """
 ema20 := ema { period: 20 }
 ema50 := ema { period: 50 }
-atr_14 := atr { period: 14 }
+atr_14_series := atr_series { period: 14 }
 swing := swings { lookback: 50 }
 trend := trend { ema_20: ema20, ema_50: ema50 }
-sr := sr { swing, atr_14 }
-pullback := detect_pullback { swing, trend, atr_14 }
-signal := generate_signal { four_swing_pullback: pullback, trend: trend, atr_14: atr_14 }
+sr := sr { swing, atr_14_series }
+alternate := swingstructure { swing }
+pullback := pullbackpattern { swing_structure: alternate }
 """
 
 
@@ -73,7 +73,7 @@ class TestCompileTemplate:
         template = _full_template()
         assert isinstance(template, TemplateGraph)
         assert template.analysis.name == "strategy"
-        assert len(template.config.analyzers) == 7
+        assert len(template.config.analyzers) == 8
 
     def test_reference_graph_equals_compile(self) -> None:
         analysis = parse(_FULL_STRATEGY, name="strategy")

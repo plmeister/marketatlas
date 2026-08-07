@@ -53,40 +53,38 @@ ema50 := ema { period: 50 }
 
 BRANCHING = """
 swing := swings { lookback: 50 }
-atr_14 := atr { period: 14 }
-sr := sr { swing, atr_14 }
+atr_14_series := atr_series { period: 14 }
+sr := sr { swing, atr_14_series }
 """
 
 PULLBACK_TREE = """
 swing := swings { lookback: 50 }
-atr_14 := atr { period: 14 }
-ema20 := ema { period: 20 }
-ema50 := ema { period: 50 }
-trend := trend { ema_20: ema20, ema_50: ema50 }
-sr := sr { swing, atr_14 }
-pullback := detect_pullback { swing, trend, atr_14 }
+atr_14_series := atr_series { period: 14 }
+sr := sr { swing, atr_14_series }
+alternate := swingstructure { swing }
+pullback := pullbackpattern { swing_structure: alternate }
 """
 
 FULL_TEMPLATE = """
 ema := ema { period: <20 | 50> }
-atr_14 := atr { period: 14 }
+atr_14_series := atr_series { period: 14 }
 swing := swings { lookback: 50 }
 trend := trend { ema_20: ema, ema_50: ema50 }
 ema50 := ema { period: 50 }
-sr := sr { swing, atr_14 }
-pullback := detect_pullback { swing, trend, atr_14 }
-signal := generate_signal { four_swing_pullback: pullback, trend: trend, atr_14: atr_14 }
+sr := sr { swing, atr_14_series }
+alternate := swingstructure { swing }
+pullback := pullbackpattern { swing_structure: alternate }
 """
 
 FULL_LITERAL = """
 ema := ema { period: 20 }
-atr_14 := atr { period: 14 }
+atr_14_series := atr_series { period: 14 }
 swing := swings { lookback: 50 }
 trend := trend { ema_20: ema, ema_50: ema50 }
 ema50 := ema { period: 50 }
-sr := sr { swing, atr_14 }
-pullback := detect_pullback { swing, trend, atr_14 }
-signal := generate_signal { four_swing_pullback: pullback, trend: trend, atr_14: atr_14 }
+sr := sr { swing, atr_14_series }
+alternate := swingstructure { swing }
+pullback := pullbackpattern { swing_structure: alternate }
 """
 
 TIMEFRAME = """
@@ -115,24 +113,16 @@ def _builder_full_strategy(registry=None) -> Analysis:
         "strategy",
         [
             _def("ema", "ema", _param("period", 20)),
-            _def("atr_14", "atr", _param("period", 14)),
+            _def("atr_14_series", "atr_series", _param("period", 14)),
             _def("swing", "swings", _param("lookback", 50)),
             _def("trend", "trend", _ref("ema_20", "ema"), _ref("ema_50", "ema50")),
             _def("ema50", "ema", _param("period", 50)),
-            _def("sr", "sr", _ref("swing", "swing"), _ref("atr_14", "atr_14")),
+            _def("sr", "sr", _ref("swing", "swing"), _ref("atr_14_series", "atr_14_series")),
+            _def("alternate", "swingstructure", _ref("swing", "swing")),
             _def(
                 "pullback",
-                "detect_pullback",
-                _ref("swing", "swing"),
-                _ref("trend", "trend"),
-                _ref("atr_14", "atr_14"),
-            ),
-            _def(
-                "signal",
-                "generate_signal",
-                _ref("four_swing_pullback", "pullback"),
-                _ref("trend", "trend"),
-                _ref("atr_14", "atr_14"),
+                "pullbackpattern",
+                _ref("swing_structure", "alternate"),
             ),
         ],
         version="1.0",
@@ -177,18 +167,16 @@ class TestStage0Parse:
         sr = analysis.definitions[2]
         assert sr.parameters == (
             _ref("swing", "swing"),
-            _ref("atr_14", "atr_14"),
+            _ref("atr_14_series", "atr_14_series"),
         )
 
     def test_full_template_keeps_choices_intact(self) -> None:
         analysis = parse(FULL_TEMPLATE, name="strategy")
         assert len(analysis.definitions) == 8
         assert analysis.definitions[0].parameters[0].value == Choice([20, 50])
-        signal = analysis.definitions[7]
-        assert signal.parameters == (
-            _ref("four_swing_pullback", "pullback"),
-            _ref("trend", "trend"),
-            _ref("atr_14", "atr_14"),
+        pullback = analysis.definitions[7]
+        assert pullback.parameters == (
+            _ref("swing_structure", "alternate"),
         )
 
     def test_text_equals_builder_equivalent(self) -> None:
@@ -368,29 +356,31 @@ class TestStage4Graph:
     def test_branching_shorthand_edges(self) -> None:
         graph = ASTCompiler.compile(parse(BRANCHING, name="strategy"))
         nodes = _graph_nodes(graph)
-        assert nodes["SupportResistanceAnalyzer"] == (("atr_14", "swing"), ("sr",))
+        assert nodes["SupportResistanceAnalyzer"] == (("atr_14_series", "swing"), ("sr",))
         assert nodes["BasicSwingAnalyzer"] == ((), ("swing",))
-        assert nodes["ATRAnalyzer"] == ((), ("atr_14",))
+        assert nodes["ATRSeriesAnalyzer"] == ((), ("atr_14_series",))
 
     def test_pullback_tree_edges(self) -> None:
         graph = ASTCompiler.compile(parse(PULLBACK_TREE, name="strategy"))
         nodes = _graph_nodes(graph)
-        assert nodes["FourSwingPullbackDetector"] == (
-            ("atr_14", "swing", "trend"),
-            ("four_swing_pullback",),
+        assert nodes["SwingStructureAnalyzer"] == (("swing",), ("swing_structure",))
+        assert nodes["PullbackPatternAnalyzer"] == (
+            ("swing_structure",),
+            ("pullback_pattern",),
         )
-        assert nodes["SupportResistanceAnalyzer"] == (("atr_14", "swing"), ("sr",))
+        assert nodes["SupportResistanceAnalyzer"] == (("atr_14_series", "swing"), ("sr",))
 
-    def test_full_literal_seven_analyzer_graph(self) -> None:
+    def test_full_literal_eight_analyzer_graph(self) -> None:
         graph = ASTCompiler.compile(parse(FULL_LITERAL, name="strategy"))
         types = sorted(type(a).__name__ for a in graph._analyzers)
         assert types == [
-            "ATRAnalyzer",
+            "ATRSeriesAnalyzer",
             "BasicSwingAnalyzer",
             "EMAAnalyzer",
             "EMAAnalyzer",
-            "FourSwingPullbackDetector",
+            "PullbackPatternAnalyzer",
             "SupportResistanceAnalyzer",
+            "SwingStructureAnalyzer",
             "TrendAnalyzer",
         ]
 
@@ -417,7 +407,7 @@ class TestStage4Graph:
         assert len(variants) == 2
         # period-20 variant: ema produces ema_20, matching trend's reference.
         graph = ASTCompiler.compile(variants[0])
-        assert len(graph._analyzers) == 7
+        assert len(graph._analyzers) == 8
         # period-50 variant: ema now produces ema_50, so the ema_20 reference
         # is inconsistent and fails before graph construction.
         with pytest.raises(CompilationError) as exc:
@@ -451,14 +441,8 @@ class TestStage4Config:
         config = ASTCompiler.to_config(parse(FULL_LITERAL, name="strategy"))
         assert config.name == "strategy"
         assert config.version == "1.0"
-        assert len(config.analyzers) == 7
-        assert config.signals == (
-            SignalConfig(
-                type="PullbackSignal",
-                requires=("four_swing_pullback", "trend", "atr_14"),
-                rules={},
-            ),
-        )
+        assert len(config.analyzers) == 8
+        assert config.signals == ()
         assert config.risk == RiskConfig(algorithm="none")
 
     def test_timeframe_reference_config(self) -> None:
