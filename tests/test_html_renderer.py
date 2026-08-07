@@ -4,7 +4,6 @@ from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
-from marketatlas.facts.pattern import PullbackFact, PullbackStatus
 from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
 from marketatlas.frames.frame import AnalysisFrame
@@ -15,7 +14,6 @@ from marketatlas.visualization.html_renderer import (
     _candle_to_dict,
     _extract_atr,
     _extract_ema_lines,
-    _extract_pullbacks,
     _extract_trend_markers,
 )
 
@@ -80,17 +78,10 @@ def _make_frame(offset: int = 0) -> AnalysisFrame:
 
 def _make_pullback_frame(offset: int) -> AnalysisFrame:
     candle = _make_candle(offset)
-    pullback = PullbackFact(
-        timestamp=candle.timestamp,
-        evidence=(),
-        status=PullbackStatus.DETECTED,
-        retracement_atr=1.2,
-        direction=TrendDirection.BULLISH,
-    )
     return AnalysisFrame(
         timestamp=candle.timestamp,
         candle=candle,
-        facts={FactKey("pullback"): pullback},
+        facts={},
         evidence=(),
     )
 
@@ -111,7 +102,7 @@ class TestCandleToDict:
         assert d["low"] == c.low
         assert d["close"] == c.close
         assert d["volume"] == c.volume
-        assert d["time"] == int(c.timestamp.timestamp())
+        assert d["time"] == c.timestamp.strftime("%Y-%m-%d")
 
 
 class TestExtractEMA:
@@ -203,37 +194,12 @@ class TestExtractTrendMarkers:
         assert bull == [] and bear == [] and neut == []
 
 
-class TestExtractPullbacks:
-    def test_extracts_detected(self) -> None:
-        frames = [_make_pullback_frame(i) for i in range(2)]
-        result = _extract_pullbacks(frames)
-        assert len(result) == 2
-        assert result[0]["color"] == "#22c55e"
-
-    def test_ignores_non_detected(self) -> None:
-        candle = _make_candle(0)
-        pb = PullbackFact(
-            timestamp=candle.timestamp,
-            evidence=(),
-            status=PullbackStatus.INVALIDATED,
-            retracement_atr=1.0,
-            direction=TrendDirection.BEARISH,
-        )
-        frame = AnalysisFrame(
-            timestamp=candle.timestamp,
-            candle=candle,
-            facts={FactKey("pullback"): pb},
-            evidence=(),
-        )
-        assert _extract_pullbacks([frame]) == []
-
-
 class TestEvidenceMap:
     def test_maps_timestamps(self) -> None:
-        frames = [_make_frame(i) for i in range(3)]
+        frames = [_make_frame(i * 24) for i in range(3)]
         result = _build_candle_evidence_map(frames)
         assert len(result) == 3
-        first_key = int(_make_candle(0).timestamp.timestamp())
+        first_key = _make_candle(0).timestamp.strftime("%Y-%m-%d")
         assert first_key in result
         assert result[first_key][0]["text"] == "price above EMA at 0"
 

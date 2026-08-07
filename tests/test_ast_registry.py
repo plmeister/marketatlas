@@ -146,11 +146,12 @@ class TestDefaultRegistry:
         expected_caps = [
             "ema",
             "atr",
+            "atr_series",
             "trend",
             "swingstructure",
             "swings",
             "sr",
-            "detect_pullback",
+            "pullbackpattern",
             "generate_signal",
             "manage_risk",
             "timeframe",
@@ -162,7 +163,7 @@ class TestDefaultRegistry:
     def test_list_providers_count(self) -> None:
         r = create_default_registry()
         providers = r.list_providers()
-        assert len(providers) == 10
+        assert len(providers) == 11
 
     def test_default_params_present(self) -> None:
         r = create_default_registry()
@@ -178,7 +179,7 @@ class TestDefaultRegistry:
 
         swing = r.resolve("swingstructure")
         assert len(swing.default_params) == 1
-        assert swing.default_params[0].name == "lookback"
+        assert swing.default_params[0].name == "window"
         assert swing.default_params[0].value == 50
 
     def test_signal_provider(self) -> None:

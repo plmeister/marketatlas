@@ -49,10 +49,10 @@ class TestContractDerivation:
             "ema": ("ema_20",),
             "atr": ("atr_14",),
             "trend": ("trend",),
-            "swingstructure": ("swing",),
+            "swingstructure": ("swing_structure",),
             "swings": ("swing",),
             "sr": ("sr",),
-            "detect_pullback": ("four_swing_pullback",),
+            "pullbackpattern": ("pullback_pattern",),
         }
         for capability, outputs in expected.items():
             contract = registry.contract(capability)
@@ -72,9 +72,9 @@ class TestContractDerivation:
 
     def test_detector_inputs_from_requires(self) -> None:
         registry = create_default_registry()
-        contract = registry.contract("detect_pullback")
+        contract = registry.contract("pullbackpattern")
         assert contract is not None
-        assert contract.inputs == ("swing", "trend", "atr_14")
+        assert contract.inputs == ("swing_structure",)
 
     def test_unknown_key_returns_none(self) -> None:
         registry = create_default_registry()
@@ -113,10 +113,11 @@ class TestCapabilities:
         registry = create_default_registry()
         assert registry.capabilities() == (
             "atr",
-            "detect_pullback",
+            "atr_series",
             "ema",
             "generate_signal",
             "manage_risk",
+            "pullbackpattern",
             "sr",
             "swings",
             "swingstructure",

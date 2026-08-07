@@ -391,7 +391,6 @@ class ChartView {
         position: pb.position,
         color: pb.color,
         shape: pb.shape,
-        text: pb.text,
       });
     }
 
@@ -599,44 +598,6 @@ class InfoPanelView {
           " (" +
           val.strength.toFixed(2) +
           ")</span></div>";
-      }
-    });
-
-    // Pullback
-    Object.entries(facts).forEach(([key, val]) => {
-      if (val.type !== "pullback") return;
-      html += "<h3>Pattern</h3>";
-      const sc =
-        val.status === "confirmed"
-          ? "bull"
-          : val.status === "invalidated"
-            ? "bear"
-            : "neutral";
-      html +=
-        '<div class="row"><span class="label">' +
-        key +
-        '</span><span class="value ' +
-        sc +
-        '">' +
-        val.status.toUpperCase() +
-        "</span></div>";
-      if (val.swing_pattern && val.swing_pattern.length) {
-        html +=
-          '<div class="row"><span class="label">Pattern</span><span class="value">' +
-          val.swing_pattern.map((p) => p.toFixed(0)).join("/") +
-          "</span></div>";
-      }
-      if (val.deviation_pct > 0) {
-        html +=
-          '<div class="row"><span class="label">Deviation</span><span class="value">' +
-          val.deviation_pct.toFixed(1) +
-          "%</span></div>";
-      }
-      if (val.confirmation_strength > 0) {
-        html +=
-          '<div class="row"><span class="label">Confirmation</span><span class="value">' +
-          (val.confirmation_strength * 100).toFixed(0) +
-          "%</span></div>";
       }
     });
 

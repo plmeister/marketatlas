@@ -37,7 +37,8 @@ _TF_STRATEGY = """
 tf1d := timeframe { resolution: "1d" }
 tf1w := timeframe { resolution: "1w" }
 ema := ema { timeframe: tf1d, period: 20 }
-swings := swingstructure { timeframe: tf1w, lookback: 5 }
+swings := swings { timeframe: tf1w }
+structure := swingstructure { timeframe: tf1w, window: 5 }
 """
 
 

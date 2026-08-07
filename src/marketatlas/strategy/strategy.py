@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 from marketatlas.analysis.graph import AnalysisGraph, FactKey
-from marketatlas.analysis.signals.pullback_signal import PullbackSignal
 from marketatlas.data.view import MarketView
 from marketatlas.facts.base import Fact
 from marketatlas.strategy.config import StrategyConfig
 from marketatlas.strategy.loader import build_analyzers
 from marketatlas.strategy.risk import RiskEngine
 from marketatlas.strategy.signals import Signal, TradeSignal
-
-SIGNAL_TYPES: dict[str, type[Signal]] = {
-    "PullbackSignal": PullbackSignal,
-}
 
 
 class Strategy:
@@ -53,9 +48,14 @@ class Strategy:
         return AnalysisGraph(analyzers)
 
     def _build_signals(self) -> list[Signal]:
+        from marketatlas.analysis.signals.pullback_signal import PullbackSignal
+
+        signal_types: dict[str, type[Signal]] = {
+            "PullbackSignal": PullbackSignal,
+        }
         signals: list[Signal] = []
         for sc in self._config.signals:
-            cls = SIGNAL_TYPES.get(sc.type)
+            cls = signal_types.get(sc.type)
             if cls is None:
                 raise ValueError(f"Unknown signal type '{sc.type}'")
             signals.append(cls(**sc.rules))

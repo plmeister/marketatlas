@@ -22,7 +22,7 @@ from marketatlas.analysis.ast.parser import parse
 from marketatlas.analysis.ast.pipeline import CompilationError, _ast_to_config
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.graph import AnalysisGraph, UnsatisfiedDependencyError
-from marketatlas.analysis.patterns.four_swing_pullback import FourSwingPullbackDetector
+from marketatlas.analysis.patterns.pullback import PullbackPatternAnalyzer
 from marketatlas.analysis.signals.pullback_signal import PullbackSignal
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
@@ -44,27 +44,29 @@ def _cross_tf_source() -> str:
 
 class TestBindings:
     def test_cross_tf_binding_in_requires(self) -> None:
-        detector = FourSwingPullbackDetector(
-            timeframe="1d", bindings={"swing": "swing@1w"}
+        detector = PullbackPatternAnalyzer(
+            timeframe="1d", bindings={"swing_structure": "swing_structure@1w"}
         )
         assert detector.requires() == (
-            FactKey("swing", timeframe=Timeframe("1w")),
-            FactKey("trend", timeframe=Timeframe("1d")),
-            FactKey("atr_14", timeframe=Timeframe("1d")),
+            FactKey("swing_structure", timeframe=Timeframe("1w")),
         )
 
     def test_produced_key_never_overridden(self) -> None:
-        detector = FourSwingPullbackDetector(
-            timeframe="1d", bindings={"four_swing_pullback": "four_swing_pullback@1w"}
+        detector = PullbackPatternAnalyzer(
+            timeframe="1d", bindings={"pullback_pattern": "pullback_pattern@1w"}
         )
-        assert detector.produces() == (FactKey("four_swing_pullback", timeframe=Timeframe("1d")),)
+        assert detector.produces() == (FactKey("pullback_pattern", timeframe=Timeframe("1d")),)
 
     def test_binding_requires_analyze_lookup_consistency(self) -> None:
-        detector = FourSwingPullbackDetector(
-            timeframe="1d", bindings={"swing": "swing@1w"}
+        detector = PullbackPatternAnalyzer(
+            timeframe="1d", bindings={"swing_structure": "swing_structure@1w"}
         )
-        assert detector._make_key("swing") == FactKey("swing", timeframe=Timeframe("1w"))
-        assert detector._make_key("atr_14") == FactKey("atr_14", timeframe=Timeframe("1d"))
+        assert detector._make_key("swing_structure") == FactKey(
+            "swing_structure", timeframe=Timeframe("1w")
+        )
+        assert detector._make_key("pullback_pattern") == FactKey(
+            "pullback_pattern", timeframe=Timeframe("1d")
+        )
 
 
 class TestCompile:

@@ -8,7 +8,7 @@ from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
-from marketatlas.facts.pattern import PullbackFact, PullbackStatus
+from marketatlas.facts.pattern import PullbackFact
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
 from marketatlas.strategy.config import AnalyzerConfig, SignalConfig, StrategyConfig
@@ -41,67 +41,51 @@ def _flat_candles(n: int = 50) -> list[CandleTuple]:
     return [(100.0, 101.0, 99.0, 100.0, 1000.0)] * n
 
 
-def _confirmed_bullish_pullback_fact() -> PullbackFact:
+def _bullish_pullback_fact() -> PullbackFact:
     return PullbackFact(
         timestamp=BASE,
         evidence=(
             EvidenceEntry(
                 text="4-swing bullish pattern detected",
                 level=EvidenceLevel.SIGNAL,
-                source="FourSwingPullbackDetector",
+                source="PullbackPatternAnalyzer",
             ),
         ),
-        status=PullbackStatus.CONFIRMED,
-        retracement_atr=0.5,
         direction=TrendDirection.BULLISH,
         swing_pattern=(48200.0, 51500.0, 49100.0, 52800.0),
-        deviation_pct=0.05,
-        confirmation_strength=0.72,
     )
 
 
-def _confirmed_bearish_pullback_fact() -> PullbackFact:
+def _bearish_pullback_fact() -> PullbackFact:
     return PullbackFact(
         timestamp=BASE,
         evidence=(
             EvidenceEntry(
                 text="4-swing bearish pattern detected",
                 level=EvidenceLevel.SIGNAL,
-                source="FourSwingPullbackDetector",
+                source="PullbackPatternAnalyzer",
             ),
         ),
-        status=PullbackStatus.CONFIRMED,
-        retracement_atr=0.4,
         direction=TrendDirection.BEARISH,
         swing_pattern=(52000.0, 49000.0, 51000.0, 48000.0),
-        deviation_pct=0.03,
-        confirmation_strength=0.80,
     )
 
 
-def _detected_pullback_fact() -> PullbackFact:
+def _weak_pullback_fact() -> PullbackFact:
     return PullbackFact(
         timestamp=BASE,
         evidence=(),
-        status=PullbackStatus.DETECTED,
-        retracement_atr=0.3,
         direction=TrendDirection.BULLISH,
-        swing_pattern=(48200.0, 51500.0, 49100.0, 52800.0),
-        deviation_pct=0.05,
-        confirmation_strength=0.4,
+        swing_pattern=(),
     )
 
 
-def _invalidated_pullback_fact() -> PullbackFact:
+def _neutral_pullback_fact() -> PullbackFact:
     return PullbackFact(
         timestamp=BASE,
         evidence=(),
-        status=PullbackStatus.INVALIDATED,
-        retracement_atr=0.0,
         direction=TrendDirection.NEUTRAL,
         swing_pattern=(),
-        deviation_pct=0.0,
-        confirmation_strength=0.0,
     )
 
 
@@ -151,7 +135,7 @@ def _keyed_facts(
 ) -> dict[FactKey, Fact]:
     facts: dict[FactKey, Fact] = {}
     if pullback is not None:
-        facts[FactKey("four_swing_pullback")] = pullback
+        facts[FactKey("pullback_pattern")] = pullback
     if trend is not None:
         facts[FactKey("trend")] = trend
     if atr is not None:
@@ -196,7 +180,7 @@ class TestPullbackSignal:
         result = signal.evaluate(
             view,
             _keyed_facts(
-                _confirmed_bullish_pullback_fact(),
+                _bullish_pullback_fact(),
                 _bullish_trend_fact(),
                 _atr_fact(50.0),
             ),
@@ -213,7 +197,7 @@ class TestPullbackSignal:
         result = signal.evaluate(
             view,
             _keyed_facts(
-                _confirmed_bearish_pullback_fact(),
+                _bearish_pullback_fact(),
                 _bearish_trend_fact(),
                 _atr_fact(50.0),
             ),
@@ -221,28 +205,28 @@ class TestPullbackSignal:
         assert result is not None
         assert result.direction == TrendDirection.BEARISH
 
-    def test_detected_not_confirmed_returns_none(self) -> None:
+    def test_neutral_direction_returns_none(self) -> None:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)
         signal = PullbackSignal()
         result = signal.evaluate(
             view,
             _keyed_facts(
-                _detected_pullback_fact(),
+                _neutral_pullback_fact(),
                 _bullish_trend_fact(),
                 _atr_fact(50.0),
             ),
         )
         assert result is None
 
-    def test_invalidated_returns_none(self) -> None:
+    def test_empty_swing_pattern_returns_none(self) -> None:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)
         signal = PullbackSignal()
         result = signal.evaluate(
             view,
             _keyed_facts(
-                _invalidated_pullback_fact(),
+                _weak_pullback_fact(),
                 _bullish_trend_fact(),
                 _atr_fact(50.0),
             ),
@@ -262,7 +246,7 @@ class TestPullbackSignal:
         signal = PullbackSignal()
         result = signal.evaluate(
             view,
-            _keyed_facts(pullback=_confirmed_bullish_pullback_fact()),
+            _keyed_facts(pullback=_bullish_pullback_fact()),
         )
         assert result is None
 
@@ -273,7 +257,7 @@ class TestPullbackSignal:
         result = signal.evaluate(
             view,
             _keyed_facts(
-                pullback=_confirmed_bullish_pullback_fact(),
+                pullback=_bullish_pullback_fact(),
                 trend=_bullish_trend_fact(),
             ),
         )
@@ -286,7 +270,7 @@ class TestPullbackSignal:
         result = signal.evaluate(
             view,
             _keyed_facts(
-                _confirmed_bullish_pullback_fact(),
+                _bullish_pullback_fact(),
                 _bullish_trend_fact(),
                 _atr_fact(100.0),
             ),
@@ -303,7 +287,7 @@ class TestPullbackSignal:
         strong = signal.evaluate(
             view,
             _keyed_facts(
-                _confirmed_bullish_pullback_fact(),
+                _bullish_pullback_fact(),
                 _bullish_trend_fact(strength=0.9),
                 _atr_fact(50.0),
             ),
@@ -311,7 +295,7 @@ class TestPullbackSignal:
         weak = signal.evaluate(
             view,
             _keyed_facts(
-                _confirmed_bullish_pullback_fact(),
+                _bullish_pullback_fact(),
                 _bullish_trend_fact(strength=0.3),
                 _atr_fact(50.0),
             ),
@@ -327,7 +311,7 @@ class TestPullbackSignal:
         result = signal.evaluate(
             view,
             _keyed_facts(
-                _confirmed_bullish_pullback_fact(),  # strength=0.72
+                _bullish_pullback_fact(),  # strength=0.72
                 _bullish_trend_fact(),
                 _atr_fact(50.0),
             ),
@@ -341,14 +325,14 @@ class TestPullbackSignal:
         result = signal.evaluate(
             view,
             _keyed_facts(
-                _confirmed_bullish_pullback_fact(),
+                _bullish_pullback_fact(),
                 _bullish_trend_fact(),
                 _atr_fact(50.0),
             ),
         )
         assert result is not None
         assert len(result.evidence) >= 2
-        assert any("pullback confirmed" in e.text.lower() for e in result.evidence)
+        assert any("pullback detected" in e.text.lower() for e in result.evidence)
         assert any("entry zone" in e.text.lower() for e in result.evidence)
 
     def test_custom_keys(self) -> None:
@@ -356,7 +340,7 @@ class TestPullbackSignal:
         view = MarketView(store, cursor=49, window_size=50)
         signal = PullbackSignal(pullback_key="my_pullback", trend_key="my_trend", atr_key="my_atr")
         facts = {
-            FactKey("my_pullback"): _confirmed_bullish_pullback_fact(),
+            FactKey("my_pullback"): _bullish_pullback_fact(),
             FactKey("my_trend"): _bullish_trend_fact(),
             FactKey("my_atr"): _atr_fact(50.0),
         }
@@ -370,7 +354,7 @@ class TestPullbackSignal:
         view1 = MarketView(store1, cursor=49, window_size=50)
         signal = PullbackSignal()
         facts = _keyed_facts(
-            _confirmed_bullish_pullback_fact(),
+            _bullish_pullback_fact(),
             _bullish_trend_fact(),
             _atr_fact(50.0),
         )
@@ -412,7 +396,7 @@ class TestStrategy:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)
         facts = _keyed_facts(
-            _confirmed_bullish_pullback_fact(),
+            _bullish_pullback_fact(),
             _bullish_trend_fact(),
             _atr_fact(50.0),
         )
@@ -431,7 +415,7 @@ class TestStrategy:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)
         facts = _keyed_facts(
-            _invalidated_pullback_fact(),
+            _neutral_pullback_fact(),
             _bullish_trend_fact(),
             _atr_fact(50.0),
         )
@@ -485,14 +469,17 @@ analyzers:
       period: 50
   - type: ATRAnalyzer
   - type: TrendAnalyzer
-  - type: SwingStructureAnalyzer
+  - type: BasicSwingAnalyzer
     params:
       lookback: 50
-  - type: FourSwingPullbackDetector
+  - type: SwingStructureAnalyzer
+    params:
+      window: 20
+  - type: PullbackPatternAnalyzer
 signals:
   - type: PullbackSignal
     requires:
-      - four_swing_pullback
+      - pullback_pattern
     rules:
       min_strength: 0.5
 """
@@ -501,7 +488,7 @@ signals:
         assert config.name == "pullback_test"
         assert len(config.signals) == 1
         assert config.signals[0].type == "PullbackSignal"
-        assert config.signals[0].requires == ("four_swing_pullback",)
+        assert config.signals[0].requires == ("pullback_pattern",)
         assert config.signals[0].rules == {"min_strength": 0.5}
 
     def test_validate_config_passes(self, tmp_path: Path) -> None:
@@ -509,14 +496,17 @@ signals:
 strategy:
   name: test
 analyzers:
-  - type: EMAAnalyzer
+  - type: BasicSwingAnalyzer
     params:
-      period: 20
-  - type: FourSwingPullbackDetector
+      lookback: 50
+  - type: SwingStructureAnalyzer
+    params:
+      window: 20
+  - type: PullbackPatternAnalyzer
 signals:
   - type: PullbackSignal
     requires:
-      - four_swing_pullback
+      - pullback_pattern
 """
         path = self._write_yaml(tmp_path, yaml_content)
         config = load_strategy(path)
@@ -541,7 +531,7 @@ signals:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)
         facts = _keyed_facts(
-            _confirmed_bullish_pullback_fact(),
+            _bullish_pullback_fact(),
             _bullish_trend_fact(),
             _atr_fact(50.0),
         )

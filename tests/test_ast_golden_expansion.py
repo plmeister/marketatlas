@@ -66,14 +66,14 @@ _SWING_PROVIDER = Provider(
     capability="swingstructure",
     category="analyzer",
     impl="SwingStructureAnalyzer",
-    default_params=(Parameter(name="lookback", value=LiteralExpression(50)),),
+    default_params=(Parameter(name="window", value=LiteralExpression(50)),),
 )
 _SWING_RESOLVED = Provider(
     name="SwingStructureAnalyzer",
     capability="swingstructure",
     category="analyzer",
     impl="SwingStructureAnalyzer",
-    default_params=(Parameter(name="lookback", value=LiteralExpression(50)),),
+    default_params=(Parameter(name="window", value=LiteralExpression(50)),),
 )
 
 
@@ -169,13 +169,13 @@ class TestGoldenMultipleChoices:
             [
                 SwingStructure(
                     name="sw",
-                    lookback=Choice([50, 100]),
-                    min_swing_atr=Choice([0.3, 0.5]),
+                    window=Choice([50, 100]),
+                    swing_key=Choice(["swing", "other"]),
                 )
             ],
         )
         expanded = _pipeline().expand(template)
-        expected_pairs = [(50, 0.3), (50, 0.5), (100, 0.3), (100, 0.5)]
+        expected_pairs = [(50, "swing"), (50, "other"), (100, "swing"), (100, "other")]
         assert [
             (
                 o.definitions[0].parameters[0].value,
@@ -188,12 +188,12 @@ class TestGoldenMultipleChoices:
                 _def(
                     "sw",
                     "SwingStructureAnalyzer",
-                    _param("lookback", lookback),
-                    _param("min_swing_atr", min_swing_atr),
+                    _param("window", window),
+                    _param("swing_key", swing_key),
                 ),
                 providers=(_SWING_PROVIDER, _SWING_RESOLVED),
             )
-            for lookback, min_swing_atr in expected_pairs
+            for window, swing_key in expected_pairs
         )
 
     def test_across_definitions_cartesian_product(self) -> None:

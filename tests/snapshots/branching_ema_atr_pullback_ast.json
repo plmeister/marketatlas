@@ -37,25 +37,40 @@
       "provider": "TrendAnalyzer"
     },
     {
-      "name": "swing",
-      "provider": "SwingStructureAnalyzer",
+      "name": "swings",
+      "provider": "BasicSwingAnalyzer",
       "parameters": [
         {
           "name": "lookback",
           "value": 100
-        },
+        }
+      ]
+    },
+    {
+      "name": "structure",
+      "provider": "SwingStructureAnalyzer",
+      "parameters": [
         {
-          "name": "atr_14",
+          "name": "swing",
           "value": {
             "expr": "reference",
-            "name": "atr14"
+            "name": "swings"
           }
         }
       ]
     },
     {
       "name": "pullback",
-      "provider": "FourSwingPullbackDetector"
+      "provider": "PullbackPatternAnalyzer",
+      "parameters": [
+        {
+          "name": "swing_structure",
+          "value": {
+            "expr": "reference",
+            "name": "structure"
+          }
+        }
+      ]
     }
   ],
   "providers": [
@@ -78,16 +93,22 @@
       "impl": "TrendAnalyzer"
     },
     {
+      "name": "BasicSwingAnalyzer",
+      "capability": "",
+      "category": "analyzer",
+      "impl": "BasicSwingAnalyzer"
+    },
+    {
       "name": "SwingStructureAnalyzer",
       "capability": "",
       "category": "analyzer",
       "impl": "SwingStructureAnalyzer"
     },
     {
-      "name": "FourSwingPullbackDetector",
+      "name": "PullbackPatternAnalyzer",
       "capability": "",
       "category": "analyzer",
-      "impl": "FourSwingPullbackDetector"
+      "impl": "PullbackPatternAnalyzer"
     }
   ]
 }

@@ -22,7 +22,7 @@
       ]
     },
     {
-      "type": "SwingStructureAnalyzer",
+      "type": "BasicSwingAnalyzer",
       "requires": [],
       "produces": [
         "swing_tf_1d"
@@ -39,14 +39,21 @@
       ]
     },
     {
-      "type": "FourSwingPullbackDetector",
+      "type": "SwingStructureAnalyzer",
       "requires": [
-        "atr_14_tf_1d",
-        "swing_tf_1d",
-        "trend_tf_1d"
+        "swing_tf_1d"
       ],
       "produces": [
-        "four_swing_pullback_tf_1d"
+        "swing_structure_tf_1d"
+      ]
+    },
+    {
+      "type": "PullbackPatternAnalyzer",
+      "requires": [
+        "swing_structure_tf_1d"
+      ],
+      "produces": [
+        "pullback_pattern_tf_1d"
       ]
     }
   ]

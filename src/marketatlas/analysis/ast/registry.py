@@ -208,7 +208,7 @@ def create_default_registry() -> ProviderRegistry:
     from marketatlas.analysis.analyzers.swing_basic import BasicSwingAnalyzer
     from marketatlas.analysis.analyzers.swing_structure import SwingStructureAnalyzer
     from marketatlas.analysis.analyzers.trend import TrendAnalyzer
-    from marketatlas.analysis.patterns import PullbackPatternAnalyzer, FourSwingPullbackDetector
+    from marketatlas.analysis.patterns import PullbackPatternAnalyzer
     from marketatlas.analysis.signals.pullback_signal import PullbackSignal
     from marketatlas.strategy.risk import RiskEngine
 

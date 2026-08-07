@@ -55,7 +55,6 @@ class SwingStructureAnalyzer(Analyzer):
         swings = swing_fact.swings[-5:]
 
         pattern = "".join([{SwingType.LOW: "L", SwingType.HIGH: "H"}[s.type] for s in swings])
-        print(pattern)
         if pattern == "LHLHL" or pattern == "HLHLH":
             # alternating pattern detected
             evidence_list: list[EvidenceEntry] = [
@@ -66,13 +65,12 @@ class SwingStructureAnalyzer(Analyzer):
                 ),
             ]
 
-            print(f"outputting SwingStructureFact showing {pattern}")
             return AnalysisResult(
                 facts=(
                     SwingStructureFact(
                         timestamp=view.current.timestamp,
                         evidence=tuple(evidence_list),
-                        points=(swings),
+                        points=swings,
                     ),
                 ),
                 evidence=tuple(evidence_list),

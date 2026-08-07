@@ -5,7 +5,7 @@ from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
-from marketatlas.facts.pattern import PullbackFact, PullbackStatus
+from marketatlas.facts.pattern import PullbackFact
 from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import (
     SRFact,
@@ -99,9 +99,8 @@ def _make_pullback_frame(offset: int = 0) -> AnalysisFrame:
     pb = PullbackFact(
         timestamp=candle.timestamp,
         evidence=(),
-        status=PullbackStatus.DETECTED,
-        retracement_atr=1.2,
         direction=TrendDirection.BULLISH,
+        swing_pattern=(95.0, 110.0, 97.0),
     )
     return AnalysisFrame(
         timestamp=candle.timestamp,
@@ -278,21 +277,22 @@ class TestExtractPullbacks:
         result = _extract_pullbacks_per_frame(frames)
         assert len(result) == 2
         assert result[0] is not None
-        assert result[0]["status"] == "detected"
+        assert result[0]["position"] == "belowBar"
+        assert result[0]["color"] == "#22c55e"
+        assert result[0]["shape"] == "arrowUp"
 
     def test_none_for_no_pullback(self) -> None:
         frames = [_make_frame(0)]
         result = _extract_pullbacks_per_frame(frames)
         assert result[0] is None
 
-    def test_ignores_invalidated(self) -> None:
+    def test_ignores_neutral(self) -> None:
         candle = _make_candle(0)
         pb = PullbackFact(
             timestamp=candle.timestamp,
             evidence=(),
-            status=PullbackStatus.INVALIDATED,
-            retracement_atr=1.0,
-            direction=TrendDirection.BEARISH,
+            direction=TrendDirection.NEUTRAL,
+            swing_pattern=(),
         )
         frame = AnalysisFrame(
             timestamp=candle.timestamp,
@@ -333,47 +333,25 @@ class TestExtractFactsPerFrame:
         result = _extract_facts_per_frame(frames)
         assert "pullback" in result[0]
         assert result[0]["pullback"]["type"] == "pullback"
-        assert result[0]["pullback"]["status"] == "detected"
         assert result[0]["pullback"]["direction"] == "bullish"
-        assert "swing_pattern_indices" in result[0]["pullback"]
-        assert result[0]["pullback"]["swing_pattern_indices"] == []
 
-    def test_pullback_with_swing_indices(self) -> None:
+    def test_pullback_with_swing_pattern(self) -> None:
         candle = _make_candle(5)
-        ts = candle.timestamp
-        swing_fact = SwingFact(
-            timestamp=ts,
-            evidence=(),
-            swings=(
-                SwingPoint(price=95.0, index=1, type=SwingType.LOW, timestamp=ts),
-                SwingPoint(price=110.0, index=3, type=SwingType.HIGH, timestamp=ts),
-                SwingPoint(price=97.0, index=5, type=SwingType.LOW, timestamp=ts),
-                SwingPoint(price=112.0, index=7, type=SwingType.HIGH, timestamp=ts),
-            ),
-        )
         pullback = PullbackFact(
             timestamp=candle.timestamp,
             evidence=(),
-            status=PullbackStatus.DETECTED,
-            retracement_atr=1.5,
             direction=TrendDirection.BULLISH,
             swing_pattern=(95.0, 110.0, 97.0, 112.0),
         )
         frame = AnalysisFrame(
             timestamp=candle.timestamp,
             candle=candle,
-            facts={
-                FactKey("swing"): swing_fact,
-                FactKey("pullback"): pullback,
-            },
+            facts={FactKey("pullback"): pullback},
             evidence=(),
         )
         result = _extract_facts_per_frame([frame])
         pb = result[0]["pullback"]
         assert pb["swing_pattern"] == [95.0, 110.0, 97.0, 112.0]
-        assert pb["swing_pattern_indices"] == [1, 3, 5, 7]
-        ts_str = ts.strftime("%Y-%m-%d")
-        assert pb["swing_pattern_times"] == [ts_str, ts_str, ts_str, ts_str]
 
     def test_swing_fact_included(self) -> None:
         candle = _make_candle(0)
@@ -775,8 +753,6 @@ class TestInteractiveRenderer:
         pullback = PullbackFact(
             timestamp=_make_candle(5).timestamp,
             evidence=(),
-            status=PullbackStatus.DETECTED,
-            retracement_atr=1.5,
             direction=TrendDirection.BULLISH,
             swing_pattern=(95.0, 110.0, 97.0, 112.0),
         )
@@ -799,7 +775,7 @@ class TestInteractiveRenderer:
         assert "zigzagBull" in content
         assert "zigzagBear" in content
         assert "updateZigzag" in content
-        assert "swing_pattern_indices" in content
+        assert "swing_pattern" in content
 
     def test_min_touches_in_output(self, tmp_path: object) -> None:
         path = tmp_path / "mt.html"  # type: ignore[operator]
@@ -875,7 +851,7 @@ class TestInteractiveRenderer:
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
         # Info panel renders O/H/L/C/Vol labels dynamically from candle keys
-        assert "class=\"label\">' + label + '</span>" in content
+        assert "'<div class=\"row\"><span class=\"label\">' +" in content
         assert "class=\"label\">Vol</span>" in content
         assert "candle[key].toFixed(2)" in content
 
@@ -986,8 +962,8 @@ class TestInteractiveRenderer:
         content = path.read_text()  # type: ignore[union-attr]
         assert "highlightCandle" in content
         assert "candleSeries.update" in content
-        assert "borderColor: '#facc15'" in content
-        assert "wickColor: '#facc15'" in content
+        assert "borderColor: \"#facc15\"" in content
+        assert "wickColor: \"#facc15\"" in content
         assert "candleHighlightLine" not in content
 
     def test_visibility_button_in_output(self, tmp_path: object) -> None:
@@ -1013,8 +989,8 @@ class TestInteractiveRenderer:
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
         # JS dim mode should set borderColor and wickColor for dimmed candles
-        assert "borderColor: 'rgba(128,128,128,0.3)'" in content
-        assert "wickColor: 'rgba(128,128,128,0.3)'" in content
+        assert "borderColor: \"rgba(128,128,128,0.3)\"" in content
+        assert "wickColor: \"rgba(128,128,128,0.3)\"" in content
 
     def test_future_visibility_toggle_cycle(self, tmp_path: object) -> None:
         path = tmp_path / "toggle.html"  # type: ignore[operator]

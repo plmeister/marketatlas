@@ -235,14 +235,13 @@ class TestCompile:
             'tf1d := timeframe { resolution: "1d" }\n'
             'tf1w := timeframe { resolution: "1w" }\n'
             "ema := ema { timeframe: tf1d, period: 5 }\n"
-            "swings := swingstructure { timeframe: tf1w, lookback: 5 }",
+            "swings := swings { timeframe: tf1w }\n"
+            "structure := swingstructure { timeframe: tf1w, window: 5 }",
             name="demo",
         )
         graph = ASTCompiler.compile(a)
         tfs = sorted(
-            tf.value
-            for an in graph.execution_order()
-            if (tf := an.timeframe) is not None
+            {tf.value for an in graph.execution_order() if (tf := an.timeframe) is not None}
         )
         assert tfs == ["1d", "1w"]
 
@@ -251,7 +250,8 @@ class TestCompile:
             'tf1d := timeframe { resolution: "1d" }\n'
             'tf1w := timeframe { resolution: "1w" }\n'
             "ema := ema { timeframe: tf1d, period: 5 }\n"
-            "swings := swingstructure { timeframe: tf1w, lookback: 3 }",
+            "swings := swings { timeframe: tf1w }\n"
+            "structure := swingstructure { timeframe: tf1w, window: 3 }",
             name="demo",
         )
         graph = ASTCompiler.compile(a)

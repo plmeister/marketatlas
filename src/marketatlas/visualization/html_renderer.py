@@ -82,10 +82,8 @@ def _extract_zigzags(
     frames: list[AnalysisFrame],
 ) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
-    print("extracting zigzags")
     for frame in frames:
         for fact in frame.facts.values():
-            print(f"extracted zigzag in frame {frame.timestamp.timestamp()}")
             if isinstance(fact, SwingStructureFact):
                 result.append(
                     {

@@ -107,13 +107,11 @@ class TestPullbackFact:
         f = PullbackFact(
             timestamp=TS,
             evidence=(),
-            status=PullbackStatus.DETECTED,
-            retracement_atr=1.2,
             direction=TrendDirection.BULLISH,
+            swing_pattern=(48200.0, 51500.0, 49100.0),
         )
-        assert f.status == PullbackStatus.DETECTED
-        assert f.retracement_atr == 1.2
         assert f.direction == TrendDirection.BULLISH
+        assert f.swing_pattern == (48200.0, 51500.0, 49100.0)
 
     def test_status_enum_values(self) -> None:
         assert PullbackStatus.DETECTED.value == "detected"
@@ -124,12 +122,11 @@ class TestPullbackFact:
         f = PullbackFact(
             timestamp=TS,
             evidence=(),
-            status=PullbackStatus.DETECTED,
-            retracement_atr=1.0,
             direction=TrendDirection.BULLISH,
+            swing_pattern=(),
         )
         with pytest.raises(AttributeError):
-            f.status = PullbackStatus.CONFIRMED  # type: ignore[misc]
+            f.direction = TrendDirection.NEUTRAL  # type: ignore[misc]
 
 
 class TestFactInheritance:
@@ -145,8 +142,7 @@ class TestFactInheritance:
         f = PullbackFact(
             timestamp=TS,
             evidence=(),
-            status=PullbackStatus.DETECTED,
-            retracement_atr=1.0,
             direction=TrendDirection.BULLISH,
+            swing_pattern=(),
         )
         assert isinstance(f, Fact)

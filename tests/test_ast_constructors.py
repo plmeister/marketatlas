@@ -6,7 +6,7 @@ from marketatlas.analysis.ast.constructors import (
     ATR,
     EMA,
     SR,
-    DetectPullback,
+    PullbackPattern,
     GenerateSignal,
     ManageRisk,
     ProviderConstructionError,
@@ -73,7 +73,7 @@ class TestBasicConstruction:
             "swingstructure": SwingStructure(),
             "swings": Swings(),
             "sr": SR(),
-            "detect_pullback": DetectPullback(),
+            "pullbackpattern": PullbackPattern(),
             "generate_signal": GenerateSignal(),
             "manage_risk": ManageRisk(),
         }

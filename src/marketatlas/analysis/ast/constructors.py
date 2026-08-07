@@ -23,7 +23,7 @@ from marketatlas.data.types import Timeframe
 __all__ = [
     "ATR",
     "Choice",
-    "DetectPullback",
+    "PullbackPattern",
     "EMA",
     "GenerateSignal",
     "ManageRisk",
@@ -227,11 +227,11 @@ def SR(  # noqa: N802
     return construct("sr", name, **params)
 
 
-def DetectPullback(  # noqa: N802
+def PullbackPattern(  # noqa: N802
     name: str | None = None, **params: Any
 ) -> Definition:
-    """Definition for the ``detect_pullback`` provider."""
-    return construct("detect_pullback", name, **params)
+    """Definition for the ``pullbackpattern`` provider."""
+    return construct("pullbackpattern", name, **params)
 
 
 def GenerateSignal(  # noqa: N802

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from marketatlas.evidence.model import EvidenceEntry
-from marketatlas.facts.pattern import PullbackFact, PullbackStatus
+from marketatlas.facts.pattern import PullbackFact
 from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import (
     SRFact,
@@ -103,10 +103,7 @@ def _extract_pullbacks_per_frame(
             if isinstance(fact, PullbackFact):
                 pb = fact
                 break
-        if pb is not None and pb.status in (
-            PullbackStatus.DETECTED,
-            PullbackStatus.CONFIRMED,
-        ):
+        if pb is not None and pb.direction != TrendDirection.NEUTRAL:
             is_bull = pb.direction == TrendDirection.BULLISH
             result.append(
                 {
@@ -114,8 +111,6 @@ def _extract_pullbacks_per_frame(
                     "position": "belowBar" if is_bull else "aboveBar",
                     "color": "#22c55e" if is_bull else "#ef4444",
                     "shape": "arrowUp" if is_bull else "arrowDown",
-                    "text": f"Pullback ({pb.retracement_atr:.1f} ATR)",
-                    "status": pb.status.value,
                 }
             )
         else:
@@ -144,6 +139,12 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
                     "type": "trend",
                     "direction": fact.direction.value,
                     "strength": fact.strength,
+                }
+            elif isinstance(fact, PullbackFact):
+                facts[label] = {
+                    "type": "pullback",
+                    "direction": fact.direction.value,
+                    "swing_pattern": list(fact.swing_pattern),
                 }
             elif isinstance(fact, SwingStructureFact):
                 # Match swing_pattern prices to SwingFact swings for indices/times

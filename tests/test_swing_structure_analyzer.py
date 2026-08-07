@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from marketatlas.analysis.analyzers.swing_basic import BasicSwingAnalyzer
 from marketatlas.analysis.analyzers.swing_structure import SwingStructureAnalyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.store import MarketStore
@@ -7,8 +8,7 @@ from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
-from marketatlas.facts.primitive import ATRFact
-from marketatlas.facts.structural import SwingFact, SwingType
+from marketatlas.facts.structural import SwingFact, SwingPoint, SwingStructureFact, SwingType
 
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
 
@@ -29,23 +29,26 @@ def _make_store(candles_data: list[tuple[float, float, float, float]]) -> Market
     return MarketStore(data)
 
 
-def _atr_fact(value: float = 2.0) -> ATRFact:
-    return ATRFact(
+def _view(candles: list[tuple[float, float, float, float]], cursor: int | None = None) -> MarketView:
+    store = _make_store(candles)
+    cur = cursor if cursor is not None else len(candles) - 1
+    return MarketView(store, cursor=cur, window_size=len(candles))
+
+
+def _swing_fact(swings: list[tuple[float, SwingType]]) -> SwingFact:
+    return SwingFact(
         timestamp=BASE,
-        evidence=(
-            EvidenceEntry(
-                text=f"ATR14 = {value:.2f}",
-                level=EvidenceLevel.INFO,
-                source="ATRAnalyzer",
-            ),
+        evidence=(),
+        swings=tuple(
+            SwingPoint(
+                price=price,
+                index=i,
+                type=swing_type,
+                timestamp=BASE,
+            )
+            for i, (price, swing_type) in enumerate(swings)
         ),
-        value=value,
-        period=14,
     )
-
-
-def _keyed_facts(atr: ATRFact) -> dict[FactKey, Fact]:
-    return {FactKey("atr_14"): atr}
 
 
 def _zigzag_candles() -> list[tuple[float, float, float, float]]:
@@ -58,7 +61,7 @@ def _zigzag_candles() -> list[tuple[float, float, float, float]]:
         (106.0, 106.0, 98.0, 100.0),  # 4: SL at 98
         (100.0, 110.0, 100.0, 108.0),  # 5: SH at 110
         (108.0, 108.0, 97.0, 99.0),  # 6: SL at 97
-        (99.0, 112.0, 99.0, 110.0),  # 7: end (no next candle for SH check)
+        (99.0, 112.0, 99.0, 110.0),  # 7: end
     ]
 
 
@@ -75,34 +78,19 @@ def _sideways_candles() -> list[tuple[float, float, float, float]]:
     ]
 
 
-def _close_swings_candles() -> list[tuple[float, float, float, float]]:
-    """Two swing highs very close in price (within 0.3 ATR with ATR=2.0)."""
-    return [
-        (100.0, 102.0, 98.0, 100.0),  # 0: base
-        (100.0, 105.0, 100.0, 103.0),  # 1: SH at 105
-        (103.0, 103.0, 99.0, 100.0),  # 2: SL at 99
-        (100.0, 105.4, 100.0, 103.0),  # 3: SH at 105.4 (close to 105)
-        (103.0, 103.0, 98.5, 99.5),  # 4: SL at 98.5
-        (99.5, 105.2, 99.5, 103.0),  # 5: SH at 105.2 (close to 105.4)
-        (103.0, 103.0, 101.0, 102.0),
-    ]
-
-
-class TestSwingStructureAnalyzer:
+class TestBasicSwingAnalyzer:
     def test_requires_nothing(self) -> None:
-        analyzer = SwingStructureAnalyzer()
+        analyzer = BasicSwingAnalyzer()
         assert analyzer.requires() == ()
 
     def test_produces_swing_fact(self) -> None:
-        analyzer = SwingStructureAnalyzer()
+        analyzer = BasicSwingAnalyzer()
         assert analyzer.produces() == (FactKey("swing"),)
 
     def test_zigzag_detects_all_swings(self) -> None:
         candles = _zigzag_candles()
-        store = _make_store(candles)
-        view = MarketView(store, cursor=len(candles) - 1, window_size=len(candles) - 1)
-        analyzer = SwingStructureAnalyzer(lookback=len(candles), min_swing_atr=0.3)
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
+        analyzer = BasicSwingAnalyzer(lookback=len(candles), left_bars=1, right_bars=1)
+        result = analyzer.analyze(_view(candles), {})
         fact = result.facts[0]
         assert isinstance(fact, SwingFact)
         assert len(fact.swings) >= 4
@@ -113,10 +101,8 @@ class TestSwingStructureAnalyzer:
 
     def test_zigzag_highs_are_highs(self) -> None:
         candles = _zigzag_candles()
-        store = _make_store(candles)
-        view = MarketView(store, cursor=len(candles) - 1, window_size=len(candles) - 1)
-        analyzer = SwingStructureAnalyzer(lookback=len(candles), min_swing_atr=0.3)
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
+        analyzer = BasicSwingAnalyzer(lookback=len(candles), left_bars=1, right_bars=1)
+        result = analyzer.analyze(_view(candles), {})
         fact = result.facts[0]
         assert isinstance(fact, SwingFact)
         highs = [s for s in fact.swings if s.type == SwingType.HIGH]
@@ -126,104 +112,65 @@ class TestSwingStructureAnalyzer:
 
     def test_sideways_few_swings(self) -> None:
         candles = _sideways_candles()
-        store = _make_store(candles)
-        view = MarketView(store, cursor=len(candles) - 1, window_size=len(candles) - 1)
-        analyzer = SwingStructureAnalyzer(lookback=len(candles), min_swing_atr=0.3)
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
+        analyzer = BasicSwingAnalyzer(lookback=len(candles), left_bars=1, right_bars=1)
+        result = analyzer.analyze(_view(candles), {})
         fact = result.facts[0]
         assert isinstance(fact, SwingFact)
         assert len(fact.swings) == 0
 
-    def test_filter_removes_close_swings(self) -> None:
-        candles = _close_swings_candles()
-        store = _make_store(candles)
-        view = MarketView(store, cursor=len(candles) - 1, window_size=len(candles) - 1)
-        analyzer = SwingStructureAnalyzer(lookback=len(candles), min_swing_atr=0.3)
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
-        fact = result.facts[0]
-        assert isinstance(fact, SwingFact)
-        highs = [s for s in fact.swings if s.type == SwingType.HIGH]
-        assert len(highs) == 1
-
     def test_window_with_fewer_than_3_candles(self) -> None:
         candles = [(100.0, 101.0, 99.0, 100.0)]
-        store = _make_store(candles)
-        view = MarketView(store, cursor=0, window_size=1)
-        analyzer = SwingStructureAnalyzer()
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
+        analyzer = BasicSwingAnalyzer()
+        result = analyzer.analyze(_view(candles, cursor=0), {})
         fact = result.facts[0]
         assert isinstance(fact, SwingFact)
         assert len(fact.swings) == 0
 
     def test_two_candles(self) -> None:
         candles = [(100.0, 101.0, 99.0, 100.0), (100.0, 102.0, 100.0, 101.0)]
-        store = _make_store(candles)
-        view = MarketView(store, cursor=1, window_size=1)
-        analyzer = SwingStructureAnalyzer()
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
+        analyzer = BasicSwingAnalyzer()
+        result = analyzer.analyze(_view(candles, cursor=1), {})
         fact = result.facts[0]
         assert isinstance(fact, SwingFact)
         assert len(fact.swings) == 0
 
-    def test_swings_detected_with_zero_atr(self) -> None:
-        candles = _zigzag_candles()
-        store = _make_store(candles)
-        view = MarketView(store, cursor=len(candles) - 1, window_size=len(candles) - 1)
-        analyzer = SwingStructureAnalyzer(lookback=len(candles))
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(0.0)))
-        fact = result.facts[0]
-        assert isinstance(fact, SwingFact)
-        assert len(fact.swings) > 0
-
     def test_swings_detected_without_atr(self) -> None:
         candles = _zigzag_candles()
-        store = _make_store(candles)
-        view = MarketView(store, cursor=len(candles) - 1, window_size=len(candles) - 1)
-        analyzer = SwingStructureAnalyzer(lookback=len(candles))
-        result = analyzer.analyze(view, {})
+        analyzer = BasicSwingAnalyzer(lookback=len(candles), left_bars=1, right_bars=1)
+        result = analyzer.analyze(_view(candles), {})
         fact = result.facts[0]
         assert isinstance(fact, SwingFact)
         assert len(fact.swings) > 0
 
     def test_evidence_contains_swing_count(self) -> None:
         candles = _zigzag_candles()
-        store = _make_store(candles)
-        view = MarketView(store, cursor=len(candles) - 1, window_size=len(candles) - 1)
-        analyzer = SwingStructureAnalyzer(lookback=len(candles), min_swing_atr=0.3)
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
+        analyzer = BasicSwingAnalyzer(lookback=len(candles), left_bars=1, right_bars=1)
+        result = analyzer.analyze(_view(candles), {})
         assert any("swing points" in e.text.lower() for e in result.evidence)
 
     def test_evidence_contains_range(self) -> None:
         candles = _zigzag_candles()
-        store = _make_store(candles)
-        view = MarketView(store, cursor=len(candles) - 1, window_size=len(candles) - 1)
-        analyzer = SwingStructureAnalyzer(lookback=len(candles), min_swing_atr=0.3)
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
+        analyzer = BasicSwingAnalyzer(lookback=len(candles), left_bars=1, right_bars=1)
+        result = analyzer.analyze(_view(candles), {})
         assert any("range" in e.text.lower() for e in result.evidence)
 
     def test_evidence_matches_fact_evidence(self) -> None:
         candles = _zigzag_candles()
-        store = _make_store(candles)
-        view = MarketView(store, cursor=len(candles) - 1, window_size=len(candles) - 1)
-        analyzer = SwingStructureAnalyzer(lookback=len(candles), min_swing_atr=0.3)
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
+        analyzer = BasicSwingAnalyzer(lookback=len(candles), left_bars=1, right_bars=1)
+        result = analyzer.analyze(_view(candles), {})
         assert result.evidence == result.facts[0].evidence
 
     def test_fact_has_correct_timestamp(self) -> None:
         candles = _zigzag_candles()
-        store = _make_store(candles)
-        view = MarketView(store, cursor=len(candles) - 1, window_size=len(candles) - 1)
-        analyzer = SwingStructureAnalyzer(lookback=len(candles), min_swing_atr=0.3)
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
+        analyzer = BasicSwingAnalyzer(lookback=len(candles), left_bars=1, right_bars=1)
+        result = analyzer.analyze(_view(candles), {})
         assert result.facts[0].timestamp == BASE
 
     def test_swing_indices_are_relative_to_store(self) -> None:
         candles = _zigzag_candles()
-        store = _make_store(candles)
         cursor = len(candles) - 1
-        view = MarketView(store, cursor=cursor, window_size=len(candles) - 1)
-        analyzer = SwingStructureAnalyzer(lookback=len(candles), min_swing_atr=0.3)
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
+        analyzer = BasicSwingAnalyzer(lookback=len(candles), left_bars=1, right_bars=1)
+        result = analyzer.analyze(_view(candles, cursor=cursor), {})
         fact = result.facts[0]
         assert isinstance(fact, SwingFact)
         for swing in fact.swings:
@@ -232,11 +179,9 @@ class TestSwingStructureAnalyzer:
     def test_no_future_data_visible(self) -> None:
         """Swing index should never exceed cursor."""
         candles = _zigzag_candles()
-        store = _make_store(candles)
         cursor = 5
-        view = MarketView(store, cursor=cursor, window_size=5)
-        analyzer = SwingStructureAnalyzer(lookback=5, min_swing_atr=0.3)
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
+        analyzer = BasicSwingAnalyzer(lookback=5, left_bars=1, right_bars=1)
+        result = analyzer.analyze(_view(candles, cursor=cursor), {})
         fact = result.facts[0]
         assert isinstance(fact, SwingFact)
         for swing in fact.swings:
@@ -265,29 +210,14 @@ class TestSwingStructureAnalyzer:
             (136.0, 136.0, 62.0, 132.0),   # 18: SL at 62
             (132.0, 144.0, 132.0, 140.0),  # 19: SH at 144
         ]
-        store = _make_store(candles)
         cursor = len(candles) - 1
-        view = MarketView(store, cursor=cursor, window_size=5)
-        analyzer = SwingStructureAnalyzer(min_swing_atr=0.0)
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
+        analyzer = BasicSwingAnalyzer(left_bars=1, right_bars=1)
+        result = analyzer.analyze(_view(candles, cursor=cursor), {})
         fact = result.facts[0]
         assert isinstance(fact, SwingFact)
         assert len(fact.swings) > 0
         early_swings = [s for s in fact.swings if s.index < cursor - 5]
         assert len(early_swings) > 0, "Swings before window boundary should be detected"
-
-    def test_custom_atr_key(self) -> None:
-        candles = _zigzag_candles()
-        store = _make_store(candles)
-        view = MarketView(store, cursor=len(candles) - 1, window_size=len(candles) - 1)
-        analyzer = SwingStructureAnalyzer(
-            lookback=len(candles), min_swing_atr=0.3, atr_key="atr_custom"
-        )
-        facts: dict[FactKey, Fact] = {FactKey("atr_custom"): _atr_fact(2.0)}
-        result = analyzer.analyze(view, facts)
-        fact = result.facts[0]
-        assert isinstance(fact, SwingFact)
-        assert len(fact.swings) > 0
 
     def test_consecutive_same_type_highs_kept(self) -> None:
         """Two consecutive swing highs (no swing low between) both kept."""
@@ -301,10 +231,8 @@ class TestSwingStructureAnalyzer:
             (105.0, 105.0, 103.0, 104.0),  # 6
             (104.0, 104.0, 102.0, 103.0),  # 7
         ]
-        store = _make_store(candles)
-        view = MarketView(store, cursor=len(candles) - 1, window_size=len(candles) - 1)
-        analyzer = SwingStructureAnalyzer(lookback=len(candles), min_swing_atr=0.0, left_bars=1, right_bars=1)
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
+        analyzer = BasicSwingAnalyzer(lookback=len(candles), left_bars=1, right_bars=1)
+        result = analyzer.analyze(_view(candles), {})
         fact = result.facts[0]
         assert isinstance(fact, SwingFact)
         highs = [s for s in fact.swings if s.type == SwingType.HIGH]
@@ -324,10 +252,8 @@ class TestSwingStructureAnalyzer:
             (100.0, 102.0, 98.0, 101.0),  # 6
             (101.0, 103.0, 99.0, 102.0),  # 7
         ]
-        store = _make_store(candles)
-        view = MarketView(store, cursor=len(candles) - 1, window_size=len(candles) - 1)
-        analyzer = SwingStructureAnalyzer(lookback=len(candles), min_swing_atr=0.0, left_bars=1, right_bars=1)
-        result = analyzer.analyze(view, _keyed_facts(_atr_fact(2.0)))
+        analyzer = BasicSwingAnalyzer(lookback=len(candles), left_bars=1, right_bars=1)
+        result = analyzer.analyze(_view(candles), {})
         fact = result.facts[0]
         assert isinstance(fact, SwingFact)
         lows = [s for s in fact.swings if s.type == SwingType.LOW]
@@ -336,3 +262,82 @@ class TestSwingStructureAnalyzer:
         assert lows[1].price == 95.0
 
 
+class TestSwingStructureAnalyzer:
+    def test_requires_swing(self) -> None:
+        analyzer = SwingStructureAnalyzer()
+        assert analyzer.requires() == (FactKey("swing"),)
+
+    def test_produces_swing_structure(self) -> None:
+        analyzer = SwingStructureAnalyzer()
+        assert analyzer.produces() == (FactKey("swing_structure"),)
+
+    def test_missing_swing_returns_empty_structure(self) -> None:
+        candles = _zigzag_candles()
+        analyzer = SwingStructureAnalyzer()
+        result = analyzer.analyze(_view(candles), {})
+        fact = result.facts[0]
+        assert isinstance(fact, SwingStructureFact)
+        assert fact.points == ()
+
+    def test_alternating_swings_detected(self) -> None:
+        candles = _zigzag_candles()
+        basic = BasicSwingAnalyzer(lookback=len(candles), left_bars=1, right_bars=1)
+        swing_fact = basic.analyze(_view(candles), {}).facts[0]
+        analyzer = SwingStructureAnalyzer()
+        result = analyzer.analyze(_view(candles), {FactKey("swing"): swing_fact})
+        fact = result.facts[0]
+        assert isinstance(fact, SwingStructureFact)
+        assert len(fact.points) == 5
+        types = [p.type for p in fact.points]
+        assert types in (
+            [SwingType.LOW, SwingType.HIGH, SwingType.LOW, SwingType.HIGH, SwingType.LOW],
+            [SwingType.HIGH, SwingType.LOW, SwingType.HIGH, SwingType.LOW, SwingType.HIGH],
+        )
+
+    def test_non_alternating_returns_no_fact(self) -> None:
+        candles = _zigzag_candles()
+        swing_fact = _swing_fact(
+            [
+                (110.0, SwingType.HIGH),
+                (108.0, SwingType.HIGH),
+                (97.0, SwingType.LOW),
+                (96.0, SwingType.LOW),
+                (111.0, SwingType.HIGH),
+            ]
+        )
+        analyzer = SwingStructureAnalyzer()
+        result = analyzer.analyze(_view(candles), {FactKey("swing"): swing_fact})
+        assert result.facts == ()
+
+    def test_evidence_mentions_no_pattern(self) -> None:
+        candles = _zigzag_candles()
+        swing_fact = _swing_fact(
+            [
+                (110.0, SwingType.HIGH),
+                (108.0, SwingType.HIGH),
+                (97.0, SwingType.LOW),
+                (96.0, SwingType.LOW),
+                (111.0, SwingType.HIGH),
+            ]
+        )
+        analyzer = SwingStructureAnalyzer()
+        result = analyzer.analyze(_view(candles), {FactKey("swing"): swing_fact})
+        assert any("alternating" in e.text.lower() for e in result.evidence)
+
+    def test_fact_has_correct_timestamp(self) -> None:
+        candles = _zigzag_candles()
+        basic = BasicSwingAnalyzer(lookback=len(candles), left_bars=1, right_bars=1)
+        swing_fact = basic.analyze(_view(candles), {}).facts[0]
+        analyzer = SwingStructureAnalyzer()
+        result = analyzer.analyze(_view(candles), {FactKey("swing"): swing_fact})
+        assert result.facts[0].timestamp == BASE
+
+    def test_custom_swing_key(self) -> None:
+        candles = _zigzag_candles()
+        basic = BasicSwingAnalyzer(lookback=len(candles), left_bars=1, right_bars=1)
+        swing_fact = basic.analyze(_view(candles), {}).facts[0]
+        analyzer = SwingStructureAnalyzer(swing_key="swing_custom")
+        assert analyzer.requires() == (FactKey("swing_custom"),)
+        result = analyzer.analyze(_view(candles), {FactKey("swing_custom"): swing_fact})
+        assert isinstance(result.facts[0], SwingStructureFact)
+        assert len(result.facts[0].points) == 5

@@ -2,17 +2,34 @@ from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
-from marketatlas.facts.pattern import PullbackFact, PullbackStatus
+from marketatlas.facts.pattern import PullbackFact
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
 from marketatlas.strategy.signals import Signal, TradeSignal
+
+
+def _pullback_strength(pattern: tuple[float, ...]) -> float:
+    """Retracement depth of the second leg relative to the first.
+
+    The swing pattern is a low/high/low/high (bullish) or
+    high/low/high/low (bearish) price sequence; the pullback strength is how
+    far price retraced on the third point before the pattern resumed. An empty
+    or incomplete pattern scores 0.
+    """
+    if len(pattern) < 3:
+        return 0.0
+    a, b, c = pattern[0], pattern[1], pattern[2]
+    leg = abs(b - a)
+    if leg <= 0:
+        return 0.0
+    return abs(c - b) / leg
 
 
 class PullbackSignal(Signal):
     def __init__(
         self,
         min_strength: float = 0.5,
-        pullback_key: str = "four_swing_pullback",
+        pullback_key: str = "pullback_pattern",
         trend_key: str = "trend",
         atr_key: str = "atr_14",
     ) -> None:
@@ -33,28 +50,25 @@ class PullbackSignal(Signal):
         if not isinstance(atr, ATRFact):
             return None
 
-        if pullback.status != PullbackStatus.CONFIRMED:
-            return None
-        if pullback.confirmation_strength < self._min_strength:
-            return None
         if pullback.direction == TrendDirection.NEUTRAL:
+            return None
+
+        strength = _pullback_strength(pullback.swing_pattern)
+        if strength < self._min_strength:
             return None
 
         current = view.current
         atr_val = atr.value if atr.value > 0 else 0.0
         buffer = 0.5 * atr_val
 
-        if pullback.direction == TrendDirection.BULLISH:
-            entry_zone = (current.close - buffer, current.close + buffer)
-        else:
-            entry_zone = (current.close - buffer, current.close + buffer)
+        entry_zone = (current.close - buffer, current.close + buffer)
 
-        confidence = pullback.confirmation_strength * trend.strength
+        confidence = strength * trend.strength
 
         evidence = (
             EvidenceEntry(
                 text=(
-                    f"Signal: {pullback.direction.value} pullback confirmed, "
+                    f"Signal: {pullback.direction.value} pullback detected, "
                     f"confidence {confidence:.2f}"
                 ),
                 level=EvidenceLevel.SIGNAL,

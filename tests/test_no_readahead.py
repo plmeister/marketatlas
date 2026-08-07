@@ -55,13 +55,15 @@ def _make_bundle() -> StrategyBundle:
     config = StrategyConfig(
         name="audit_strategy",
         version="1.0",
+        timeframes=("1h",),
         analyzers=(
             AnalyzerConfig(type="EMAAnalyzer", params={"period": 20}),
             AnalyzerConfig(type="EMAAnalyzer", params={"period": 50}),
             AnalyzerConfig(type="ATRAnalyzer", params={"period": 14}),
             AnalyzerConfig(type="TrendAnalyzer"),
-            AnalyzerConfig(type="SwingStructureAnalyzer", params={"lookback": 50}),
-            AnalyzerConfig(type="FourSwingPullbackDetector"),
+            AnalyzerConfig(type="BasicSwingAnalyzer", params={"lookback": 50}),
+            AnalyzerConfig(type="SwingStructureAnalyzer", params={"window": 20}),
+            AnalyzerConfig(type="PullbackPatternAnalyzer"),
         ),
         signals=(
             SignalConfig(

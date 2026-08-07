@@ -233,12 +233,14 @@ class TestCompile:
                 AnalyzerConfig(type="EMAAnalyzer", params={"period": 50}),
                 AnalyzerConfig(type="ATRAnalyzer", params={"period": 14}),
                 AnalyzerConfig(type="TrendAnalyzer", params={}),
-                AnalyzerConfig(type="SwingStructureAnalyzer", params={"lookback": 100}),
+                AnalyzerConfig(type="BasicSwingAnalyzer", params={"lookback": 100}),
+                AnalyzerConfig(type="SwingStructureAnalyzer", params={}),
+                AnalyzerConfig(type="PullbackPatternAnalyzer", params={}),
             ),
             signals=(
                 SignalConfig(
                     type="PullbackSignal",
-                    requires=("trend", "atr_14", "four_swing_pullback"),
+                    requires=("trend", "atr_14", "pullback_pattern"),
                     rules={"min_strength": 0.5},
                 ),
             ),
@@ -255,13 +257,15 @@ class TestCompile:
             .define("atr14", "analyzer", "ATRAnalyzer")
             .with_param("period", 14)
             .define("trend", "analyzer", "TrendAnalyzer")
-            .define("swing", "analyzer", "SwingStructureAnalyzer")
+            .define("swings", "analyzer", "BasicSwingAnalyzer")
             .with_param("lookback", 100)
+            .define("swingstructure", "analyzer", "SwingStructureAnalyzer")
+            .define("pullback", "analyzer", "PullbackPatternAnalyzer")
             .define("signal", "signal", "PullbackSignal")
             .with_param("min_strength", 0.5)
             .with_reference("trend", "trend")
             .with_reference("atr_14", "atr14")
-            .with_reference("four_swing_pullback", "swing")
+            .with_reference("pullback_pattern", "pullback")
             .define("risk", "risk", "risk_based")
             .with_param("risk_pct", 1.0)
             .build()

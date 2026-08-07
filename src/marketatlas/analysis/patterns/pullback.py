@@ -6,7 +6,7 @@ from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
-from marketatlas.facts.pattern import PullbackFact, PullbackStatus
+from marketatlas.facts.pattern import PullbackFact
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import TrendDirection, TrendFact, SwingStructureFact, SwingType
 
@@ -43,13 +43,7 @@ class PullbackPatternAnalyzer(Analyzer):
                 ),
             )
             return AnalysisResult(
-                facts=(
-                    PullbackFact(
-                        timestamp=view.current.timestamp,
-                        evidence=evidence,
-                        direction=TrendDirection.NEUTRAL,
-                    ),
-                ),
+                facts=(),
                 evidence=evidence,
             )
 
@@ -80,13 +74,7 @@ class PullbackPatternAnalyzer(Analyzer):
                 ),
             )
             return AnalysisResult(
-                facts=(
-                    PullbackFact(
-                        timestamp=view.current.timestamp,
-                        evidence=evidence,
-                        direction=direction,
-                    ),
-                ),
+                facts=(),
                 evidence=evidence,
             )
         evidence = (
@@ -96,12 +84,20 @@ class PullbackPatternAnalyzer(Analyzer):
                 source="PullbackDetector",
             ),
         )
+        pattern: tuple[float, ...] = ()
+        if len(lows) >= 2 and len(highs) >= 2:
+            pts = sorted(
+                (lows[-2], lows[-1], highs[-2], highs[-1]),
+                key=lambda s: s.index,
+            )
+            pattern = tuple(p.price for p in pts)
         return AnalysisResult(
             facts=(
                 PullbackFact(
                     timestamp=view.current.timestamp,
                     evidence=evidence,
                     direction=direction,
+                    swing_pattern=pattern,
                 ),
             ),
             evidence=evidence,

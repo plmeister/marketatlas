@@ -122,20 +122,16 @@ class TestEvaluateAll:
         s = Strategy("s1", config)
         bundle = StrategyBundle([s])
 
-        from marketatlas.facts.pattern import PullbackFact, PullbackStatus
+        from marketatlas.facts.pattern import PullbackFact
         from marketatlas.facts.primitive import ATRFact
         from marketatlas.facts.structural import TrendDirection, TrendFact
 
         facts: dict[FactKey, Fact] = {
-            FactKey("four_swing_pullback"): PullbackFact(
+            FactKey("pullback_pattern"): PullbackFact(
                 timestamp=BASE,
                 evidence=(),
-                status=PullbackStatus.CONFIRMED,
-                retracement_atr=0.5,
                 direction=TrendDirection.BULLISH,
                 swing_pattern=(48200.0, 51500.0, 49100.0, 52800.0),
-                deviation_pct=0.05,
-                confirmation_strength=0.72,
             ),
             FactKey("trend"): TrendFact(
                 timestamp=BASE,
@@ -160,7 +156,7 @@ class TestEvaluateAll:
         assert signal.direction == TrendDirection.BULLISH
 
     def test_multiple_strategies_combine_signals(self) -> None:
-        from marketatlas.facts.pattern import PullbackFact, PullbackStatus
+        from marketatlas.facts.pattern import PullbackFact
         from marketatlas.facts.primitive import ATRFact
         from marketatlas.facts.structural import TrendDirection, TrendFact
 
@@ -177,15 +173,11 @@ class TestEvaluateAll:
         bundle = StrategyBundle([s1, s2])
 
         facts: dict[FactKey, Fact] = {
-            FactKey("four_swing_pullback"): PullbackFact(
+            FactKey("pullback_pattern"): PullbackFact(
                 timestamp=BASE,
                 evidence=(),
-                status=PullbackStatus.CONFIRMED,
-                retracement_atr=0.5,
                 direction=TrendDirection.BULLISH,
-                swing_pattern=(48200.0, 51500.0, 49100.0, 52800.0),
-                deviation_pct=0.05,
-                confirmation_strength=0.4,
+                swing_pattern=(100.0, 200.0, 160.0, 260.0),
             ),
             FactKey("trend"): TrendFact(
                 timestamp=BASE,

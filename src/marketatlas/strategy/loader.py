@@ -14,7 +14,7 @@ from marketatlas.analysis.analyzers.swing_structure import SwingStructureAnalyze
 from marketatlas.analysis.analyzers.trend import TrendAnalyzer
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
-from marketatlas.analysis.patterns import FourSwingPullbackDetector, PullbackPatternAnalyzer
+from marketatlas.analysis.patterns import PullbackPatternAnalyzer
 
 from .config import AnalyzerConfig, RiskConfig, SignalConfig, StrategyConfig
 
@@ -26,7 +26,6 @@ ANALYZER_TYPES: dict[str, type[Analyzer]] = {
     "SwingStructureAnalyzer": SwingStructureAnalyzer,
     "BasicSwingAnalyzer": BasicSwingAnalyzer,
     "SupportResistanceAnalyzer": SupportResistanceAnalyzer,
-    "FourSwingPullbackDetector": FourSwingPullbackDetector,
     "PullbackPatternAnalyzer": PullbackPatternAnalyzer,
 }
 
@@ -99,11 +98,12 @@ def validate_config(config: StrategyConfig) -> list[str]:
     for a in analyzers:
         for fk in a.produces():
             produces_keys.add(fk)
+    produced_names = {fk.name for fk in produces_keys}
 
     for i, sc in enumerate(config.signals):
         for req_key in sc.requires:
-            needed = FactKey(req_key)
-            if needed not in produces_keys:
+            name = req_key.split("@")[0]
+            if name not in produced_names:
                 errors.append(
                     f"Signal '{sc.type}' at index {i} requires '{req_key}' not found in analyzers"
                 )
