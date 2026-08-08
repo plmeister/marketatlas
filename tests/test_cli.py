@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from marketatlas.backtesting.backtester import BacktestResult
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
 
@@ -42,6 +43,16 @@ def _run_main(*args: str) -> None:
         from marketatlas.cli import main
 
         main()
+
+
+def _mock_backtest_result(mock_tradebook: MagicMock) -> BacktestResult:
+    return BacktestResult(
+        store=MagicMock(),
+        frames=MagicMock(),
+        tradebook=mock_tradebook,
+        window_size=100,
+        max_hold_days=10,
+    )
 
 
 class TestMainEntry:
@@ -180,7 +191,7 @@ class TestRunCommand:
             "by_strategy": {"test": {"wins": 5, "losses": 3, "total_pnl": 100.0}},
         }
         mock_tradebook.trades = []
-        mock_bt.run_with_progress.return_value = (MagicMock(), mock_tradebook)
+        mock_bt.run_with_progress.return_value = _mock_backtest_result(mock_tradebook)
         mock_bt_cls.return_value = mock_bt
 
         output_html = tmp_path / "out.html"
@@ -304,7 +315,7 @@ class TestRunCommand:
             "by_strategy": {},
         }
         mock_tradebook.trades = []
-        mock_bt.run_with_progress.return_value = (MagicMock(), mock_tradebook)
+        mock_bt.run_with_progress.return_value = _mock_backtest_result(mock_tradebook)
         mock_bt_cls.return_value = mock_bt
 
         output_html = tmp_path / "output.html"
@@ -389,7 +400,7 @@ class TestRunCommand:
             "by_strategy": {},
         }
         mock_tradebook.trades = [mock_trade]
-        mock_bt.run_with_progress.return_value = (MagicMock(), mock_tradebook)
+        mock_bt.run_with_progress.return_value = _mock_backtest_result(mock_tradebook)
         mock_bt_cls.return_value = mock_bt
 
         _run_main(
@@ -453,7 +464,7 @@ class TestRunCommand:
             "by_strategy": {},
         }
         mock_tradebook.trades = []
-        mock_bt.run_with_progress.return_value = (MagicMock(), mock_tradebook)
+        mock_bt.run_with_progress.return_value = _mock_backtest_result(mock_tradebook)
         mock_bt_cls.return_value = mock_bt
 
         _run_main(
@@ -519,7 +530,7 @@ class TestRunCommand:
             "expectancy": 0.0, "by_strategy": {},
         }
         mock_tradebook.trades = []
-        mock_bt.run_with_progress.return_value = (MagicMock(), mock_tradebook)
+        mock_bt.run_with_progress.return_value = _mock_backtest_result(mock_tradebook)
         mock_bt_cls.return_value = mock_bt
 
         output_html = tmp_path / "multi.html"
@@ -584,7 +595,7 @@ class TestRunCommand:
             "expectancy": 0.0, "by_strategy": {},
         }
         mock_tradebook.trades = []
-        mock_bt.run_with_progress.return_value = (MagicMock(), mock_tradebook)
+        mock_bt.run_with_progress.return_value = _mock_backtest_result(mock_tradebook)
         mock_bt_cls.return_value = mock_bt
 
         output_html = tmp_path / "resample.html"
@@ -643,7 +654,7 @@ class TestRunCommand:
             "expectancy": 0.0, "by_strategy": {},
         }
         mock_tradebook.trades = []
-        mock_bt.run_with_progress.return_value = (MagicMock(), mock_tradebook)
+        mock_bt.run_with_progress.return_value = _mock_backtest_result(mock_tradebook)
         mock_bt_cls.return_value = mock_bt
 
         data_dir = tmp_path / "cache"
@@ -718,7 +729,7 @@ class TestRunCommand:
             },
         }
         mock_tradebook.trades = []
-        mock_bt.run_with_progress.return_value = (MagicMock(), mock_tradebook)
+        mock_bt.run_with_progress.return_value = _mock_backtest_result(mock_tradebook)
         mock_bt_cls.return_value = mock_bt
 
         _run_main(

@@ -370,7 +370,7 @@ class TestEndToEnd:
         store = self._rising_store()
         strategy = Strategy("pullback_e2e", self._strategy_config())
         bundle = StrategyBundle([strategy])
-        _, tradebook = Backtester(store, bundle, window_size=60).run()
+        tradebook = Backtester(store, bundle, window_size=60).run().tradebook
         assert len(tradebook.trades) >= 1
         assert all(t.candidate.size > 0 for t in tradebook.trades)
 
@@ -396,6 +396,6 @@ class TestRejectionEvidenceOnFrame:
         )
         strategy = Strategy("weak_pb", config)
         bundle = StrategyBundle([strategy])
-        frames, _ = Backtester(store, bundle, window_size=7).run()
+        frames = Backtester(store, bundle, window_size=7).run().frames
         entry_frame = frames[0]
         assert any("confirmation candle weak" in e.text for e in entry_frame.evidence)

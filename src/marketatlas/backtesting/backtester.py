@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from marketatlas.analysis.factkey import FactKey
@@ -17,6 +18,17 @@ from marketatlas.strategy.tradebook import TradeBook
 if TYPE_CHECKING:
     from marketatlas.facts.base import Fact
     from marketatlas.strategy.signals import TradeSignal
+
+
+@dataclass(frozen=True)
+class BacktestResult:
+    """Complete backtest output, safe to pickle for later inspection."""
+
+    store: MarketStore
+    frames: FrameStore
+    tradebook: TradeBook
+    window_size: int
+    max_hold_days: int
 
 
 @runtime_checkable
@@ -48,13 +60,13 @@ class Backtester:
     def frame_count(self) -> int:
         return max(0, len(self._store) - self._window_size)
 
-    def run(self) -> tuple[FrameStore, TradeBook]:
+    def run(self) -> BacktestResult:
         return self.run_with_progress(None)
 
     def run_with_progress(
         self,
         callback: Callable[[int, int], None] | None = None,
-    ) -> tuple[FrameStore, TradeBook]:
+    ) -> BacktestResult:
         frame_store = FrameStore()
         tradebook = self._bundle.tradebook
         total = self.frame_count
@@ -62,21 +74,18 @@ class Backtester:
             view = MarketView(self._store, cursor, self._window_size)
             facts, loose_evidence = self._bundle.graph.run_with_evidence(view)
             evidence = self._collect_evidence(facts) + loose_evidence
-            frame = AnalysisFrame(
-                timestamp=view.current.timestamp,
-                candle=view.current,
-                facts=dict(facts),
-                evidence=evidence,
-            )
-            frame_store.append(frame)
+
+            emitted = self._bundle.evaluate_all(view, facts)
+            signals = tuple(signal for _, signal in emitted)
 
             tradebook.fill_order(view.current.open, view.current.timestamp)
             tradebook.resolve_at_cursor(view.current, self._max_hold_days)
 
+            risk_evidence: tuple[EvidenceEntry, ...] = ()
             if tradebook.has_no_open_trade and not tradebook.has_pending_order:
-                for name, signal in self._bundle.evaluate_all(view, facts):
+                for name, signal in emitted:
                     risk_engine = self._bundle.get_risk_engine(name)
-                    candidate, _ = risk_engine.evaluate(
+                    candidate, risk_evidence = risk_engine.evaluate(
                         signal,
                         facts,
                         view,
@@ -91,6 +100,16 @@ class Backtester:
                         )
                         break
 
+            frame = AnalysisFrame(
+                timestamp=view.current.timestamp,
+                candle=view.current,
+                facts=dict(facts),
+                evidence=evidence,
+                signals=signals,
+                risk_evidence=risk_evidence,
+            )
+            frame_store.append(frame)
+
             if callback is not None:
                 callback(i + 1, total)
 
@@ -101,7 +120,13 @@ class Backtester:
                 self._store[last_cursor].timestamp,
             )
 
-        return frame_store, tradebook
+        return BacktestResult(
+            store=self._store,
+            frames=frame_store,
+            tradebook=tradebook,
+            window_size=self._window_size,
+            max_hold_days=self._max_hold_days,
+        )
 
     @staticmethod
     def _collect_evidence(facts: dict[FactKey, Fact]) -> tuple[EvidenceEntry, ...]:

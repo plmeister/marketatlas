@@ -166,7 +166,8 @@ def run_command(args: argparse.Namespace) -> None:
     def progress(cur: int, total: int) -> None:
         print(f"\r  Frame {cur}/{total}", end="", flush=True)
 
-    frame_store, tradebook = bt.run_with_progress(progress)
+    result = bt.run_with_progress(progress)
+    frame_store, tradebook = result.frames, result.tradebook
     print("\n")
 
     summary = tradebook.summary
@@ -225,6 +226,13 @@ def run_command(args: argparse.Namespace) -> None:
         renderer = InteractiveRenderer(ctx)
         renderer.render(output_path)
         print(f"\nHTML chart: {output_path}")
+
+    if args.pickle:
+        import pickle
+
+        with open(args.pickle, "wb") as f:
+            pickle.dump(result, f)
+        print(f"Pickle: {args.pickle}")
 
 
 def instruments_list_command(args: argparse.Namespace) -> None:
@@ -290,6 +298,11 @@ def main() -> None:
         "-o",
         default="/tmp/backtest_result.html",
         help="HTML output path",
+    )
+    run_parser.add_argument(
+        "--pickle",
+        default="",
+        help="Also dump full backtest result (store, frames, tradebook) to this .pkl path",
     )
     run_parser.add_argument(
         "--balance",

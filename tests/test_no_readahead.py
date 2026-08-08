@@ -108,7 +108,7 @@ class TestFrameIndependence:
     def test_frame_n_independent_of_frame_n_plus_1(self) -> None:
         store_short = _make_store(200)
         bt_short = Backtester(store_short, _make_bundle(), window_size=50)
-        frames_short, _ = bt_short.run()
+        frames_short = bt_short.run().frames
 
         target_idx = 100
         assert target_idx < len(frames_short)
@@ -116,7 +116,7 @@ class TestFrameIndependence:
 
         store_long = _make_store(201)
         bt_long = Backtester(store_long, _make_bundle(), window_size=50)
-        frames_long, _ = bt_long.run()
+        frames_long = bt_long.run().frames
 
         snapshot_after = _snapshot_frame(frames_long[target_idx])
         assert snapshot_before == snapshot_after
@@ -165,7 +165,7 @@ class TestAnalyzerIsolation:
     def test_analyzer_output_unchanged_when_future_appended(self) -> None:
         store_200 = _make_store(200)
         bt_200 = Backtester(store_200, _make_bundle(), window_size=50)
-        frames_200, _ = bt_200.run()
+        frames_200 = bt_200.run().frames
 
         target_idx = 100
         assert target_idx < len(frames_200)
@@ -173,7 +173,7 @@ class TestAnalyzerIsolation:
 
         store_210 = _make_store(210)
         bt_210 = Backtester(store_210, _make_bundle(), window_size=50)
-        frames_210, _ = bt_210.run()
+        frames_210 = bt_210.run().frames
 
         snapshot_210 = _snapshot_frame(frames_210[target_idx])
         assert snapshot_200 == snapshot_210
@@ -181,14 +181,14 @@ class TestAnalyzerIsolation:
     def test_fact_values_unchanged(self) -> None:
         store_200 = _make_store(200)
         bt_200 = Backtester(store_200, _make_bundle(), window_size=50)
-        frames_200, _ = bt_200.run()
+        frames_200 = bt_200.run().frames
 
         target_idx = 100
         facts_200 = frames_200[target_idx].facts
 
         store_210 = _make_store(210)
         bt_210 = Backtester(store_210, _make_bundle(), window_size=50)
-        frames_210, _ = bt_210.run()
+        frames_210 = bt_210.run().frames
 
         facts_210 = frames_210[target_idx].facts
         assert facts_200.keys() == facts_210.keys()
@@ -206,11 +206,11 @@ class TestSignalIsolation:
     def test_signal_output_unchanged_when_future_appended(self) -> None:
         store_200 = _make_store(200)
         bt_200 = Backtester(store_200, _make_bundle(), window_size=50)
-        _, tb_200 = bt_200.run()
+        tb_200 = bt_200.run().tradebook
 
         store_210 = _make_store(210)
         bt_210 = Backtester(store_210, _make_bundle(), window_size=50)
-        _, tb_210 = bt_210.run()
+        tb_210 = bt_210.run().tradebook
 
         assert tb_200.balance == tb_210.balance
         assert len(tb_200.trades) == len(tb_210.trades)
@@ -222,11 +222,13 @@ class TestRiskIsolation:
     def test_risk_output_unchanged_when_future_appended(self) -> None:
         store_200 = _make_store(200)
         bt_200 = Backtester(store_200, _make_bundle(), window_size=50)
-        frames_200, tb_200 = bt_200.run()
+        result_200 = bt_200.run()
+        frames_200, tb_200 = result_200.frames, result_200.tradebook
 
         store_210 = _make_store(210)
         bt_210 = Backtester(store_210, _make_bundle(), window_size=50)
-        frames_210, tb_210 = bt_210.run()
+        result_210 = bt_210.run()
+        frames_210, tb_210 = result_210.frames, result_210.tradebook
 
         assert len(frames_210) > len(frames_200)
         for i in range(len(frames_200)):
@@ -360,10 +362,12 @@ class TestFullBacktestDeterministic:
         store = _make_store(200)
 
         bt1 = Backtester(store, _make_bundle(), window_size=50)
-        frames1, tb1 = bt1.run()
+        result1 = bt1.run()
+        frames1, tb1 = result1.frames, result1.tradebook
 
         bt2 = Backtester(store, _make_bundle(), window_size=50)
-        frames2, tb2 = bt2.run()
+        result2 = bt2.run()
+        frames2, tb2 = result2.frames, result2.tradebook
 
         assert len(frames1) == len(frames2)
         for i in range(len(frames1)):

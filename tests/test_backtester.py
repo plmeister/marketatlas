@@ -108,28 +108,29 @@ class TestBacktesterBasic:
     def test_produces_frame_store_and_tradebook(self) -> None:
         store = _make_store(100)
         bt = Backtester(store, _make_bundle(), window_size=50)
-        frame_store, tradebook = bt.run()
+        result = bt.run()
+        frame_store, tradebook = result.frames, result.tradebook
         assert len(frame_store) == 50
         assert isinstance(tradebook, TradeBook)
 
     def test_first_frame_timestamp(self) -> None:
         store = _make_store(100)
         bt = Backtester(store, _make_bundle(), window_size=50)
-        frame_store, _ = bt.run()
+        frame_store = bt.run().frames
         expected_ts = datetime(2024, 1, 1) + timedelta(hours=50)
         assert frame_store[0].timestamp == expected_ts
 
     def test_last_frame_timestamp(self) -> None:
         store = _make_store(100)
         bt = Backtester(store, _make_bundle(), window_size=50)
-        frame_store, _ = bt.run()
+        frame_store = bt.run().frames
         expected_ts = datetime(2024, 1, 1) + timedelta(hours=99)
         assert frame_store[-1].timestamp == expected_ts
 
     def test_frame_candle_matches_store(self) -> None:
         store = _make_store(100)
         bt = Backtester(store, _make_bundle(), window_size=50)
-        frame_store, _ = bt.run()
+        frame_store = bt.run().frames
         for i, frame in enumerate(frame_store):
             cursor = 50 + i
             assert frame.candle == store[cursor]
@@ -148,7 +149,7 @@ class TestBacktesterProgress:
     def test_no_callback(self) -> None:
         store = _make_store(100)
         bt = Backtester(store, _make_bundle(), window_size=50)
-        frame_store, _ = bt.run()
+        frame_store = bt.run().frames
         assert len(frame_store) == 50
 
 
@@ -156,19 +157,19 @@ class TestBacktesterEdgeCases:
     def test_exact_window_size(self) -> None:
         store = _make_store(50)
         bt = Backtester(store, _make_bundle(), window_size=50)
-        frame_store, _ = bt.run()
+        frame_store = bt.run().frames
         assert len(frame_store) == 0
 
     def test_window_size_one(self) -> None:
         store = _make_store(10)
         bt = Backtester(store, _make_bundle(), window_size=1)
-        frame_store, _ = bt.run()
+        frame_store = bt.run().frames
         assert len(frame_store) == 9
 
     def test_frames_ordered(self) -> None:
         store = _make_store(100)
         bt = Backtester(store, _make_bundle(), window_size=50)
-        frame_store, _ = bt.run()
+        frame_store = bt.run().frames
         for i in range(1, len(frame_store)):
             assert frame_store[i].timestamp > frame_store[i - 1].timestamp
 
@@ -438,7 +439,8 @@ class TestBacktesterSignalEval:
             signals=[("strat", signal)],
         )
         bt = Backtester(store, bundle, window_size=50)
-        frame_store, tradebook = bt.run()
+        result = bt.run()
+        frame_store, tradebook = result.frames, result.tradebook
         assert len(frame_store) == 50
         assert tradebook.closed_count >= 1
 
@@ -464,7 +466,8 @@ class TestBacktesterSignalEval:
             risk_engine=risk_engine,
         )
         bt = Backtester(store, bundle, window_size=50, max_hold_days=9999)
-        frame_store, tradebook = bt.run()
+        result = bt.run()
+        frame_store, tradebook = result.frames, result.tradebook
         assert len(frame_store) == 50
         assert tradebook.closed_count >= 1
 
@@ -472,7 +475,8 @@ class TestBacktesterSignalEval:
         store = _make_store(100)
         bundle = _make_signal_bundle(signals=[])
         bt = Backtester(store, bundle, window_size=50)
-        frame_store, tradebook = bt.run()
+        result = bt.run()
+        frame_store, tradebook = result.frames, result.tradebook
         assert len(frame_store) == 50
         assert tradebook.closed_count == 0
 
@@ -490,6 +494,71 @@ class TestBacktesterSignalEval:
             risk_engine=RiskEngine(atr_key="atr_missing", sr_key="sr_missing"),
         )
         bt = Backtester(store, bundle, window_size=50)
-        frame_store, tradebook = bt.run()
+        result = bt.run()
+        frame_store, tradebook = result.frames, result.tradebook
         assert len(frame_store) == 50
         assert tradebook.closed_count == 0
+
+
+class TestBacktesterFrameRecording:
+    def _signal(self) -> TradeSignal:
+        return TradeSignal(
+            direction=TrendDirection.BULLISH,
+            entry_zone=(100.0, 102.0),
+            confidence=0.8,
+            source="test_signal",
+            evidence=(),
+        )
+
+    def test_frames_record_signals(self) -> None:
+        store = _make_store(100)
+        bundle = _make_signal_bundle(signals=[("strat", self._signal())])
+        frames = Backtester(store, bundle, window_size=50).run().frames
+        assert all(f.signals for f in frames)
+        assert all(s.source == "test_signal" for f in frames for s in f.signals)
+
+    def test_frames_record_rejection_evidence(self) -> None:
+        store = _make_store(100)
+        bundle = _make_signal_bundle(
+            signals=[("strat", self._signal())],
+            risk_engine=RiskEngine(atr_key="atr_missing", sr_key="sr_missing"),
+        )
+        frames = Backtester(store, bundle, window_size=50).run().frames
+        assert any(f.risk_evidence for f in frames)
+        rejected = [f for f in frames if f.risk_evidence]
+        assert all(
+            any(e.level == EvidenceLevel.WARNING for e in f.risk_evidence)
+            for f in rejected
+        )
+
+    def test_frames_record_accepted_risk_evidence(self) -> None:
+        store = _make_store(100)
+        bundle = _make_signal_bundle(signals=[("strat", self._signal())])
+        frames = Backtester(store, bundle, window_size=50).run().frames
+        placed = [f for f in frames if f.risk_evidence and not any(
+            e.level == EvidenceLevel.WARNING for e in f.risk_evidence
+        )]
+        assert placed
+
+
+class TestBacktestResultPickle:
+    def test_result_round_trips(self) -> None:
+        store = _make_store(100)
+        signal = TradeSignal(
+            direction=TrendDirection.BULLISH,
+            entry_zone=(100.0, 102.0),
+            confidence=0.8,
+            source="test_signal",
+            evidence=(),
+        )
+        bundle = _make_signal_bundle(signals=[("strat", signal)])
+        result = Backtester(store, bundle, window_size=50).run()
+
+        import pickle
+
+        restored = pickle.loads(pickle.dumps(result))
+        assert len(restored.frames) == len(result.frames)
+        assert restored.tradebook.trades == result.tradebook.trades
+        assert restored.window_size == 50
+        first = restored.frames[0]
+        assert first.signals and first.risk_evidence

@@ -360,8 +360,12 @@ def backtest_template(
         strategy = Strategy(template.analysis.name, template.config)
         bundle = StrategyBundle([strategy], initial_balance=initial_balance)
         bt = Backtester(store, bundle, window_size=window_size, max_hold_days=max_hold_days)
-        frames, tradebook = bt.run()
+        result = bt.run()
         results.append(
-            InstrumentBacktestResult(instrument=instrument, frames=frames, tradebook=tradebook)
+            InstrumentBacktestResult(
+                instrument=instrument,
+                frames=result.frames,
+                tradebook=result.tradebook,
+            )
         )
     return tuple(results)
