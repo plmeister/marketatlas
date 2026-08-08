@@ -190,6 +190,19 @@ class TestPullbackSignal:
         assert result.confidence > 0
         assert result.source == "PullbackSignal"
 
+    def test_timeframe_qualified_facts_resolve(self) -> None:
+        store = _make_store(_flat_candles())
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = PullbackSignal()
+        facts = {
+            FactKey("pullback_pattern", timeframe=Timeframe.D1): _bullish_pullback_fact(),
+            FactKey("trend", timeframe=Timeframe.D1): _bullish_trend_fact(),
+            FactKey("atr_14", timeframe=Timeframe.D1): _atr_fact(50.0),
+        }
+        result = signal.evaluate(view, facts)
+        assert result is not None
+        assert result.direction == TrendDirection.BULLISH
+
     def test_confirmed_bearish_returns_signal(self) -> None:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)

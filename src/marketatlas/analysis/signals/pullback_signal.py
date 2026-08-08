@@ -5,7 +5,7 @@ from marketatlas.facts.base import Fact
 from marketatlas.facts.pattern import PullbackFact
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
-from marketatlas.strategy.signals import Signal, TradeSignal
+from marketatlas.strategy.signals import Signal, TradeSignal, resolve_fact_key
 
 
 def _pullback_strength(pattern: tuple[float, ...]) -> float:
@@ -39,9 +39,13 @@ class PullbackSignal(Signal):
         self._atr_key = atr_key
 
     def evaluate(self, view: MarketView, facts: dict[FactKey, Fact]) -> TradeSignal | None:
-        pullback = facts.get(self._fact_key(self._pullback_key))
-        trend = facts.get(self._fact_key(self._trend_key))
-        atr = facts.get(self._fact_key(self._atr_key))
+        pullback_key = resolve_fact_key(facts, self._pullback_key)
+        trend_key = resolve_fact_key(facts, self._trend_key)
+        atr_key = resolve_fact_key(facts, self._atr_key)
+
+        pullback = facts.get(pullback_key) if pullback_key is not None else None
+        trend = facts.get(trend_key) if trend_key is not None else None
+        atr = facts.get(atr_key) if atr_key is not None else None
 
         if not isinstance(pullback, PullbackFact):
             return None

@@ -38,3 +38,20 @@ class Signal(ABC):
             name, tf = key.rsplit("@", 1)
             return FactKey(name, timeframe=Timeframe(tf))
         return FactKey(key)
+
+
+def resolve_fact_key(facts: dict[FactKey, Fact], key: str) -> FactKey | None:
+    """Resolve a fact-key string against available facts.
+
+    An exact key wins. A bare name falls back to the first available fact with
+    that name regardless of its timeframe, so signals/risk nodes work against
+    DSL-compiled strategies whose analyzers always carry a timeframe (facts are
+    keyed ``name@tf``). Returns ``None`` when nothing matches.
+    """
+    exact = Signal._fact_key(key)
+    if exact in facts:
+        return exact
+    for fk in facts:
+        if fk.name == exact.name:
+            return fk
+    return None

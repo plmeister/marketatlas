@@ -12,7 +12,7 @@ from marketatlas.facts.structural import (
     SwingType,
     TrendDirection,
 )
-from marketatlas.strategy.signals import TradeSignal
+from marketatlas.strategy.signals import TradeSignal, resolve_fact_key
 from marketatlas.strategy.trade import TradeCandidate
 
 
@@ -54,7 +54,11 @@ class RiskEngine:
     ) -> tuple[TradeCandidate | None, tuple[EvidenceEntry, ...]]:
         rejection: list[EvidenceEntry] = []
 
-        atr = facts.get(FactKey(self._atr_key))
+        atr_key = resolve_fact_key(facts, self._atr_key)
+        sr_key = resolve_fact_key(facts, self._sr_key)
+        swing_key = resolve_fact_key(facts, self._swing_key)
+
+        atr = facts.get(atr_key) if atr_key is not None else None
         if not isinstance(atr, ATRFact) or atr.value <= 0:
             rejection.append(
                 EvidenceEntry(
@@ -65,7 +69,7 @@ class RiskEngine:
             )
             return None, tuple(rejection)
 
-        sr_fact = facts.get(FactKey(self._sr_key))
+        sr_fact = facts.get(sr_key) if sr_key is not None else None
         if not isinstance(sr_fact, SRFact):
             rejection.append(
                 EvidenceEntry(
@@ -85,7 +89,7 @@ class RiskEngine:
         else:
             entry = open_price * (1 - self._slippage_pct / 100)
 
-        swing_fact = facts.get(FactKey(self._swing_key))
+        swing_fact = facts.get(swing_key) if swing_key is not None else None
         nearest_swing = self._find_nearest_swing(
             signal.direction, entry, atr_val, swing_fact
         )
