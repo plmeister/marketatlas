@@ -280,6 +280,32 @@ test('evidenceAt returns frame evidence', () => {
   assert.strictEqual(model.evidenceAt(5).length, 0);
 });
 
+test('evidenceAt merges signals and risk evidence', () => {
+  const model2 = new AppModel({
+    CANDLES,
+    CANDLES_BY_TF,
+    AVAILABLE_TFS: ['1d'],
+    FRAMES: [
+      {
+        time: '2024-01-01',
+        evidence: [],
+        signals: [
+          { direction: 'bullish', confidence: 0.8, source: 'PullbackSignal', entry_zone: [100, 102] },
+        ],
+        risk_evidence: [
+          { text: 'Rejected: no valid RR in [1.0, 4.0] without crossing S/R', level: 'warning', source: 'RiskEngine' },
+        ],
+      },
+    ],
+  });
+  const ev = model2.evidenceAt(0);
+  assert.strictEqual(ev.length, 2);
+  assert.strictEqual(ev[0].level, 'signal');
+  assert.ok(ev[0].text.includes('bullish'));
+  assert.strictEqual(ev[1].level, 'warning');
+  assert.ok(ev[1].text.includes('Rejected'));
+});
+
 // --- Trade queries ---
 test('activeTradesAt returns open trades at frame time', () => {
   model.goTo(0);

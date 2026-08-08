@@ -59,7 +59,22 @@ class AppModel {
 
   evidenceAt(idx) {
     if (idx < 0 || idx >= this.frames.length) return [];
-    return this.frames[idx].evidence || [];
+    const f = this.frames[idx];
+    const ev = f.evidence || [];
+    const risk = f.risk_evidence || [];
+    const sigs = (f.signals || []).map((s) => ({
+      text:
+        "Signal: " +
+        s.direction +
+        " conf=" +
+        (s.confidence || 0).toFixed(2) +
+        " (" +
+        s.source +
+        ")",
+      level: "signal",
+      source: s.source,
+    }));
+    return ev.concat(sigs, risk);
   }
 
   // --- Trade queries ---

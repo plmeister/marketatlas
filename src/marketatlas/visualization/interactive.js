@@ -151,6 +151,7 @@ const MIN_TOUCHES = null; // @data:MIN_TOUCHES
   chartView.build(model.activeTF);
   timelineBarView.build(model);
   if (model.frames.length > 0) {
+    model.goLast();
     render();
   } else {
     document.getElementById('info-content').innerHTML = 'No frames to display.';

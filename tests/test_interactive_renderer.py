@@ -202,6 +202,44 @@ class TestExtractFramesJson:
     def test_empty(self) -> None:
         assert _extract_frames_json([]) == []
 
+    def test_includes_risk_evidence_and_signals(self) -> None:
+        candle = _make_candle(0)
+        from marketatlas.strategy.signals import TradeSignal
+
+        frame = AnalysisFrame(
+            timestamp=candle.timestamp,
+            candle=candle,
+            facts={},
+            evidence=(),
+            signals=(
+                TradeSignal(
+                    direction=TrendDirection.BULLISH,
+                    entry_zone=(100.0, 102.0),
+                    confidence=0.8,
+                    source="PullbackSignal",
+                    evidence=(),
+                ),
+            ),
+            risk_evidence=(
+                EvidenceEntry(
+                    text="Rejected: no valid RR in [1.0, 4.0] without crossing S/R",
+                    level=EvidenceLevel.WARNING,
+                    source="RiskEngine",
+                ),
+            ),
+        )
+        result = _extract_frames_json([frame])[0]
+        assert result["signals"] == [
+            {
+                "direction": "bullish",
+                "confidence": 0.8,
+                "source": "PullbackSignal",
+                "entry_zone": [100.0, 102.0],
+            }
+        ]
+        assert result["risk_evidence"][0]["text"].startswith("Rejected")
+        assert result["risk_evidence"][0]["level"] == "warning"
+
 
 class TestExtractEMA:
     def test_extracts_ema_series(self) -> None:
@@ -571,6 +609,23 @@ class TestInteractiveRenderer:
         content = path.read_text()  # type: ignore[union-attr]
         assert '"win"' in content
         assert '"loss"' in content
+
+    def test_debug_pickle_is_backtest_result(self, tmp_path: object) -> None:
+        import pickle
+
+        from marketatlas.backtesting.backtester import BacktestResult
+
+        path = tmp_path / "debug.html"  # type: ignore[operator]
+        store = _make_store(15)
+        frame_store = _make_frame_store(10)
+        tb = _make_tradebook_with_trades()
+        ctx = RenderContext(frames=frame_store, store=store, tradebook=tb)
+        InteractiveRenderer(ctx).render(path)  # type: ignore[arg-type]
+        pkl_path = path.with_suffix(".pkl")  # type: ignore[operator]
+        result = pickle.loads(pkl_path.read_bytes())  # type: ignore[attr-defined]
+        assert isinstance(result, BacktestResult)
+        assert len(result.tradebook.trades) == 2
+        assert len(result.frames) == 10
 
     def test_with_sr_levels(self, tmp_path: object) -> None:
         path = tmp_path / "sr.html"  # type: ignore[operator]

@@ -5,15 +5,16 @@ import pickle
 from pathlib import Path
 from typing import Any
 
+from marketatlas.backtesting.backtester import BacktestResult
 from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.facts.pattern import PullbackFact
 from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import (
     SRFact,
     SwingFact,
+    SwingStructureFact,
     TrendDirection,
     TrendFact,
-    SwingStructureFact,
 )
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.strategy.tradebook import TradeBook
@@ -27,10 +28,25 @@ def _extract_frames_json(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
         evidence = [
             {"text": e.text, "level": e.level.value, "source": e.source} for e in frame.evidence
         ]
+        risk_evidence = [
+            {"text": e.text, "level": e.level.value, "source": e.source}
+            for e in frame.risk_evidence
+        ]
+        signals = [
+            {
+                "direction": s.direction.value,
+                "confidence": s.confidence,
+                "source": s.source,
+                "entry_zone": list(s.entry_zone),
+            }
+            for s in frame.signals
+        ]
         result.append(
             {
                 "time": _ts_to_time(frame.timestamp.timestamp()),
                 "evidence": evidence,
+                "risk_evidence": risk_evidence,
+                "signals": signals,
             }
         )
     return result
@@ -479,10 +495,11 @@ class InteractiveRenderer:
         output_path.write_text(html, encoding="utf-8")
 
         debug_path = output_path.with_suffix(".pkl")
-        debug_data = {
-            "store": ctx.store,
-            "frames": list(ctx.frames),
-            "window_size": ctx.window_size,
-            "max_hold_days": ctx.max_hold_days,
-        }
-        debug_path.write_bytes(pickle.dumps(debug_data))
+        result = BacktestResult(
+            store=ctx.store,
+            frames=ctx.frames,
+            tradebook=ctx.tradebook,
+            window_size=ctx.window_size,
+            max_hold_days=ctx.max_hold_days,
+        )
+        debug_path.write_bytes(pickle.dumps(result))
