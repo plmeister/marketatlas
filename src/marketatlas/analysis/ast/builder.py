@@ -1,12 +1,19 @@
 from __future__ import annotations
 
-from marketatlas.analysis.ast.expressions import ReferenceExpression, wrap
+from marketatlas.analysis.ast.expressions import (
+    ReferenceExpression,
+    SpanningReferenceExpression,
+    wrap,
+)
 from marketatlas.analysis.ast.models import (
+    SCOPE_GROUP,
+    SCOPE_INSTRUMENT,
     Analysis,
     Definition,
     Parameter,
     Provider,
     derive_timeframes,
+    is_group_scope,
 )
 
 
@@ -15,6 +22,7 @@ class _DefinitionBuilder:
         self._builder = builder
         self._name = name
         self._provider_name = provider_name
+        self._scope = SCOPE_INSTRUMENT
         self._parameters: list[Parameter] = []
 
     def with_param(self, name: str, value: object) -> _DefinitionBuilder:
@@ -47,6 +55,32 @@ class _DefinitionBuilder:
         self._parameters.append(Parameter(name="timeframe", value=ReferenceExpression(source)))
         return self
 
+    def with_scope(self, scope: str) -> _DefinitionBuilder:
+        """Mark the node as per-instrument (default) or group-scoped (backlog 064).
+
+        A group-scoped node is instantiated once per group rather than once per
+        instrument: its spanning references consume the outputs of the same
+        per-instrument definition across every group member. Only analyzer
+        definitions may be group-scoped.
+        """
+        if not is_group_scope(scope):
+            valid = ", ".join(sorted((SCOPE_INSTRUMENT, SCOPE_GROUP)))
+            raise ValueError(f"Invalid scope '{scope}'. Valid scopes: {valid}")
+        self._scope = scope
+        return self
+
+    def with_spanning_reference(self, name: str, source: str) -> _DefinitionBuilder:
+        """Spanning reference: consume ``name`` from ``source`` across all members.
+
+        Equivalent to the DSL ``name: source*``: on a group-scoped definition,
+        the fact ``name`` (produced by the per-instrument ``source`` definition)
+        is wired from every group member. Only valid on group-scoped
+        definitions (backlog 064).
+        """
+        self._builder._require_definition(source)
+        self._parameters.append(Parameter(name=name, value=SpanningReferenceExpression(source)))
+        return self
+
     def define(
         self, name: str, type_or_provider: str, impl: str | None = None
     ) -> _DefinitionBuilder:
@@ -70,6 +104,7 @@ class _DefinitionBuilder:
             name=self._name,
             provider=self._provider_name,
             parameters=tuple(self._parameters),
+            scope=self._scope,
         )
 
 

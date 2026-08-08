@@ -73,6 +73,23 @@ class ReferenceExpression(Expression):
         return f"ReferenceExpression({self.name!r})"
 
 
+@dataclass(frozen=True, eq=True)
+class SpanningReferenceExpression(ReferenceExpression):
+    """A reference spanning every member of a group (backlog 064).
+
+    A group-scoped definition (``Definition.scope == "group"``) references a
+    per-instrument definition *across all group members*: the compiler emits a
+    spanning binding (member-agnostic ``name@timeframe``) and the runtime
+    materializes one fact key per group member. Spanning references are only
+    valid on group-scoped definitions, and may only target per-instrument
+    definitions (no cross-group references). ``name`` is the referenced
+    definition name, resolved against the analysis' definitions.
+    """
+
+    def __repr__(self) -> str:
+        return f"SpanningReferenceExpression({self.name!r})"
+
+
 def Choice(values: Iterable[object]) -> ChoiceExpression:  # noqa: N802
     """Build a ``ChoiceExpression``, wrapping raw members as literals.
 

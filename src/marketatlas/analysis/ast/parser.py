@@ -9,13 +9,13 @@ intact and never expands them.
 Grammar::
 
     analysis  := definition+
-    definition := IDENT ':=' IDENT '{' fields '}'
+    definition := ['group'] IDENT ':=' IDENT '{' fields '}'
     fields    := (field (',' field)*)?          // trailing comma allowed
     field     := IDENT ':' value                // parameter
                | IDENT ','                      // shorthand reference
     value     := literal | reference | list | choice
     literal   := INT | FLOAT | STRING | 'true' | 'false' | 'null'
-    reference := IDENT                          // not a reserved literal
+    reference := IDENT ['*']                    // '*': spanning reference
     list      := '[' (literal (',' literal)*)? ']'
     choice    := '<' value ('|' value)* '>'     // nested choices allowed
 
@@ -25,6 +25,12 @@ a *reference* to another definition (backlog 061): ``ema_20: ema`` passes the
 definition. A bare ``name,`` field is a *shorthand* reference to the definition
 of the same name — it must name a provider input (derived from the provider
 contract, backlog 058) and expands to ``name: name``.
+
+``group`` is a contextual keyword: a definition prefixed with it is
+group-scoped (backlog 064) — one node instance wired across every group
+member instead of one per instrument. A trailing ``*`` on a reference value
+marks it as a *spanning reference*: the group node consumes the referenced
+per-instrument definition's output from every group member.
 
 Timeframes are not special to the DSL: ``tf1w := timeframe { resolution: "1w" }``
 is an ordinary definition, and a node links to it through an ordinary
@@ -54,6 +60,7 @@ from marketatlas.analysis.ast.expressions import (
     Expression,
     LiteralExpression,
     ReferenceExpression,
+    SpanningReferenceExpression,
 )
 from marketatlas.analysis.ast.lexer import (
     ASSIGN,
@@ -69,12 +76,19 @@ from marketatlas.analysis.ast.lexer import (
     PIPE,
     RBRACE,
     RBRACKET,
+    STAR,
     STRING,
     SourcePosition,
     Token,
     tokenize,
 )
-from marketatlas.analysis.ast.models import Analysis, Definition, Parameter
+from marketatlas.analysis.ast.models import (
+    SCOPE_GROUP,
+    SCOPE_INSTRUMENT,
+    Analysis,
+    Definition,
+    Parameter,
+)
 from marketatlas.analysis.ast.registry import ProviderRegistry, create_default_registry
 
 #: Identifiers treated as literal values, never references.
@@ -152,7 +166,11 @@ class _Parser:
     # -- grammar rules -------------------------------------------------
 
     def _parse_definition(self) -> Definition:
+        scope = SCOPE_INSTRUMENT
         name_tok = self._expect_ident("expected a definition name")
+        if name_tok.lexeme == "group" and self._peek().kind == IDENT:
+            scope = SCOPE_GROUP
+            name_tok = self._expect_ident("expected a definition name after 'group'")
         name = name_tok.lexeme
         if name in self._def_positions:
             self._error(f"duplicate definition name '{name}'", name_tok.position)
@@ -162,15 +180,18 @@ class _Parser:
         type_tok = self._expect_ident(f"expected a provider type after ':=' for '{name}'")
         self._resolve_type(type_tok)
         self._expect(LBRACE, f"expected '{{' after type '{type_tok.lexeme}'")
-        params = self._parse_fields(name, type_tok.lexeme)
+        params = self._parse_fields(name, type_tok.lexeme, scope)
         self._expect(RBRACE, f"expected '}}' to close definition '{name}'")
         return Definition(
             name=name,
             provider=type_tok.lexeme,
             parameters=params,
+            scope=scope,
         )
 
-    def _parse_fields(self, target_name: str, target_capability: str) -> tuple[Parameter, ...]:
+    def _parse_fields(
+        self, target_name: str, target_capability: str, target_scope: str
+    ) -> tuple[Parameter, ...]:
         params: list[Parameter] = []
         while self._peek().kind != RBRACE:
             field_tok = self._expect_ident("expected a field name or '}'")
@@ -181,7 +202,7 @@ class _Parser:
                     Parameter(field_tok.lexeme, self._parse_value("as a parameter value"))
                 )
             elif self._peek().kind in (COMMA, RBRACE):
-                self._shorthand(field_tok, target_capability, target_name, params)
+                self._shorthand(field_tok, target_capability, target_name, target_scope, params)
             else:
                 self._error(
                     f"expected ':', ',' or '}}' after field name {field_tok.lexeme!r}",
@@ -198,6 +219,7 @@ class _Parser:
         field_tok: Token,
         target_capability: str,
         target_name: str,
+        target_scope: str,
         params: list[Parameter],
     ) -> None:
         contract = self._registry.contract(target_capability)
@@ -210,9 +232,12 @@ class _Parser:
                 field_tok.position,
             )
         self._param_positions[(target_name, field_tok.lexeme)] = field_tok.position
-        params.append(
-            Parameter(field_tok.lexeme, ReferenceExpression(field_tok.lexeme))
-        )
+        if target_scope == SCOPE_GROUP:
+            params.append(
+                Parameter(field_tok.lexeme, SpanningReferenceExpression(field_tok.lexeme))
+            )
+        else:
+            params.append(Parameter(field_tok.lexeme, ReferenceExpression(field_tok.lexeme)))
 
     def _parse_value(self, context: str) -> Expression:
         token = self._peek()
@@ -228,6 +253,9 @@ class _Parser:
                     return LiteralExpression(False)
                 return LiteralExpression(None)
             self._advance()
+            if self._peek().kind == STAR:
+                self._advance()
+                return SpanningReferenceExpression(token.lexeme)
             return ReferenceExpression(token.lexeme)
         if token.kind == LBRACKET:
             return self._parse_list()

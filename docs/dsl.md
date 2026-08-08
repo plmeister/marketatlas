@@ -111,13 +111,13 @@ x := ema { period: 0x10 }            // '0x10' lexes as INT 0 followed by IDENT 
 
 ```
 analysis    := definition*
-definition  := IDENT ':=' IDENT '{' fields '}'
+definition  := ['group'] IDENT ':=' IDENT '{' fields '}'
 fields      := (field (',' field)*)?
 field       := IDENT ':' value            // parameter
              | IDENT ','                  // shorthand reference
 value       := literal | reference | list | choice
 literal     := INT | FLOAT | STRING | 'true' | 'false' | 'null'
-reference   := IDENT                      // not 'true' | 'false' | 'null'
+reference   := IDENT '*'?                 // not 'true' | 'false' | 'null'
 list        := '[' (list_item (',' list_item)*)? ']'
 list_item   := INT | FLOAT | STRING | 'true' | 'false' | 'null' | list
 choice      := '<' value ('|' value)* '>'
@@ -135,6 +135,13 @@ Notes:
   references and lists. `<>` (empty choice) is a parse error.
 * **No operator precedence** exists — the grammar is delimiter-driven, with no
   infix operators.
+* **Group scoping** (backlog 064): the `group` keyword before the name marks a
+  *group-scoped* definition (aggregates per-instrument siblings across a
+  runtime-supplied group). `group` is **contextual**: it is the scope marker
+  only when directly followed by an IDENT, so a definition named `group` is
+  legal. The `*` suffix on a reference makes it *spanning* (one input per group
+  member); it is only valid on group-scoped definitions. On a group-scoped
+  definition the shorthand `field,` expands to a spanning reference.
 
 ---
 
@@ -271,7 +278,7 @@ never expansion points. Expansion semantics:
 | Shorthand vs parameter | Field name ∈ provider contract inputs ⇒ shorthand dependency; else parameter | Unambiguous at parse time, zero backtracking. Requires provider input metadata (058), which exists. |
 | Provider-selection choice (`provider: <A \| B>`) | **Deferred** | Ambiguous in the draft (param named `provider` vs definition-level type selection). Only choices over *parameter values* are supported. Definition-level `name := <A \| B> { ... }` is future work. |
 | Timeframe | Ordinary `timeframe`-capability definition + ordinary reference; **no reserved field** | Keeps EBNF generic; value substitution is decided by provider category at compile time, not by grammar position. |
-| Group scoping | **Deferred** (backlog 064) | `group` scope marker + spanning references have unowned syntax. Recorded as an open question in §8. |
+| Group scoping | `group` scope keyword + `*` spanning reference (backlog 064) | `group name := Provider { field: source* }` marks a group node; the trailing `*` spans every per-instrument sibling. `group` is contextual — a definition *named* `group` still parses. On group-scoped definitions the shorthand `field,` expands to a spanning reference. Group membership is supplied at runtime via `TemplateGraph.instantiate_group(group, members)`; group nodes are data-free. |
 | Reference expression | `field: dep` ⇒ `ReferenceExpression` at parse time; compiler disambiguates by category | No new AST node needed. Timeframe refs become value substitution; fact refs become bindings/requires. |
 | Literals | int, float, string, bool, null; list `[...]`; choice `<a\|b\|c>` | As drafted. |
 | Comments / whitespace | Whitespace-insensitive; `//` line comments | Braces and commas delimit; `//` matches the zero-dep, hand-rolled style. |
@@ -289,6 +296,8 @@ never expansion points. Expansion semantics:
 | `field,` (shorthand) | `Parameter(field, ReferenceExpression(field))` |
 | `field: [a, b]` | `Parameter(field, LiteralExpression([a, b]))` |
 | `field: <a \| b>` | `Parameter(field, ChoiceExpression(...))` |
+| `group name := P { ... }` | `Definition(name, provider=P, scope=SCOPE_GROUP, ...)` |
+| `field: source*` | `Parameter(field, SpanningReferenceExpression(source))` |
 | `tf := timeframe { resolution: "1w" }` | `Definition` + `Analysis.timeframes` entry |
 
 The retired `Binding` node (036) is not produced: references become
@@ -413,9 +422,6 @@ Concrete AST(s)                     stage 4: GraphGenerationPass → AnalysisGra
 
 * **Definition-level provider choice** — `name := <A | B> { ... }` is deferred;
   only parameter-value choices are supported.
-* **Group scoping** — the `group` scope marker + spanning references (backlog
-  064) have unowned syntax. The EBNF above contains no placeholder token;
-  whichever syntax 064 chooses is a grammar extension owned there.
 * **Reserved field set** — `true`/`false`/`null` are reserved identifiers;
   provider inputs are *not* reserved (a param named `swing` on a provider that
   declares `swing` as an input is legal as a parameter `swing: value`, only the

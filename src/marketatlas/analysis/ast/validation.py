@@ -8,10 +8,17 @@ from marketatlas.analysis.ast.expressions import (
     ChoiceExpression,
     LiteralExpression,
     ReferenceExpression,
+    SpanningReferenceExpression,
     choice_leaves,
 )
 from marketatlas.analysis.ast.lexer import SourcePosition
-from marketatlas.analysis.ast.models import Analysis, Definition, is_timeframe_definition
+from marketatlas.analysis.ast.models import (
+    SCOPE_GROUP,
+    SCOPE_INSTRUMENT,
+    Analysis,
+    Definition,
+    is_timeframe_definition,
+)
 from marketatlas.data.types import Timeframe
 
 
@@ -105,9 +112,7 @@ def _detect_cycles(definitions: Sequence[Definition]) -> list[list[str]]:
     return cycles
 
 
-def _provider_category(
-    definition: Definition, categories: dict[str, str]
-) -> str | None:
+def _provider_category(definition: Definition, categories: dict[str, str]) -> str | None:
     return categories.get(definition.provider)
 
 
@@ -118,6 +123,7 @@ def validate(analysis: Analysis) -> ValidationResult:
     provider_names = {p.name for p in analysis.providers}
     categories = {p.name: p.category for p in analysis.providers}
     def_by_name = {d.name: d for d in analysis.definitions}
+    scopes = {d.name: d.scope for d in analysis.definitions}
 
     seen_names: set[str] = set()
     ref_counts: dict[str, int] = {}
@@ -157,10 +163,25 @@ def validate(analysis: Analysis) -> ValidationResult:
             )
 
         consumer_category = _provider_category(d, categories)
+        consumer_scope = scopes.get(d.name, SCOPE_INSTRUMENT)
+        if consumer_scope == SCOPE_GROUP and consumer_category not in (None, "analyzer"):
+            errors.append(
+                Diagnostic(
+                    message=(
+                        f"Group-scoped definition '{d.name}' must be an analyzer, "
+                        f"not category '{consumer_category}': group nodes aggregate "
+                        f"per-member facts, they do not emit signals or size trades"
+                    ),
+                    severity=DiagnosticSeverity.ERROR,
+                    node_name=d.name,
+                    node_type="definition",
+                )
+            )
         for p in d.parameters:
             for leaf in choice_leaves(p.value):
                 if not isinstance(leaf, ReferenceExpression):
                     continue
+                is_spanning = isinstance(leaf, SpanningReferenceExpression)
                 target = def_by_name.get(leaf.name)
                 if target is None:
                     errors.append(
@@ -176,7 +197,83 @@ def validate(analysis: Analysis) -> ValidationResult:
                 ref_counts[leaf.name] = ref_counts.get(leaf.name, 0) + 1
 
                 target_category = _provider_category(target, categories)
-                if is_timeframe_definition(target) or target_category == "timeframe":
+                target_is_timeframe = (
+                    is_timeframe_definition(target) or target_category == "timeframe"
+                )
+                target_scope = scopes.get(leaf.name, SCOPE_INSTRUMENT)
+
+                if is_spanning:
+                    if target_is_timeframe:
+                        errors.append(
+                            Diagnostic(
+                                message=(
+                                    f"Spanning reference to TimeFrame definition "
+                                    f"'{leaf.name}' from '{d.name}' is invalid: a "
+                                    f"timeframe is a compile-time value, not a "
+                                    f"per-member fact"
+                                ),
+                                severity=DiagnosticSeverity.ERROR,
+                                node_name=d.name,
+                                node_type="definition",
+                            )
+                        )
+                        continue
+                    if consumer_scope != SCOPE_GROUP:
+                        errors.append(
+                            Diagnostic(
+                                message=(
+                                    f"Spanning reference '{p.name}: {leaf.name}*' "
+                                    f"from '{d.name}' is only valid on a group-scoped "
+                                    f"definition"
+                                ),
+                                severity=DiagnosticSeverity.ERROR,
+                                node_name=d.name,
+                                node_type="definition",
+                            )
+                        )
+                    if target_scope != SCOPE_INSTRUMENT:
+                        errors.append(
+                            Diagnostic(
+                                message=(
+                                    f"Spanning reference to '{leaf.name}' from "
+                                    f"'{d.name}' must target a per-instrument "
+                                    f"definition, not a group-scoped one"
+                                ),
+                                severity=DiagnosticSeverity.ERROR,
+                                node_name=d.name,
+                                node_type="definition",
+                            )
+                        )
+                    continue
+                if target_scope == SCOPE_GROUP:
+                    errors.append(
+                        Diagnostic(
+                            message=(
+                                f"Cross-group reference: '{d.name}' references "
+                                f"group-scoped definition '{leaf.name}'. Per-instrument "
+                                f"and group nodes cannot reference group-scoped nodes"
+                            ),
+                            severity=DiagnosticSeverity.ERROR,
+                            node_name=d.name,
+                            node_type="definition",
+                        )
+                    )
+                if consumer_scope == SCOPE_GROUP and not target_is_timeframe:
+                    errors.append(
+                        Diagnostic(
+                            message=(
+                                f"Group-scoped definition '{d.name}' must reference "
+                                f"per-instrument definition '{leaf.name}' with a "
+                                f"spanning reference ('{p.name}: {leaf.name}*'), not a "
+                                f"plain reference"
+                            ),
+                            severity=DiagnosticSeverity.ERROR,
+                            node_name=d.name,
+                            node_type="definition",
+                        )
+                    )
+
+                if target_is_timeframe:
                     if consumer_category not in (None, "analyzer"):
                         errors.append(
                             Diagnostic(
@@ -271,9 +368,7 @@ def validate(analysis: Analysis) -> ValidationResult:
     )
 
 
-def _validate_timeframe_definition(
-    definition: Definition, errors: list[Diagnostic]
-) -> None:
+def _validate_timeframe_definition(definition: Definition, errors: list[Diagnostic]) -> None:
     resolution = None
     for p in definition.parameters:
         if p.name == "resolution":

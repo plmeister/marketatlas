@@ -38,11 +38,20 @@ class Provider:
     default_params: tuple[Parameter, ...] = ()
 
 
+#: Node scope: one instance per instrument (the default).
+SCOPE_INSTRUMENT = "instrument"
+#: Node scope: one instance wired across every group member (backlog 064).
+SCOPE_GROUP = "group"
+
+_SCOPES = frozenset({SCOPE_INSTRUMENT, SCOPE_GROUP})
+
+
 @dataclass(frozen=True)
 class Definition:
     name: str
     provider: str
     parameters: tuple[Parameter, ...] = ()
+    scope: str = SCOPE_INSTRUMENT
     id: str = ""
     metadata: dict[str, str] | None = None
 
@@ -81,6 +90,11 @@ def is_timeframe_definition(definition: Definition) -> bool:
     registry resolution.
     """
     return definition.provider == "timeframe"
+
+
+def is_group_scope(scope: str) -> bool:
+    """Whether ``scope`` is a valid node scope marker (backlog 064)."""
+    return scope in _SCOPES
 
 
 def derive_timeframes(definitions: Sequence[Definition]) -> tuple[str, ...]:
