@@ -60,8 +60,8 @@ class Backtester:
         total = self.frame_count
         for i, cursor in enumerate(range(self._window_size, len(self._store))):
             view = MarketView(self._store, cursor, self._window_size)
-            facts = self._bundle.graph.run(view)
-            evidence = self._collect_evidence(facts)
+            facts, loose_evidence = self._bundle.graph.run_with_evidence(view)
+            evidence = self._collect_evidence(facts) + loose_evidence
             frame = AnalysisFrame(
                 timestamp=view.current.timestamp,
                 candle=view.current,

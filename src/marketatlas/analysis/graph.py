@@ -4,6 +4,7 @@ from collections import defaultdict
 from typing import Any
 
 from marketatlas.data.view import MarketView
+from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.facts.base import Fact
 
 from .base import Analyzer
@@ -82,7 +83,21 @@ class AnalysisGraph:
         return list(self._execution_order)
 
     def run(self, view: MarketView) -> dict[FactKey, Fact]:
+        facts, _ = self.run_with_evidence(view)
+        return facts
+
+    def run_with_evidence(
+        self, view: MarketView
+    ) -> tuple[dict[FactKey, Fact], tuple[EvidenceEntry, ...]]:
+        """Run the graph, also returning analyzer evidence that carries no fact.
+
+        An analyzer may emit evidence on a frame without producing a fact
+        (e.g. a rejected pullback confirmation); ``run`` drops it, while
+        ``run_with_evidence`` returns it so backtesting can keep it on the
+        frame (backlog 067).
+        """
         facts: dict[FactKey, Fact] = {}
+        loose: list[EvidenceEntry] = []
         for analyzer in self._execution_order:
             if analyzer.timeframe is not None and analyzer.timeframe != view.store.timeframe:
                 analyzer_view = view.select(analyzer.timeframe)
@@ -92,7 +107,9 @@ class AnalysisGraph:
             produces = analyzer.produces()
             for i, fact in enumerate(result.facts):
                 facts[produces[i]] = fact
-        return facts
+            if not result.facts:
+                loose.extend(result.evidence)
+        return facts, tuple(loose)
 
 
 class AnalyzerRegistry:

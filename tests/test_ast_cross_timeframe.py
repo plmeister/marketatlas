@@ -17,6 +17,7 @@ an undeclared cross-timeframe dependency fails at graph construction.
 from datetime import UTC, datetime, timedelta
 
 import pytest
+
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.ast.parser import parse
 from marketatlas.analysis.ast.pipeline import CompilationError, _ast_to_config
@@ -186,7 +187,12 @@ class TestGraphRun:
         assert "swing_tf_1w" in names
         assert "trend_tf_1d" in names
         assert "swing_structure_tf_1d" in names
-        assert "pullback_pattern_tf_1d" in names
+        # Backlog 067: PullbackPatternAnalyzer emits a fact only on the entry
+        # candle that follows the final swing point. The weekly swing that
+        # finalizes the structure is confirmed by a weekly candle arriving
+        # after the daily entry day has already passed, so at this cursor the
+        # entry window is gone and no pullback fact is produced.
+        assert "pullback_pattern_tf_1d" not in names
 
     def test_single_tf_analysis_unchanged(self) -> None:
         source = (
