@@ -12,11 +12,14 @@ from marketatlas.analysis.ast.expressions import (
     Expression,
     LiteralExpression,
     ReferenceExpression,
+    SpanningReferenceExpression,
     choice_leaves,
 )
 from marketatlas.analysis.ast.instrument import TemplateGraph
 from marketatlas.analysis.ast.lexer import SourcePosition
 from marketatlas.analysis.ast.models import (
+    SCOPE_GROUP,
+    SCOPE_INSTRUMENT,
     Analysis,
     Definition,
     Parameter,
@@ -139,6 +142,7 @@ class RegistryResolutionPass(CompilerPass):
                     name=d.name,
                     provider=provider_name,
                     parameters=merged_params,
+                    scope=d.scope,
                     id=d.id,
                     metadata=d.metadata,
                 )
@@ -442,7 +446,11 @@ class Pipeline:
                 "Pipeline.compile_templates for multi-output templates."
             )
         concrete = variants[0]
-        return TemplateGraph(concrete, _ast_to_config(concrete))
+        return TemplateGraph(
+            concrete,
+            _ast_to_config(concrete, scopes=frozenset({SCOPE_INSTRUMENT})),
+            group_config=_ast_to_config(concrete, scopes=frozenset({SCOPE_GROUP})),
+        )
 
     def compile_templates(self, analysis: Analysis) -> tuple[TemplateGraph, ...]:
         """Compile every concrete AST to its own instrument-neutral template.
@@ -451,7 +459,14 @@ class Pipeline:
         concrete AST (backlog 063), matching the explicit multi-return
         convention of ``compile_all``.
         """
-        return tuple(TemplateGraph(v, _ast_to_config(v)) for v in self.expand(analysis))
+        return tuple(
+            TemplateGraph(
+                v,
+                _ast_to_config(v, scopes=frozenset({SCOPE_INSTRUMENT})),
+                group_config=_ast_to_config(v, scopes=frozenset({SCOPE_GROUP})),
+            )
+            for v in self.expand(analysis)
+        )
 
     def run(self, analysis: Analysis) -> AnalysisGraph:
         """Run the full pipeline for a single concrete AST.
@@ -608,6 +623,7 @@ def _variant_definitions(
             name=d.name,
             provider=d.provider,
             parameters=params,
+            scope=d.scope,
             id=d.id,
             metadata=d.metadata,
         )
@@ -621,9 +637,28 @@ def _variant_timeframes(
     return derive_timeframes(_variant_definitions(template, combo))
 
 
-def _ast_to_config(analysis: Analysis) -> StrategyConfig:
+def _ast_to_config(analysis: Analysis, *, scopes: frozenset[str] | None = None) -> StrategyConfig:
+    """Convert a concrete AST to a ``StrategyConfig``.
+
+    By default every definition flows into the config. ``scopes`` filters to a
+    subset of node scopes (backlog 064): the per-instrument config
+    (``{instrument}``) excludes group nodes and the group config
+    (``{group}``) contains only group nodes — the runtime supplies the member
+    list, so group bindings stay member-agnostic here and the ``members``
+    parameter is injected at instantiation.
+    """
     providers = _provider_map(analysis)
     def_by_name = {d.name: d for d in analysis.definitions}
+    if scopes is None:
+        group_names = [d.name for d in analysis.definitions if d.scope == SCOPE_GROUP]
+        if group_names:
+            listed = ", ".join(group_names)
+            raise CompilationError(
+                f"Analysis '{analysis.name}' has group-scoped definitions ({listed}) "
+                "which cannot compile to a single graph. Use "
+                "Pipeline.compile_template + instantiate_group: group nodes need "
+                "the runtime member list (backlog 064)."
+            )
     analyzer_configs: list[AnalyzerConfig] = []
     signal_configs: list[SignalConfig] = []
     risk_config: RiskConfig = RiskConfig(algorithm="none")
@@ -634,6 +669,8 @@ def _ast_to_config(analysis: Analysis) -> StrategyConfig:
     }
 
     for d in analysis.definitions:
+        if scopes is not None and d.scope not in scopes:
+            continue
         provider = providers.get(d.provider)
         if provider is None:
             raise CompilationError(f"Unknown provider: {d.provider}")
@@ -782,6 +819,12 @@ def _resolve_reference(
             f"Unknown reference: definition '{owner}' references '{reference.name}'"
         )
     if is_timeframe_definition(target):
+        if isinstance(reference, SpanningReferenceExpression):
+            raise CompilationError(
+                f"Spanning reference to TimeFrame definition '{reference.name}' on "
+                f"'{owner}' is invalid: a timeframe is a compile-time value, not a "
+                f"per-member fact"
+            )
         if provider.category != "analyzer":
             raise CompilationError(
                 f"Reference to TimeFrame definition '{reference.name}' on '{owner}' "
@@ -790,6 +833,19 @@ def _resolve_reference(
         return _ResolvedReference(timeframe=_resolution_value(target))
 
     source_tf = def_timeframes.get(target.name) or base_tf
+    if isinstance(reference, SpanningReferenceExpression):
+        if provider.category != "analyzer":
+            raise CompilationError(
+                f"Spanning reference on '{owner}' is only valid on analyzer "
+                f"definitions, not '{provider.category}'"
+            )
+        _check_fact_declared(param_name, target, source_tf, providers, owner)
+        # The binding is member-agnostic at compile time: the group node names
+        # the consumed fact per member only at instantiation, so the binding
+        # must always carry the source timeframe to disambiguate member facts
+        # across timeframes (backlog 064). ``"1d"`` is the strategy base
+        # default when neither the member nor the analysis declares one.
+        return _ResolvedReference(binding=f"{param_name}@{source_tf or '1d'}")
     if provider.category == "analyzer":
         _check_fact_declared(param_name, target, source_tf, providers, owner)
         consumer_tf = _resolved_definition_timeframe(def_by_name[owner], def_by_name) or base_tf

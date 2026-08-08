@@ -8,12 +8,16 @@ from marketatlas.analysis.ast.expressions import (
     Expression,
     LiteralExpression,
     ReferenceExpression,
+    SpanningReferenceExpression,
 )
 from marketatlas.analysis.ast.models import (
+    SCOPE_GROUP,
+    SCOPE_INSTRUMENT,
     Analysis,
     Definition,
     Parameter,
     Provider,
+    is_group_scope,
 )
 from marketatlas.data.types import Timeframe
 
@@ -29,6 +33,8 @@ def _expression_to_dict(value: object, param_name: str = "") -> object:
             "values": [_expression_to_dict(v, param_name) for v in value.values],
         }
     if isinstance(value, ReferenceExpression):
+        if isinstance(value, SpanningReferenceExpression):
+            return {"expr": "spanning", "name": value.name}
         return {"expr": "reference", "name": value.name}
     if isinstance(value, Expression):
         name_part = f" in parameter '{param_name}'" if param_name else ""
@@ -47,13 +53,18 @@ def _dict_to_expression(value: object) -> Expression:
         if not isinstance(name, str):
             raise ValueError(f"Invalid reference expression: {value!r}")
         return ReferenceExpression(name)
+    if isinstance(value, Mapping) and value.get("expr") == "spanning" and "name" in value:
+        name = value["name"]
+        if not isinstance(name, str):
+            raise ValueError(f"Invalid spanning reference expression: {value!r}")
+        return SpanningReferenceExpression(name)
     if isinstance(value, Expression):
         return value
     return LiteralExpression(value)
 
 
 def _parameter_value_from_dict(value: object) -> object:
-    if isinstance(value, Mapping) and value.get("expr") in ("choice", "reference"):
+    if isinstance(value, Mapping) and value.get("expr") in ("choice", "reference", "spanning"):
         return _dict_to_expression(value)
     return value
 
@@ -81,6 +92,8 @@ def _definition_to_dict(d: Definition) -> dict[str, object]:
     }
     if d.parameters:
         obj["parameters"] = [_parameter_to_dict(p) for p in d.parameters]
+    if d.scope != SCOPE_INSTRUMENT:
+        obj["scope"] = d.scope
     if d.id:
         obj["id"] = d.id
     if d.metadata:
@@ -142,10 +155,15 @@ def _dict_to_definition(d: Mapping[str, object]) -> Definition:
     params_raw = d.get("parameters", ())
     assert isinstance(params_raw, Sequence)
     params = tuple(_dict_to_parameter(p) for p in params_raw)
+    scope = d.get("scope", SCOPE_INSTRUMENT)
+    if not isinstance(scope, str) or not is_group_scope(scope):
+        valid = ", ".join(sorted((SCOPE_INSTRUMENT, SCOPE_GROUP)))
+        raise ValueError(f"Invalid scope '{scope}'. Valid scopes: {valid}")
     return Definition(
         name=d["name"],  # type: ignore[arg-type]
         provider=d["provider"],  # type: ignore[arg-type]
         parameters=params,
+        scope=scope,
         id=d.get("id", ""),  # type: ignore[arg-type]
         metadata=d.get("metadata", None),  # type: ignore[arg-type]
     )
@@ -163,9 +181,7 @@ def from_dict(data: Mapping[str, object]) -> Analysis:
     providers = tuple(_dict_to_provider(p) for p in providers_list)
     timeframes_raw = data.get("timeframes", ())
     timeframes_list: Sequence[object] = timeframes_raw  # type: ignore[assignment]
-    timeframes = tuple(
-        _dict_to_timeframe_string(tf) for tf in timeframes_list
-    )
+    timeframes = tuple(_dict_to_timeframe_string(tf) for tf in timeframes_list)
     return Analysis(
         name=data["name"],  # type: ignore[arg-type]
         version=data["version"],  # type: ignore[arg-type]

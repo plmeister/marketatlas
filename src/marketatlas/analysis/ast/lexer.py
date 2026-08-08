@@ -13,6 +13,7 @@ RBRACKET = "]"
 LT = "<"
 PIPE = "|"
 GT = ">"
+STAR = "*"
 
 # Value token kinds.
 IDENT = "IDENT"
@@ -30,6 +31,7 @@ _SINGLE = {
     "<": LT,
     "|": PIPE,
     ">": GT,
+    "*": STAR,
 }
 
 _ESCAPES = {

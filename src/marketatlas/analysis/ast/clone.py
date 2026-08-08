@@ -8,6 +8,7 @@ from marketatlas.analysis.ast.expressions import (
     Expression,
     LiteralExpression,
     ReferenceExpression,
+    SpanningReferenceExpression,
 )
 from marketatlas.analysis.ast.models import (
     Analysis,
@@ -35,6 +36,8 @@ def clone_expression(expr: Expression) -> Expression:
     if isinstance(expr, ChoiceExpression):
         return ChoiceExpression(tuple(clone_expression(v) for v in expr.values))
     if isinstance(expr, ReferenceExpression):
+        if isinstance(expr, SpanningReferenceExpression):
+            return SpanningReferenceExpression(expr.name)
         return ReferenceExpression(expr.name)
     raise TypeError(f"Cannot clone unsupported expression node: {type(expr).__name__}")
 
@@ -91,6 +94,7 @@ def clone(node: object) -> object:
             name=node.name,
             provider=node.provider,
             parameters=tuple(clone(p) for p in node.parameters),
+            scope=node.scope,
             id=node.id,
             metadata=_clone_metadata(node.metadata),
         )
