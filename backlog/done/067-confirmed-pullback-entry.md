@@ -1,6 +1,6 @@
 # 067: Confirmed Pullback Entry
 
-**Status:** available  
+**Status:** done  
 **Epic:** strategy  
 **Priority:** high
 
