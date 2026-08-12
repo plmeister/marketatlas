@@ -1,6 +1,6 @@
 # 069: Portfolio Instrument File & Data Loading
 
-**Status:** in-progress  
+**Status:** done  
 **Epic:** portfolio  
 **Priority:** high
 

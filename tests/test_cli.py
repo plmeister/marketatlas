@@ -525,11 +525,19 @@ class TestRunCommand:
         mock_bt._max_hold_days = 10
         mock_tradebook = MagicMock()
         mock_tradebook.summary = {
-            "initial_balance": 1000.0, "final_balance": 1000.0,
-            "total_pnl": 0.0, "total_return_pct": 0.0,
-            "total_trades": 0, "wins": 0, "losses": 0, "breakevens": 0,
-            "win_rate": 0.0, "max_drawdown": 0.0, "profit_factor": 0.0,
-            "expectancy": 0.0, "by_strategy": {},
+            "initial_balance": 1000.0,
+            "final_balance": 1000.0,
+            "total_pnl": 0.0,
+            "total_return_pct": 0.0,
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "breakevens": 0,
+            "win_rate": 0.0,
+            "max_drawdown": 0.0,
+            "profit_factor": 0.0,
+            "expectancy": 0.0,
+            "by_strategy": {},
         }
         mock_tradebook.trades = []
         mock_bt.run_with_progress.return_value = _mock_backtest_result(mock_tradebook)
@@ -538,9 +546,12 @@ class TestRunCommand:
         output_html = tmp_path / "multi.html"
         _run_main(
             "run",
-            "--strategy", str(strategy_file),
-            "--interval", "1d",
-            "--output", str(output_html),
+            "--strategy",
+            str(strategy_file),
+            "--interval",
+            "1d",
+            "--output",
+            str(output_html),
         )
 
         assert mock_provider.fetch.call_count == 2
@@ -590,11 +601,19 @@ class TestRunCommand:
         mock_bt._max_hold_days = 10
         mock_tradebook = MagicMock()
         mock_tradebook.summary = {
-            "initial_balance": 1000.0, "final_balance": 1000.0,
-            "total_pnl": 0.0, "total_return_pct": 0.0,
-            "total_trades": 0, "wins": 0, "losses": 0, "breakevens": 0,
-            "win_rate": 0.0, "max_drawdown": 0.0, "profit_factor": 0.0,
-            "expectancy": 0.0, "by_strategy": {},
+            "initial_balance": 1000.0,
+            "final_balance": 1000.0,
+            "total_pnl": 0.0,
+            "total_return_pct": 0.0,
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "breakevens": 0,
+            "win_rate": 0.0,
+            "max_drawdown": 0.0,
+            "profit_factor": 0.0,
+            "expectancy": 0.0,
+            "by_strategy": {},
         }
         mock_tradebook.trades = []
         mock_bt.run_with_progress.return_value = _mock_backtest_result(mock_tradebook)
@@ -603,9 +622,12 @@ class TestRunCommand:
         output_html = tmp_path / "resample.html"
         _run_main(
             "run",
-            "--strategy", str(strategy_file),
-            "--interval", "1d",
-            "--output", str(output_html),
+            "--strategy",
+            str(strategy_file),
+            "--interval",
+            "1d",
+            "--output",
+            str(output_html),
         )
 
         assert mock_provider.fetch.call_count == 2
@@ -649,11 +671,19 @@ class TestRunCommand:
         mock_bt._max_hold_days = 10
         mock_tradebook = MagicMock()
         mock_tradebook.summary = {
-            "initial_balance": 1000.0, "final_balance": 1000.0,
-            "total_pnl": 0.0, "total_return_pct": 0.0,
-            "total_trades": 0, "wins": 0, "losses": 0, "breakevens": 0,
-            "win_rate": 0.0, "max_drawdown": 0.0, "profit_factor": 0.0,
-            "expectancy": 0.0, "by_strategy": {},
+            "initial_balance": 1000.0,
+            "final_balance": 1000.0,
+            "total_pnl": 0.0,
+            "total_return_pct": 0.0,
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "breakevens": 0,
+            "win_rate": 0.0,
+            "max_drawdown": 0.0,
+            "profit_factor": 0.0,
+            "expectancy": 0.0,
+            "by_strategy": {},
         }
         mock_tradebook.trades = []
         mock_bt.run_with_progress.return_value = _mock_backtest_result(mock_tradebook)
@@ -661,11 +691,19 @@ class TestRunCommand:
 
         data_dir = tmp_path / "cache"
         args = [
-            "run", "--strategy", str(strategy_file),
-            "--interval", "1d",
-            "--data-dir", str(data_dir),
-            "--output", "",
-            "--start", "2024-01-01", "--end", "2024-06-01",
+            "run",
+            "--strategy",
+            str(strategy_file),
+            "--interval",
+            "1d",
+            "--data-dir",
+            str(data_dir),
+            "--output",
+            "",
+            "--start",
+            "2024-01-01",
+            "--end",
+            "2024-06-01",
         ]
         _run_main(*args)
         assert mock_provider.fetch.call_count >= 1
@@ -745,6 +783,441 @@ class TestRunCommand:
         captured = capsys.readouterr()
         assert "alpha" in captured.out
         assert "beta" in captured.out
+
+
+class TestRunPortfolio:
+    def _setup(
+        self,
+        tmp_path: Path,
+        mock_load: MagicMock,
+        names: list[str],
+        registry_instruments: list[Instrument] | None = None,
+        portfolio_names: list[str] | None = None,
+    ) -> tuple[Path, Path, Path]:
+        strategy_file = tmp_path / "strat.yaml"
+        strategy_file.write_text("strategy:\n  name: test\n")
+
+        config = MagicMock()
+        config.name = "test"
+        config.version = "1.0"
+        config.analyzers = []
+        config.signals = []
+        config.timeframes = ()
+        mock_load.return_value = config
+
+        registry_path = tmp_path / "instruments.yaml"
+        _write_registry(
+            registry_path,
+            registry_instruments
+            or [
+                Instrument("GBPUSD", "forex", "Pound", providers={"yahoo": "GBPUSD=X"}),
+                Instrument("BTCUSD", "crypto", "Bitcoin", providers={"yahoo": "BTC-USD"}),
+            ],
+        )
+        portfolio_path = tmp_path / "portfolio.yaml"
+        portfolio_path.write_text(
+            "instruments:\n" + "\n".join(f"  - {n}" for n in (portfolio_names or names))
+        )
+        return strategy_file, registry_path, portfolio_path
+
+    @patch("marketatlas.cli.YahooProvider")
+    @patch("marketatlas.strategy.loader.load_strategy")
+    def test_run_instruments_loads_all_identical_range(
+        self,
+        mock_load: MagicMock,
+        mock_yahoo_cls: MagicMock,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        strategy_file, registry_path, portfolio_path = self._setup(
+            tmp_path, mock_load, ["GBPUSD", "BTCUSD"]
+        )
+
+        provider = MagicMock()
+
+        def fake_fetch(
+            symbol: Symbol, timeframe: Timeframe, start: datetime, end: datetime
+        ) -> MarketData:
+            return _make_market_data(symbol=symbol.name, n=200)
+
+        provider.fetch.side_effect = fake_fetch
+        mock_yahoo_cls.return_value = provider
+
+        data_dir = tmp_path / "cache"
+        _run_main(
+            "run",
+            "--strategy",
+            str(strategy_file),
+            "--instruments",
+            str(portfolio_path),
+            "--registry",
+            str(registry_path),
+            "--interval",
+            "1d",
+            "--start",
+            "2024-01-01",
+            "--end",
+            "2024-06-01",
+            "--data-dir",
+            str(data_dir),
+            "--output",
+            "",
+        )
+
+        assert provider.fetch.call_count == 2
+        assert [c.args[0].name for c in provider.fetch.call_args_list] == ["GBPUSD", "BTCUSD"]
+        starts = {c.args[2] for c in provider.fetch.call_args_list}
+        ends = {c.args[3] for c in provider.fetch.call_args_list}
+        assert len(starts) == 1
+        assert len(ends) == 1
+        assert (data_dir / "GBPUSD.1d.parquet").exists()
+        assert (data_dir / "BTCUSD.1d.parquet").exists()
+
+        captured = capsys.readouterr()
+        assert "GBPUSD" in captured.out
+        assert "BTCUSD" in captured.out
+        assert "PORTFOLIO DATA (2 instrument(s))" in captured.out
+
+    @patch("marketatlas.cli.YahooProvider")
+    @patch("marketatlas.strategy.loader.load_strategy")
+    def test_run_instruments_second_run_served_from_store(
+        self,
+        mock_load: MagicMock,
+        mock_yahoo_cls: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        strategy_file, registry_path, portfolio_path = self._setup(
+            tmp_path, mock_load, ["GBPUSD", "BTCUSD"]
+        )
+
+        provider = MagicMock()
+
+        def fake_fetch(
+            symbol: Symbol, timeframe: Timeframe, start: datetime, end: datetime
+        ) -> MarketData:
+            return _make_market_data(symbol=symbol.name, n=200)
+
+        provider.fetch.side_effect = fake_fetch
+        mock_yahoo_cls.return_value = provider
+
+        data_dir = tmp_path / "cache"
+        args = [
+            "run",
+            "--strategy",
+            str(strategy_file),
+            "--instruments",
+            str(portfolio_path),
+            "--registry",
+            str(registry_path),
+            "--interval",
+            "1d",
+            "--start",
+            "2024-01-01",
+            "--end",
+            "2024-06-01",
+            "--data-dir",
+            str(data_dir),
+            "--output",
+            "",
+        ]
+        _run_main(*args)
+        assert provider.fetch.call_count == 2
+
+        provider.fetch.reset_mock()
+        _run_main(*args)
+        assert provider.fetch.call_count == 0
+
+    @patch("marketatlas.cli.YahooProvider")
+    @patch("marketatlas.strategy.loader.load_strategy")
+    def test_run_instruments_unknown_canonical_errors(
+        self,
+        mock_load: MagicMock,
+        mock_yahoo_cls: MagicMock,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        strategy_file, registry_path, portfolio_path = self._setup(
+            tmp_path,
+            mock_load,
+            ["GBPUSD", "XXX"],
+            registry_instruments=[
+                Instrument("GBPUSD", "forex", "Pound", providers={"yahoo": "GBPUSD=X"})
+            ],
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_main(
+                "run",
+                "--strategy",
+                str(strategy_file),
+                "--instruments",
+                str(portfolio_path),
+                "--registry",
+                str(registry_path),
+                "--output",
+                "",
+            )
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Unknown instrument 'XXX' at index 1 in portfolio file" in captured.err
+
+    @patch("marketatlas.strategy.loader.load_strategy")
+    def test_run_instruments_empty_list_errors(
+        self, mock_load: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        strategy_file, registry_path, portfolio_path = self._setup(
+            tmp_path, mock_load, [], portfolio_names=[]
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_main(
+                "run",
+                "--strategy",
+                str(strategy_file),
+                "--instruments",
+                str(portfolio_path),
+                "--registry",
+                str(registry_path),
+                "--output",
+                "",
+            )
+        assert exc_info.value.code == 1
+        assert "no instruments" in capsys.readouterr().err
+
+    @patch("marketatlas.strategy.loader.load_strategy")
+    def test_run_instruments_malformed_file_errors(
+        self, mock_load: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        strategy_file, registry_path, _ = self._setup(tmp_path, mock_load, [])
+        portfolio_path = tmp_path / "portfolio.yaml"
+        portfolio_path.write_text("symbols:\n  - GBPUSD\n")
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_main(
+                "run",
+                "--strategy",
+                str(strategy_file),
+                "--instruments",
+                str(portfolio_path),
+                "--registry",
+                str(registry_path),
+                "--output",
+                "",
+            )
+        assert exc_info.value.code == 1
+        assert "missing 'instruments'" in capsys.readouterr().err
+
+    @patch("marketatlas.strategy.loader.load_strategy")
+    def test_run_instruments_requires_registry(
+        self, mock_load: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        strategy_file, _, portfolio_path = self._setup(tmp_path, mock_load, ["GBPUSD"])
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_main(
+                "run",
+                "--strategy",
+                str(strategy_file),
+                "--instruments",
+                str(portfolio_path),
+                "--output",
+                "",
+            )
+        assert exc_info.value.code == 1
+        assert "requires an instrument registry" in capsys.readouterr().err
+
+    @patch("marketatlas.cli.YahooProvider")
+    @patch("marketatlas.strategy.loader.load_strategy")
+    def test_run_instruments_fetch_failure_reports_instrument(
+        self,
+        mock_load: MagicMock,
+        mock_yahoo_cls: MagicMock,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        strategy_file, registry_path, portfolio_path = self._setup(
+            tmp_path, mock_load, ["GBPUSD", "BTCUSD"]
+        )
+
+        provider = MagicMock()
+
+        def fake_fetch(
+            symbol: Symbol, timeframe: Timeframe, start: datetime, end: datetime
+        ) -> MarketData:
+            if symbol.name == "BTCUSD":
+                raise RuntimeError("provider down for BTCUSD")
+            return _make_market_data(symbol=symbol.name, n=200)
+
+        provider.fetch.side_effect = fake_fetch
+        mock_yahoo_cls.return_value = provider
+
+        data_dir = tmp_path / "cache"
+        _run_main(
+            "run",
+            "--strategy",
+            str(strategy_file),
+            "--instruments",
+            str(portfolio_path),
+            "--registry",
+            str(registry_path),
+            "--interval",
+            "1d",
+            "--start",
+            "2024-01-01",
+            "--end",
+            "2024-06-01",
+            "--data-dir",
+            str(data_dir),
+            "--output",
+            "",
+        )
+
+        captured = capsys.readouterr()
+        assert "provider down for BTCUSD" in captured.err
+        assert "PORTFOLIO DATA (1 instrument(s))" in captured.out
+        assert "GBPUSD" in captured.out
+        assert not (data_dir / "BTCUSD.1d.parquet").exists()
+
+    @patch("marketatlas.cli.YahooProvider")
+    @patch("marketatlas.strategy.loader.load_strategy")
+    def test_run_instruments_all_fail_exits(
+        self,
+        mock_load: MagicMock,
+        mock_yahoo_cls: MagicMock,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        strategy_file, registry_path, portfolio_path = self._setup(
+            tmp_path, mock_load, ["GBPUSD", "BTCUSD"]
+        )
+
+        provider = MagicMock()
+        provider.fetch.side_effect = RuntimeError("boom")
+        mock_yahoo_cls.return_value = provider
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_main(
+                "run",
+                "--strategy",
+                str(strategy_file),
+                "--instruments",
+                str(portfolio_path),
+                "--registry",
+                str(registry_path),
+                "--interval",
+                "1d",
+                "--start",
+                "2024-01-01",
+                "--end",
+                "2024-06-01",
+                "--output",
+                "",
+            )
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "no instrument data loaded" in captured.err
+        assert "boom" in captured.err
+
+    @patch("marketatlas.cli.YahooProvider")
+    @patch("marketatlas.strategy.loader.load_strategy")
+    def test_run_instruments_duplicates_deduped(
+        self,
+        mock_load: MagicMock,
+        mock_yahoo_cls: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        strategy_file, registry_path, portfolio_path = self._setup(
+            tmp_path, mock_load, ["GBPUSD", "GBPUSD", "BTCUSD"]
+        )
+
+        provider = MagicMock()
+
+        def fake_fetch(
+            symbol: Symbol, timeframe: Timeframe, start: datetime, end: datetime
+        ) -> MarketData:
+            return _make_market_data(symbol=symbol.name, n=200)
+
+        provider.fetch.side_effect = fake_fetch
+        mock_yahoo_cls.return_value = provider
+
+        _run_main(
+            "run",
+            "--strategy",
+            str(strategy_file),
+            "--instruments",
+            str(portfolio_path),
+            "--registry",
+            str(registry_path),
+            "--interval",
+            "1d",
+            "--start",
+            "2024-01-01",
+            "--end",
+            "2024-06-01",
+            "--output",
+            "",
+        )
+        assert provider.fetch.call_count == 2
+
+    @patch("marketatlas.cli.YahooProvider")
+    @patch("marketatlas.strategy.loader.load_strategy")
+    def test_run_instruments_resample_fallback(
+        self,
+        mock_load: MagicMock,
+        mock_yahoo_cls: MagicMock,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        strategy_file, registry_path, portfolio_path = self._setup(
+            tmp_path, mock_load, ["GBPUSD", "BTCUSD"]
+        )
+
+        config = MagicMock()
+        config.name = "test"
+        config.version = "1.0"
+        config.analyzers = []
+        config.signals = []
+        config.timeframes = ("1d", "1w")
+        mock_load.return_value = config
+
+        provider = MagicMock()
+
+        def fake_fetch(
+            symbol: Symbol, timeframe: Timeframe, start: datetime, end: datetime
+        ) -> MarketData:
+            if timeframe == Timeframe.W1:
+                raise ValueError("Unsupported timeframe")
+            return _make_market_data(symbol=symbol.name, n=200)
+
+        provider.fetch.side_effect = fake_fetch
+        mock_yahoo_cls.return_value = provider
+
+        data_dir = tmp_path / "cache"
+        _run_main(
+            "run",
+            "--strategy",
+            str(strategy_file),
+            "--instruments",
+            str(portfolio_path),
+            "--registry",
+            str(registry_path),
+            "--interval",
+            "1d",
+            "--start",
+            "2024-01-01",
+            "--end",
+            "2024-06-01",
+            "--data-dir",
+            str(data_dir),
+            "--output",
+            "",
+        )
+
+        assert provider.fetch.call_count == 4  # D1 native + W1 attempt per instrument
+        captured = capsys.readouterr()
+        assert "resampled from 1d" in captured.out
+        assert (data_dir / "GBPUSD.1w.parquet").exists()
+        assert (data_dir / "BTCUSD.1w.parquet").exists()
 
 
 class TestParserValidation:
@@ -882,11 +1355,7 @@ class TestUnifiedSymbolResolution:
             registry_path = tmp_path / "instruments.yaml"
             _write_registry(
                 registry_path,
-                [
-                    Instrument(
-                        "GBPUSD", "forex", "Pound", providers={"yahoo": "GBPUSD=X"}
-                    )
-                ],
+                [Instrument("GBPUSD", "forex", "Pound", providers={"yahoo": "GBPUSD=X"})],
             )
 
             yahoo = MagicMock()
@@ -927,11 +1396,7 @@ class TestUnifiedSymbolResolution:
             registry_path = tmp_path / "instruments.yaml"
             _write_registry(
                 registry_path,
-                [
-                    Instrument(
-                        "EURUSD", "forex", "Euro", providers={"yahoo": "EURUSD=X"}
-                    )
-                ],
+                [Instrument("EURUSD", "forex", "Euro", providers={"yahoo": "EURUSD=X"})],
             )
 
             yahoo = MagicMock()
@@ -1014,11 +1479,19 @@ class TestUnifiedSymbolResolution:
         mock_bt._max_hold_days = 10
         mock_tradebook = MagicMock()
         mock_tradebook.summary = {
-            "initial_balance": 1000.0, "final_balance": 1000.0,
-            "total_pnl": 0.0, "total_return_pct": 0.0,
-            "total_trades": 0, "wins": 0, "losses": 0, "breakevens": 0,
-            "win_rate": 0.0, "max_drawdown": 0.0, "profit_factor": 0.0,
-            "expectancy": 0.0, "by_strategy": {},
+            "initial_balance": 1000.0,
+            "final_balance": 1000.0,
+            "total_pnl": 0.0,
+            "total_return_pct": 0.0,
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "breakevens": 0,
+            "win_rate": 0.0,
+            "max_drawdown": 0.0,
+            "profit_factor": 0.0,
+            "expectancy": 0.0,
+            "by_strategy": {},
         }
         mock_tradebook.trades = []
         mock_bt.run_with_progress.return_value = _mock_backtest_result(mock_tradebook)

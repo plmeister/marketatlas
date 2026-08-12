@@ -7,6 +7,12 @@ from pathlib import Path
 
 from marketatlas.data.datastore import DataStore
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
+from marketatlas.data.portfolio import (
+    InstrumentDataError,
+    PortfolioError,
+    fetch_instrument_data,
+    load_portfolio,
+)
 from marketatlas.data.provider_names import DEFAULT_PROVIDER_ORDER
 from marketatlas.data.providers.base import DataProvider
 from marketatlas.data.providers.chain import ProviderChain
@@ -42,15 +48,12 @@ def _build_chain(symbol: str, registry: InstrumentRegistry | None) -> ProviderCh
         inst = registry.get(symbol)
         if inst is not None:
             names = registry.get_priority(symbol)
-            providers = [
-                p for n in names if (p := _make_provider(n, registry)) is not None
-            ]
+            providers = [p for n in names if (p := _make_provider(n, registry)) is not None]
             if providers:
                 return ProviderChain(providers)
         else:
             print(
-                f"WARNING: '{symbol}' not found in instrument registry; "
-                "using default providers",
+                f"WARNING: '{symbol}' not found in instrument registry; " "using default providers",
                 file=sys.stderr,
             )
     providers = [
@@ -59,21 +62,13 @@ def _build_chain(symbol: str, registry: InstrumentRegistry | None) -> ProviderCh
     return ProviderChain(providers)
 
 
-def _find_resample_source(
-    target: Timeframe,
-    fetched: dict[Timeframe, MarketData],
-) -> Timeframe | None:
-    from marketatlas.data.resample import tf_minutes
-
-    target_mins = tf_minutes(target)
-    candidates = [
-        (tf, tf_minutes(tf))
-        for tf in fetched
-        if tf_minutes(tf) < target_mins
-    ]
-    if not candidates:
-        return None
-    return min(candidates, key=lambda x: x[1])[0]
+def _portfolio_instrument(args: argparse.Namespace, symbol: Symbol) -> Instrument:
+    registry = _load_registry(args)
+    if registry is not None:
+        inst = registry.get(symbol.name)
+        if inst is not None:
+            return inst
+    return Instrument(canonical=symbol.name, asset_class="", description="")
 
 
 def fetch_command(args: argparse.Namespace) -> None:
@@ -115,13 +110,17 @@ def fetch_command(args: argparse.Namespace) -> None:
 
 def run_command(args: argparse.Namespace) -> None:
     from marketatlas.backtesting.backtester import Backtester
-    from marketatlas.data.resample import CannotResampleError, resample, tf_minutes
+    from marketatlas.data.resample import tf_minutes
     from marketatlas.data.store import MarketStore
     from marketatlas.strategy.bundle import StrategyBundle
     from marketatlas.strategy.loader import load_strategy
     from marketatlas.strategy.strategy import Strategy
     from marketatlas.visualization.context import RenderContext
     from marketatlas.visualization.interactive import InteractiveRenderer
+
+    if getattr(args, "instruments", ""):
+        run_portfolio_command(args)
+        return
 
     strategy_path = Path(args.strategy)
     if not strategy_path.exists():
@@ -148,9 +147,7 @@ def run_command(args: argparse.Namespace) -> None:
     end = datetime.fromisoformat(args.end) if args.end else datetime.now()
 
     config_tfs = [Timeframe(tf) for tf in config.timeframes]
-    all_tfs = sorted(
-        set([base_tf] + config_tfs), key=lambda tf: tf_minutes(tf)
-    )
+    all_tfs = sorted(set([base_tf] + config_tfs), key=lambda tf: tf_minutes(tf))
     print(f"\nFetching {len(all_tfs)} timeframe(s): {', '.join(tf.value for tf in all_tfs)}")
     print(f"Range: {start.date()} to {end.date()}")
     registry = _load_registry(args)
@@ -159,50 +156,14 @@ def run_command(args: argparse.Namespace) -> None:
     datastore = DataStore(Path(args.data_dir) if args.data_dir else None)
     print(f"Data store: {datastore.base_path}")
 
-    fetched: dict[Timeframe, MarketData] = {}
-    resampled: list[tuple[Timeframe, Timeframe]] = []
-
-    for tf in all_tfs:
-        # Serve from the persistent store when the range is already covered.
-        if datastore.has(symbol, tf, start, end):
-            md = datastore.get(symbol, tf, start, end)
-            if md is not None and md.candles:
-                fetched[tf] = md
-                print(f"  {tf.value}: served from store ({len(md.candles)} candles)")
-                continue
-
-        # Try native fetch first
-        try:
-            md = provider.fetch(symbol, tf, start, end)
-            datastore.put(md)
-            fetched[tf] = md
-            print(f"  {tf.value}: fetched natively ({len(md.candles)} candles)")
-            continue
-        except ValueError:
-            pass
-        except Exception as e:
-            print(f"  {tf.value}: fetch error — {e}", file=sys.stderr)
-            continue
-
-        # Native not supported — try resample from nearest higher-res
-        source_tf = _find_resample_source(tf, fetched)
-        if source_tf is None:
-            print(f"  {tf.value}: cannot fetch or resample (no source data)")
-            continue
-
-        try:
-            candles = resample(fetched[source_tf].candles, source_tf, tf)
-            md = MarketData(symbol=symbol, timeframe=tf, candles=candles)
-            datastore.put(md)
-            fetched[tf] = md
-            resampled.append((tf, source_tf))
-            print(f"  {tf.value}: resampled from {source_tf.value} ({len(candles)} candles)")
-        except CannotResampleError as e:
-            print(f"  {tf.value}: cannot resample — {e}")
-
-    if base_tf not in fetched:
-        print(f"Error: primary timeframe {base_tf.value} not available", file=sys.stderr)
+    instrument = _portfolio_instrument(args, symbol)
+    try:
+        data = fetch_instrument_data(provider, datastore, instrument, all_tfs, start, end, base_tf)
+    except InstrumentDataError as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+    fetched = data.timeframes
+    resampled = data.resampled
 
     store = MarketStore(fetched)
     print(f"Data: {len(store)} candles ({store.timeframe.value})")
@@ -286,6 +247,89 @@ def run_command(args: argparse.Namespace) -> None:
         print(f"Pickle: {args.pickle}")
 
 
+def run_portfolio_command(args: argparse.Namespace) -> None:
+    from marketatlas.data.resample import tf_minutes
+    from marketatlas.data.store import MarketStore
+    from marketatlas.strategy.loader import load_strategy
+
+    strategy_path = Path(args.strategy)
+    if not strategy_path.exists():
+        print(f"Error: strategy file not found: {strategy_path}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        config = load_strategy(strategy_path)
+    except Exception as e:
+        print(f"Error loading strategy: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    registry = _load_registry(args)
+    if registry is None:
+        print(
+            "Error: --instruments requires an instrument registry " f"({_registry_path(args)})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        spec = load_portfolio(Path(args.instruments), registry)
+    except PortfolioError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Strategy: {config.name} v{config.version}")
+    print(
+        f"Portfolio: {len(spec)} instrument(s): " + ", ".join(i.canonical for i in spec.instruments)
+    )
+
+    base_tf = Timeframe(args.interval)
+    default_start = datetime.now() - timedelta(days=730)
+    start = datetime.fromisoformat(args.start) if args.start else default_start
+    end = datetime.fromisoformat(args.end) if args.end else datetime.now()
+
+    config_tfs = [Timeframe(tf) for tf in config.timeframes]
+    all_tfs = sorted(set([base_tf] + config_tfs), key=lambda tf: tf_minutes(tf))
+    print(f"\nFetching {len(all_tfs)} timeframe(s): {', '.join(tf.value for tf in all_tfs)}")
+    print(f"Range: {start.date()} to {end.date()}")
+    datastore = DataStore(Path(args.data_dir) if args.data_dir else None)
+    print(f"Data store: {datastore.base_path}")
+
+    loaded: list[tuple[Instrument, dict[Timeframe, MarketData]]] = []
+    for instrument in spec.instruments:
+        print(f"\nFetching {instrument.canonical} ({instrument.asset_class})")
+        provider = _build_chain(instrument.canonical, registry)
+        print("  Providers: " + ", ".join(type(p).__name__ for p in provider.providers))
+        try:
+            data = fetch_instrument_data(
+                provider,
+                datastore,
+                instrument,
+                all_tfs,
+                start,
+                end,
+                base_tf,
+                label=instrument.canonical,
+            )
+        except InstrumentDataError as e:
+            print(f"  ERROR: {e}", file=sys.stderr)
+            continue
+        loaded.append((instrument, data.timeframes))
+
+    if not loaded:
+        print("\nError: no instrument data loaded", file=sys.stderr)
+        sys.exit(1)
+
+    print("\n" + "=" * 60)
+    print(f"PORTFOLIO DATA ({len(loaded)} instrument(s))")
+    print("=" * 60)
+    for instrument, timeframes in loaded:
+        store = MarketStore(timeframes)
+        print(
+            f"  {instrument.canonical}: {len(store)} candles ({store.timeframe.value}), "
+            f"{len(store.available_timeframes)} timeframe(s)"
+        )
+
+
 def instruments_list_command(args: argparse.Namespace) -> None:
     registry = _load_registry(args)
     if registry is None:
@@ -355,6 +399,12 @@ def main() -> None:
     run_parser = subparsers.add_parser("run", help="Run a strategy backtest")
     run_parser.add_argument("--strategy", "-s", required=True, help="Strategy YAML file path")
     run_parser.add_argument("--symbol", default="BTC-USD", help="Market symbol (default: BTC-USD)")
+    run_parser.add_argument(
+        "--instruments",
+        default="",
+        help="Portfolio YAML file listing canonical instrument names; "
+        "loads data for all over the same range (ignores --symbol)",
+    )
     run_parser.add_argument("--start", default="", help="Start date ISO (default: 2 years ago)")
     run_parser.add_argument("--end", default="", help="End date ISO (default: today)")
     run_parser.add_argument("--interval", default="1d", help="Candle interval (default: 1d)")
