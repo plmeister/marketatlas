@@ -39,6 +39,7 @@
 - [x] 067 — Confirmed pullback entry (entry-day gating, confirmation candle, rejection evidence)
 
 > **Architecture note (067):** `AnalysisGraph.run_with_evidence()` (replaces `run()` internally) also returns analyzer evidence from frames that produced no fact; `Backtester` threads this loose evidence onto the frame so gated/rejected patterns are observable in backtests.
+- [x] 068 — CLI unified symbol resolution (`--symbol` canonical, per-instrument provider priority chain, canonical-keyed DataStore; unknown symbol → WARNING passthrough)
 
 ## AST Layer
 

@@ -15,6 +15,10 @@ class ProviderChain(DataProvider):
     def __init__(self, providers: list[DataProvider]) -> None:
         self._providers = providers
 
+    @property
+    def providers(self) -> list[DataProvider]:
+        return list(self._providers)
+
     def fetch(
         self,
         symbol: Symbol,

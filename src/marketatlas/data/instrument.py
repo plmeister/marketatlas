@@ -5,6 +5,8 @@ from typing import Any
 
 import yaml
 
+from marketatlas.data.provider_names import DEFAULT_PROVIDER_ORDER, PROVIDER_NAMES
+
 
 class Instrument:
     def __init__(
@@ -13,11 +15,19 @@ class Instrument:
         asset_class: str,
         description: str,
         providers: dict[str, str] | None = None,
+        provider_priority: tuple[str, ...] = (),
     ) -> None:
         self._canonical = canonical
         self._asset_class = asset_class
         self._description = description
         self._providers = providers or {}
+        self._provider_priority = tuple(provider_priority)
+        unknown = [name for name in self._provider_priority if name not in PROVIDER_NAMES]
+        if unknown:
+            raise ValueError(
+                f"Unknown provider(s) in provider_priority: {', '.join(unknown)} "
+                f"(known: {', '.join(PROVIDER_NAMES)})"
+            )
 
     @property
     def canonical(self) -> str:
@@ -35,6 +45,10 @@ class Instrument:
     def providers(self) -> dict[str, str]:
         return dict(self._providers)
 
+    @property
+    def provider_priority(self) -> tuple[str, ...]:
+        return self._provider_priority
+
     def to_dict(self) -> dict[str, object]:
         d: dict[str, object] = {
             "class": self._asset_class,
@@ -42,6 +56,8 @@ class Instrument:
         }
         if self._providers:
             d["providers"] = self._providers
+        if self._provider_priority:
+            d["provider_priority"] = list(self._provider_priority)
         return d
 
     @staticmethod
@@ -51,6 +67,7 @@ class Instrument:
             asset_class=str(d["class"]),
             description=str(d["description"]),
             providers=d.get("providers"),
+            provider_priority=tuple(d.get("provider_priority") or ()),
         )
 
     def __eq__(self, other: object) -> bool:
@@ -61,10 +78,13 @@ class Instrument:
             and self._asset_class == other._asset_class
             and self._description == other._description
             and self._providers == other._providers
+            and self._provider_priority == other._provider_priority
         )
 
     def __hash__(self) -> int:
-        return hash((self._canonical, self._asset_class, self._description))
+        return hash(
+            (self._canonical, self._asset_class, self._description, self._provider_priority)
+        )
 
     def __repr__(self) -> str:
         return f"Instrument({self._canonical}, {self._asset_class})"
@@ -94,6 +114,12 @@ class InstrumentRegistry:
         if inst is None:
             return None
         return inst.providers.get(provider)
+
+    def get_priority(self, canonical: str) -> tuple[str, ...]:
+        inst = self._instruments.get(canonical)
+        if inst is not None and inst.provider_priority:
+            return inst.provider_priority
+        return DEFAULT_PROVIDER_ORDER
 
     def resolve(self, symbol: str, provider: str) -> str | None:
         for canonical, inst in self._instruments.items():

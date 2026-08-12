@@ -1,6 +1,6 @@
 # 068: CLI Unified Symbol Resolution
 
-**Status:** in-progress  
+**Status:** done  
 **Epic:** data  
 **Priority:** high
 

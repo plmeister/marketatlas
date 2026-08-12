@@ -7,8 +7,56 @@ from pathlib import Path
 
 from marketatlas.data.datastore import DataStore
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
+from marketatlas.data.provider_names import DEFAULT_PROVIDER_ORDER
+from marketatlas.data.providers.base import DataProvider
+from marketatlas.data.providers.chain import ProviderChain
+from marketatlas.data.providers.dukascopy import DukascopyProvider
 from marketatlas.data.providers.yahoo import YahooProvider
 from marketatlas.data.types import MarketData, Symbol, Timeframe
+
+DEFAULT_REGISTRY_PATH = Path("data/instruments.yaml")
+
+
+def _registry_path(args: argparse.Namespace) -> Path:
+    path = getattr(args, "registry", "") or ""
+    return Path(path) if path else DEFAULT_REGISTRY_PATH
+
+
+def _load_registry(args: argparse.Namespace) -> InstrumentRegistry | None:
+    path = _registry_path(args)
+    if not path.exists():
+        return None
+    return InstrumentRegistry(path)
+
+
+def _make_provider(name: str, registry: InstrumentRegistry | None) -> DataProvider | None:
+    if name == "yahoo":
+        return YahooProvider(registry=registry)
+    if name == "dukascopy":
+        return DukascopyProvider(registry=registry)
+    return None
+
+
+def _build_chain(symbol: str, registry: InstrumentRegistry | None) -> ProviderChain:
+    if registry is not None:
+        inst = registry.get(symbol)
+        if inst is not None:
+            names = registry.get_priority(symbol)
+            providers = [
+                p for n in names if (p := _make_provider(n, registry)) is not None
+            ]
+            if providers:
+                return ProviderChain(providers)
+        else:
+            print(
+                f"WARNING: '{symbol}' not found in instrument registry; "
+                "using default providers",
+                file=sys.stderr,
+            )
+    providers = [
+        p for n in DEFAULT_PROVIDER_ORDER if (p := _make_provider(n, registry)) is not None
+    ]
+    return ProviderChain(providers)
 
 
 def _find_resample_source(
@@ -29,8 +77,9 @@ def _find_resample_source(
 
 
 def fetch_command(args: argparse.Namespace) -> None:
-    provider = YahooProvider()
     symbol = Symbol(args.symbol)
+    registry = _load_registry(args)
+    provider = _build_chain(symbol.name, registry)
     timeframe = Timeframe(args.timeframe)
     start = datetime.fromisoformat(args.start)
     end = datetime.fromisoformat(args.end)
@@ -104,7 +153,9 @@ def run_command(args: argparse.Namespace) -> None:
     )
     print(f"\nFetching {len(all_tfs)} timeframe(s): {', '.join(tf.value for tf in all_tfs)}")
     print(f"Range: {start.date()} to {end.date()}")
-    provider = YahooProvider()
+    registry = _load_registry(args)
+    provider = _build_chain(symbol.name, registry)
+    print("Providers: " + ", ".join(type(p).__name__ for p in provider.providers))
     datastore = DataStore(Path(args.data_dir) if args.data_dir else None)
     print(f"Data store: {datastore.base_path}")
 
@@ -236,11 +287,10 @@ def run_command(args: argparse.Namespace) -> None:
 
 
 def instruments_list_command(args: argparse.Namespace) -> None:
-    registry_path = Path(args.registry) if args.registry else Path("data/instruments.yaml")
-    if not registry_path.exists():
+    registry = _load_registry(args)
+    if registry is None:
         print("No instruments registry found. Use 'instruments add' to create one.")
         return
-    registry = InstrumentRegistry(registry_path)
     instruments = registry.list_all()
     if not instruments:
         print("No instruments registered.")
@@ -254,8 +304,8 @@ def instruments_list_command(args: argparse.Namespace) -> None:
 
 
 def instruments_add_command(args: argparse.Namespace) -> None:
-    registry_path = Path(args.registry) if args.registry else Path("data/instruments.yaml")
-    registry = InstrumentRegistry(registry_path)
+    path = _registry_path(args)
+    registry = _load_registry(args) or InstrumentRegistry()
 
     providers: dict[str, str] = {}
     if args.yahoo_symbol:
@@ -265,14 +315,24 @@ def instruments_add_command(args: argparse.Namespace) -> None:
     if args.oanda_symbol:
         providers["oanda"] = args.oanda_symbol
 
-    instr = Instrument(
-        canonical=args.canonical,
-        asset_class=args.asset_class,
-        description=args.description,
-        providers=providers,
-    )
+    priority = ()
+    if args.provider_priority:
+        priority = tuple(args.provider_priority.split(","))
+
+    try:
+        instr = Instrument(
+            canonical=args.canonical,
+            asset_class=args.asset_class,
+            description=args.description,
+            providers=providers,
+            provider_priority=priority,
+        )
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
     registry.add(instr)
-    registry.save(registry_path)
+    registry.save(path)
     print(f"Added instrument: {instr.canonical} ({instr.asset_class})")
 
 
@@ -286,6 +346,11 @@ def main() -> None:
     fetch_parser.add_argument("--start", required=True, help="Start date (ISO format)")
     fetch_parser.add_argument("--end", required=True, help="End date (ISO format)")
     fetch_parser.add_argument("--output", default="data/", help="Output directory (default: data/)")
+    fetch_parser.add_argument(
+        "--registry",
+        default="",
+        help="Path to instruments registry YAML (default: data/instruments.yaml)",
+    )
 
     run_parser = subparsers.add_parser("run", help="Run a strategy backtest")
     run_parser.add_argument("--strategy", "-s", required=True, help="Strategy YAML file path")
@@ -322,6 +387,11 @@ def main() -> None:
         help="Persistent data store directory "
         "(default: $MARKETATLAS_DATA_DIR or ~/.cache/marketatlas/data)",
     )
+    run_parser.add_argument(
+        "--registry",
+        default="",
+        help="Path to instruments registry YAML (default: data/instruments.yaml)",
+    )
 
     instr_parser = subparsers.add_parser("instruments", help="Manage instrument registry")
     instr_sub = instr_parser.add_subparsers(dest="instr_command", help="Instrument command")
@@ -341,6 +411,11 @@ def main() -> None:
     add_parser.add_argument("--yahoo-symbol", help="Yahoo Finance symbol")
     add_parser.add_argument("--dukascopy-symbol", help="Dukascopy symbol")
     add_parser.add_argument("--oanda-symbol", help="OANDA symbol")
+    add_parser.add_argument(
+        "--provider-priority",
+        default="",
+        help="Comma-separated provider priority order (e.g. dukascopy,yahoo)",
+    )
     add_parser.add_argument("--registry", default="", help="Path to instruments YAML file")
 
     args = parser.parse_args()

@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from marketatlas.backtesting.backtester import BacktestResult
+from marketatlas.data.instrument import Instrument, InstrumentRegistry
+from marketatlas.data.providers.base import SymbolNotFoundError
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
 
@@ -755,3 +757,357 @@ class TestParserValidation:
         with pytest.raises(SystemExit) as exc_info:
             _run_main("run")
         assert exc_info.value.code != 0
+
+
+def _write_registry(path: Path, instruments: list[Instrument]) -> None:
+    registry = InstrumentRegistry()
+    for inst in instruments:
+        registry.add(inst)
+    registry.save(path)
+
+
+class TestUnifiedSymbolResolution:
+    def test_fetch_resolves_canonical_via_registry_priority(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        with (
+            patch("marketatlas.cli.DukascopyProvider") as mock_dukas_cls,
+            patch("marketatlas.cli.YahooProvider") as mock_yahoo_cls,
+        ):
+            registry_path = tmp_path / "instruments.yaml"
+            _write_registry(
+                registry_path,
+                [
+                    Instrument(
+                        "GBPUSD",
+                        "forex",
+                        "Pound",
+                        providers={"yahoo": "GBPUSD=X", "dukascopy": "GBP/USD"},
+                        provider_priority=("dukascopy", "yahoo"),
+                    )
+                ],
+            )
+
+            dukas = MagicMock()
+            dukas.fetch.return_value = MarketData(
+                symbol=Symbol("GBPUSD"),
+                timeframe=Timeframe.D1,
+                candles=_make_candles(3),
+            )
+            mock_dukas_cls.return_value = dukas
+            yahoo = MagicMock()
+            mock_yahoo_cls.return_value = yahoo
+
+            out_dir = tmp_path / "out"
+            _run_main(
+                "fetch",
+                "--symbol",
+                "GBPUSD",
+                "--timeframe",
+                "1d",
+                "--start",
+                "2024-01-01",
+                "--end",
+                "2024-02-01",
+                "--output",
+                str(out_dir),
+                "--registry",
+                str(registry_path),
+            )
+
+            dukas.fetch.assert_called_once()
+            assert dukas.fetch.call_args[0][0] == Symbol("GBPUSD")
+            yahoo.fetch.assert_not_called()
+            saved = out_dir / "GBPUSD.1d.parquet"
+            assert saved.exists()
+
+    def test_fetch_chain_fallback(self, tmp_path: Path) -> None:
+        with (
+            patch("marketatlas.cli.DukascopyProvider") as mock_dukas_cls,
+            patch("marketatlas.cli.YahooProvider") as mock_yahoo_cls,
+        ):
+            registry_path = tmp_path / "instruments.yaml"
+            _write_registry(
+                registry_path,
+                [
+                    Instrument(
+                        "GBPUSD",
+                        "forex",
+                        "Pound",
+                        providers={"yahoo": "GBPUSD=X", "dukascopy": "GBP/USD"},
+                        provider_priority=("dukascopy", "yahoo"),
+                    )
+                ],
+            )
+
+            dukas = MagicMock()
+            dukas.fetch.side_effect = SymbolNotFoundError(Symbol("GBPUSD"))
+            mock_dukas_cls.return_value = dukas
+            yahoo = MagicMock()
+            yahoo.fetch.return_value = MarketData(
+                symbol=Symbol("GBPUSD"),
+                timeframe=Timeframe.D1,
+                candles=_make_candles(3),
+            )
+            mock_yahoo_cls.return_value = yahoo
+
+            out_dir = tmp_path / "out"
+            _run_main(
+                "fetch",
+                "--symbol",
+                "GBPUSD",
+                "--timeframe",
+                "1d",
+                "--start",
+                "2024-01-01",
+                "--end",
+                "2024-02-01",
+                "--output",
+                str(out_dir),
+                "--registry",
+                str(registry_path),
+            )
+
+            dukas.fetch.assert_called_once()
+            yahoo.fetch.assert_called_once()
+            assert (out_dir / "GBPUSD.1d.parquet").exists()
+
+    def test_fetch_unknown_symbol_warns_and_passes_through(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        with patch("marketatlas.cli.YahooProvider") as mock_yahoo_cls:
+            registry_path = tmp_path / "instruments.yaml"
+            _write_registry(
+                registry_path,
+                [
+                    Instrument(
+                        "GBPUSD", "forex", "Pound", providers={"yahoo": "GBPUSD=X"}
+                    )
+                ],
+            )
+
+            yahoo = MagicMock()
+            yahoo.fetch.return_value = MarketData(
+                symbol=Symbol("BTC-USD"),
+                timeframe=Timeframe.D1,
+                candles=_make_candles(3),
+            )
+            mock_yahoo_cls.return_value = yahoo
+
+            out_dir = tmp_path / "out"
+            _run_main(
+                "fetch",
+                "--symbol",
+                "BTC-USD",
+                "--timeframe",
+                "1d",
+                "--start",
+                "2024-01-01",
+                "--end",
+                "2024-02-01",
+                "--output",
+                str(out_dir),
+                "--registry",
+                str(registry_path),
+            )
+
+            captured = capsys.readouterr()
+            assert "WARNING" in captured.err
+            assert "BTC-USD" in captured.err
+            assert (out_dir / "BTC-USD.1d.parquet").exists()
+
+    def test_fetch_no_priority_uses_default_chain(self, tmp_path: Path) -> None:
+        with (
+            patch("marketatlas.cli.DukascopyProvider") as mock_dukas_cls,
+            patch("marketatlas.cli.YahooProvider") as mock_yahoo_cls,
+        ):
+            registry_path = tmp_path / "instruments.yaml"
+            _write_registry(
+                registry_path,
+                [
+                    Instrument(
+                        "EURUSD", "forex", "Euro", providers={"yahoo": "EURUSD=X"}
+                    )
+                ],
+            )
+
+            yahoo = MagicMock()
+            yahoo.fetch.return_value = MarketData(
+                symbol=Symbol("EURUSD"),
+                timeframe=Timeframe.D1,
+                candles=_make_candles(3),
+            )
+            mock_yahoo_cls.return_value = yahoo
+
+            _run_main(
+                "fetch",
+                "--symbol",
+                "EURUSD",
+                "--timeframe",
+                "1d",
+                "--start",
+                "2024-01-01",
+                "--end",
+                "2024-02-01",
+                "--output",
+                str(tmp_path / "out"),
+                "--registry",
+                str(registry_path),
+            )
+
+            yahoo.fetch.assert_called_once()
+            mock_dukas_cls.assert_not_called()
+
+    @patch("marketatlas.cli.DukascopyProvider")
+    @patch("marketatlas.visualization.interactive.InteractiveRenderer")
+    @patch("marketatlas.backtesting.backtester.Backtester")
+    @patch("marketatlas.strategy.bundle.StrategyBundle")
+    @patch("marketatlas.strategy.strategy.Strategy")
+    @patch("marketatlas.strategy.loader.load_strategy")
+    def test_run_canonical_keyed_store(
+        self,
+        mock_load: MagicMock,
+        mock_strategy_cls: MagicMock,
+        mock_bundle_cls: MagicMock,
+        mock_bt_cls: MagicMock,
+        mock_renderer_cls: MagicMock,
+        mock_dukas_cls: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        strategy_file = tmp_path / "strat.yaml"
+        strategy_file.write_text("strategy:\n  name: test\n")
+
+        config = MagicMock()
+        config.name = "test"
+        config.version = "1.0"
+        config.analyzers = []
+        config.signals = []
+        config.timeframes = ()
+        mock_load.return_value = config
+
+        registry_path = tmp_path / "instruments.yaml"
+        _write_registry(
+            registry_path,
+            [
+                Instrument(
+                    "GBPUSD",
+                    "forex",
+                    "Pound",
+                    providers={"dukascopy": "GBP/USD"},
+                    provider_priority=("dukascopy",),
+                )
+            ],
+        )
+
+        dukas = MagicMock()
+        dukas.fetch.return_value = _make_market_data(symbol="GBPUSD", n=200)
+        mock_dukas_cls.return_value = dukas
+
+        mock_strategy_cls.return_value = MagicMock()
+        mock_bundle_cls.return_value = MagicMock()
+
+        mock_bt = MagicMock()
+        mock_bt.frame_count = 100
+        mock_bt._max_hold_days = 10
+        mock_tradebook = MagicMock()
+        mock_tradebook.summary = {
+            "initial_balance": 1000.0, "final_balance": 1000.0,
+            "total_pnl": 0.0, "total_return_pct": 0.0,
+            "total_trades": 0, "wins": 0, "losses": 0, "breakevens": 0,
+            "win_rate": 0.0, "max_drawdown": 0.0, "profit_factor": 0.0,
+            "expectancy": 0.0, "by_strategy": {},
+        }
+        mock_tradebook.trades = []
+        mock_bt.run_with_progress.return_value = _mock_backtest_result(mock_tradebook)
+        mock_bt_cls.return_value = mock_bt
+
+        data_dir = tmp_path / "cache"
+        _run_main(
+            "run",
+            "--strategy",
+            str(strategy_file),
+            "--interval",
+            "1d",
+            "--symbol",
+            "GBPUSD",
+            "--data-dir",
+            str(data_dir),
+            "--registry",
+            str(registry_path),
+            "--output",
+            "",
+            "--start",
+            "2024-01-01",
+            "--end",
+            "2024-06-01",
+        )
+
+        dukas.fetch.assert_called_once()
+        assert dukas.fetch.call_args[0][0] == Symbol("GBPUSD")
+        assert (data_dir / "GBPUSD.1d.parquet").exists()
+
+
+class TestInstrumentsAddPriority:
+    def test_add_with_provider_priority(self, tmp_path: Path) -> None:
+        registry_path = tmp_path / "instruments.yaml"
+        _run_main(
+            "instruments",
+            "add",
+            "GBPUSD",
+            "--class",
+            "forex",
+            "--description",
+            "Pound",
+            "--dukascopy-symbol",
+            "GBP/USD",
+            "--provider-priority",
+            "dukascopy,yahoo",
+            "--registry",
+            str(registry_path),
+        )
+
+        registry = InstrumentRegistry(registry_path)
+        inst = registry.get("GBPUSD")
+        assert inst is not None
+        assert inst.provider_priority == ("dukascopy", "yahoo")
+        assert inst.providers["dukascopy"] == "GBP/USD"
+
+    def test_add_unknown_priority_errors(self, tmp_path: Path) -> None:
+        registry_path = tmp_path / "instruments.yaml"
+        with pytest.raises(SystemExit) as exc_info:
+            _run_main(
+                "instruments",
+                "add",
+                "GBPUSD",
+                "--class",
+                "forex",
+                "--description",
+                "Pound",
+                "--provider-priority",
+                "nonexistent",
+                "--registry",
+                str(registry_path),
+            )
+        assert exc_info.value.code == 1
+        assert not registry_path.exists()
+
+    def test_add_no_priority(self, tmp_path: Path) -> None:
+        registry_path = tmp_path / "instruments.yaml"
+        _run_main(
+            "instruments",
+            "add",
+            "EURUSD",
+            "--class",
+            "forex",
+            "--description",
+            "Euro",
+            "--registry",
+            str(registry_path),
+        )
+        registry = InstrumentRegistry(registry_path)
+        inst = registry.get("EURUSD")
+        assert inst is not None
+        assert inst.provider_priority == ()
