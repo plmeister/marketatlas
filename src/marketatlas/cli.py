@@ -236,7 +236,7 @@ def run_command(args: argparse.Namespace) -> None:
 
 
 def instruments_list_command(args: argparse.Namespace) -> None:
-    registry_path = Path(args.registry) if args.registry else Path("instruments.yaml")
+    registry_path = Path(args.registry) if args.registry else Path("data/instruments.yaml")
     if not registry_path.exists():
         print("No instruments registry found. Use 'instruments add' to create one.")
         return
@@ -254,7 +254,7 @@ def instruments_list_command(args: argparse.Namespace) -> None:
 
 
 def instruments_add_command(args: argparse.Namespace) -> None:
-    registry_path = Path(args.registry) if args.registry else Path("instruments.yaml")
+    registry_path = Path(args.registry) if args.registry else Path("data/instruments.yaml")
     registry = InstrumentRegistry(registry_path)
 
     providers: dict[str, str] = {}
