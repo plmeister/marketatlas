@@ -37,12 +37,12 @@ class MarketView:
             return self.store.slice(start, self.cursor)
         candles = self._series()
         start = max(0, self.cursor - self.window_size)
-        return candles[start:self.cursor]
+        return candles[start : self.cursor]
 
     def series_through_cursor(self) -> tuple[Candle, ...]:
         if self.view_timeframe is None:
             return self.store.slice(0, self.cursor)
-        return self._series()[:self.cursor]
+        return self._series()[: self.cursor]
 
     @property
     def prices(self) -> tuple[float, ...]:
@@ -73,13 +73,19 @@ class MarketView:
         return 0 <= self.cursor < self._len() and self.cursor >= self.window_size
 
     def select(self, timeframe: Timeframe, window_size: int | None = None) -> MarketView:
-        candles = self.store.get_candles(timeframe)
-        if not candles:
+        if timeframe not in self.store:
             raise ValueError(f"No data available for timeframe {timeframe}")
         current_ts = self.current.timestamp
-        new_cursor = max(
-            (i for i, c in enumerate(candles) if c.timestamp <= current_ts),
-            default=0,
-        )
+        new_cursor = self.store.timestamp_index(current_ts, timeframe)
+        if new_cursor < 0:
+            new_cursor = 0
         ws = window_size if window_size is not None else self.window_size
         return MarketView(self.store, new_cursor, ws, view_timeframe=timeframe)
+
+    def align(self, timestamp: datetime) -> MarketView:
+        """View on the same timeframe whose cursor is the latest candle
+        at-or-before ``timestamp`` (clamped to the earliest candle)."""
+        idx = self.store.timestamp_index(timestamp, self.view_timeframe)
+        if idx < 0:
+            idx = 0
+        return MarketView(self.store, idx, self.window_size, view_timeframe=self.view_timeframe)
