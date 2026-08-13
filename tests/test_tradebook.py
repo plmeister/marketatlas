@@ -309,6 +309,42 @@ class TestStrategyBreakdown:
         assert bd["strat_b"]["wins"] == 0  # type: ignore[index]
         assert bd["strat_b"]["losses"] == 1  # type: ignore[index]
 
+    def test_breakdown_by_instrument(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+
+        c1 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
+        tb.submit_order(c1, _signal(), "strat_a", t0, instrument="GBPUSD")
+        tb.fill_order(100.0, t0)
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=99.0))
+
+        t1 = t0 + timedelta(days=5)
+        c2 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
+        tb.submit_order(c2, _signal(), "strat_a", t1, instrument="BTCUSD")
+        tb.fill_order(100.0, t1)
+        tb.resolve_at_cursor(_candle(t1 + timedelta(days=1), lo=94.0, h=101.0))
+
+        trades = tb.trades
+        assert trades[0].instrument == "GBPUSD"
+        assert trades[1].instrument == "BTCUSD"
+
+        bd = tb.summary["by_instrument"]
+        assert isinstance(bd, dict)
+        assert bd["GBPUSD"]["wins"] == 1  # type: ignore[index]
+        assert bd["GBPUSD"]["losses"] == 0  # type: ignore[index]
+        assert bd["BTCUSD"]["wins"] == 0  # type: ignore[index]
+        assert bd["BTCUSD"]["losses"] == 1  # type: ignore[index]
+        assert bd["BTCUSD"]["total_pnl"] < 0  # type: ignore[index]
+
+    def test_instrument_defaults_empty(self) -> None:
+        tb = TradeBook()
+        t0 = datetime(2024, 1, 1)
+        c1 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
+        tb.submit_order(c1, _signal(), "s", t0)
+        tb.fill_order(100.0, t0)
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=99.0))
+        assert tb.trades[0].instrument == ""
+
 
 class TestProfitFactor:
     def test_profit_factor(self) -> None:

@@ -16,6 +16,7 @@ class TradeOutcome:
     candidate: TradeCandidate
     signal: TradeSignal
     source_strategy: str
+    instrument: str
     pnl: float | None
     result: str | None  # "win" / "loss" / "breakeven" / None
 
@@ -29,6 +30,7 @@ class TradeBook:
         self._pending_order: TradeCandidate | None = None
         self._pending_signal: TradeSignal | None = None
         self._pending_source: str = ""
+        self._pending_instrument: str = ""
         self._pending_timestamp: datetime | None = None
         self._peak_balance = initial_balance
 
@@ -145,10 +147,12 @@ class TradeBook:
         signal: TradeSignal,
         source: str,
         signal_timestamp: datetime,
+        instrument: str = "",
     ) -> None:
         self._pending_order = candidate
         self._pending_signal = signal
         self._pending_source = source
+        self._pending_instrument = instrument
         self._pending_timestamp = signal_timestamp
 
     def fill_order(self, open_price: float, timestamp: datetime) -> None:
@@ -157,6 +161,7 @@ class TradeBook:
         candidate = self._pending_order
         signal = self._pending_signal
         source = self._pending_source
+        instrument = self._pending_instrument
         if candidate is None or signal is None:
             return
         self._open_trade = TradeOutcome(
@@ -165,12 +170,14 @@ class TradeBook:
             candidate=candidate,
             signal=signal,
             source_strategy=source,
+            instrument=instrument,
             pnl=None,
             result=None,
         )
         self._pending_order = None
         self._pending_signal = None
         self._pending_source = ""
+        self._pending_instrument = ""
         self._pending_timestamp = None
 
     def close_trade(self, exit_price: float, timestamp: datetime) -> None:
@@ -196,6 +203,7 @@ class TradeBook:
             candidate=c,
             signal=trade.signal,
             source_strategy=trade.source_strategy,
+            instrument=trade.instrument,
             pnl=pnl,
             result=result,
         )
@@ -250,7 +258,30 @@ class TradeBook:
             "avg_loss": self.avg_loss,
             "expectancy": self.expectancy,
             "by_strategy": self._strategy_breakdown(),
+            "by_instrument": self._instrument_breakdown(),
         }
+
+    def _instrument_breakdown(self) -> dict[str, dict[str, object]]:
+        breakdown: dict[str, dict[str, object]] = {}
+        for trade in self._trades:
+            name = trade.instrument
+            if name not in breakdown:
+                breakdown[name] = {
+                    "wins": 0,
+                    "losses": 0,
+                    "breakevens": 0,
+                    "total_pnl": 0.0,
+                }
+            entry = breakdown[name]
+            if trade.result == "win":
+                entry["wins"] = entry["wins"] + 1  # type: ignore[operator]
+            elif trade.result == "loss":
+                entry["losses"] = entry["losses"] + 1  # type: ignore[operator]
+            elif trade.result == "breakeven":
+                entry["breakevens"] = entry["breakevens"] + 1  # type: ignore[operator]
+            if trade.pnl is not None:
+                entry["total_pnl"] = entry["total_pnl"] + trade.pnl  # type: ignore[operator]
+        return breakdown
 
     def _strategy_breakdown(self) -> dict[str, dict[str, object]]:
         breakdown: dict[str, dict[str, object]] = {}

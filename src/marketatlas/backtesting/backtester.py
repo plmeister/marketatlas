@@ -97,6 +97,7 @@ class Backtester:
                             signal,
                             name,
                             view.current.timestamp,
+                            instrument=str(self._store.symbol),
                         )
                         break
 

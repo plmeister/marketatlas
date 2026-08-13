@@ -384,6 +384,7 @@ class TestRunCommand:
         mock_trade.pnl = 50.0
         mock_trade.result = "win"
         mock_trade.source_strategy = "test"
+        mock_trade.instrument = "BTC-USD"
 
         mock_tradebook = MagicMock()
         mock_tradebook.summary = {

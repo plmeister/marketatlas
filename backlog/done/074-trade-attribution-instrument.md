@@ -23,10 +23,10 @@ store's canonical symbol — existing tests keep passing, trades now attributed.
 
 ## Acceptance Criteria
 
-- [ ] `TradeOutcome.instrument` populated for single-instrument runs (canonical symbol)
-- [ ] `summary["by_instrument"]` correct; matches `by_strategy` structure
-- [ ] CLI trade log shows instrument column
-- [ ] All existing tests pass unchanged in behavior (attribution additive)
+- [x] `TradeOutcome.instrument` populated for single-instrument runs (canonical symbol)
+- [x] `summary["by_instrument"]` correct; matches `by_strategy` structure
+- [x] CLI trade log shows instrument column
+- [x] All existing tests pass unchanged in behavior (attribution additive)
 
 ## Related
 

@@ -217,8 +217,9 @@ def run_command(args: argparse.Namespace) -> None:
             c = trade.candidate
             exit_str = trade.exit_timestamp.date().isoformat() if trade.exit_timestamp else "OPEN"
             dir_str = "LONG " if c.direction.value == "bullish" else "SHORT"
+            inst_str = f"{trade.instrument or '-':>12}"
             print(
-                f"  {i:3d}. {trade.entry_timestamp.date().isoformat()} -> {exit_str} "
+                f"  {i:3d}. {inst_str} {trade.entry_timestamp.date().isoformat()} -> {exit_str} "
                 f"{dir_str} entry=${c.entry:.0f} stop=${c.stop:.0f} "
                 f"target=${c.target:.0f} RR={c.rr_ratio:.1f} "
                 f"P&L=${trade.pnl:+.2f} ({trade.result})"

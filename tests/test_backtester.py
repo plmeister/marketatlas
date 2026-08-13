@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 
+import pytest
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.graph import AnalysisGraph
@@ -498,6 +499,30 @@ class TestBacktesterSignalEval:
         frame_store, tradebook = result.frames, result.tradebook
         assert len(frame_store) == 50
         assert tradebook.closed_count == 0
+
+    def test_trades_attributed_to_store_symbol(self) -> None:
+        store = _make_store(100)
+        signal = TradeSignal(
+            direction=TrendDirection.BULLISH,
+            entry_zone=(100.0, 102.0),
+            confidence=0.8,
+            source="test_signal",
+            evidence=(),
+        )
+        bundle = _make_signal_bundle(signals=[("strat", signal)])
+        bt = Backtester(store, bundle, window_size=50)
+        result = bt.run()
+        tradebook = result.tradebook
+        assert tradebook.closed_count >= 1
+        symbol = str(store.symbol)
+        assert all(t.instrument == symbol for t in tradebook.trades)
+        by_instrument = tradebook.summary["by_instrument"]
+        assert isinstance(by_instrument, dict)
+        entry = by_instrument[symbol]
+        assert isinstance(entry, dict)
+        counted = entry["wins"] + entry["losses"] + entry["breakevens"]
+        assert counted == tradebook.closed_count
+        assert entry["total_pnl"] == pytest.approx(tradebook.total_pnl)
 
 
 class TestBacktesterFrameRecording:
