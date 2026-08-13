@@ -37,7 +37,7 @@ class BasicSwingAnalyzer(Analyzer):
         all_candles: tuple[Candle, ...] = view.series_through_cursor() + (view.current,)
 
         if len(all_candles) < self._left_bars + self._right_bars + 1:
-            evidence = (
+            evidence: tuple[EvidenceEntry, ...] = (
                 EvidenceEntry(
                     text="Insufficient candles for swing detection",
                     level=EvidenceLevel.INFO,

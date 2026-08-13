@@ -1,4 +1,5 @@
 from bisect import bisect_right
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -81,7 +82,9 @@ class SupportResistanceAnalyzer(Analyzer):
             )
 
         atr_lookup = _ATRLookup(atr_series.points)
-        tolerance_at = lambda ts: self._level_tolerance_atr * atr_lookup.at(ts)  # noqa: E731
+        tolerance_at: Callable[[datetime], float] = lambda ts: (  # noqa: E731
+            self._level_tolerance_atr * atr_lookup.at(ts)
+        )
 
         cluster_low = self._cluster_swings(
             [

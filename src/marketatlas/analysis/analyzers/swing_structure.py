@@ -77,7 +77,7 @@ class SwingStructureAnalyzer(Analyzer):
             )
 
         # return with no pattern found
-        evidence: tuple[EvidenceEntry, ...] = (
+        no_pattern_evidence: tuple[EvidenceEntry, ...] = (
             EvidenceEntry(
                 text="most recent swings are not in an alternating pattern",
                 level=EvidenceLevel.INFO,
@@ -86,5 +86,5 @@ class SwingStructureAnalyzer(Analyzer):
         )
         return AnalysisResult(
             facts=(),
-            evidence=evidence,
+            evidence=no_pattern_evidence,
         )

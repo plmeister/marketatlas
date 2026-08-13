@@ -1007,24 +1007,53 @@ class TestRunPortfolio:
         assert exc_info.value.code == 1
         assert "missing 'instruments'" in capsys.readouterr().err
 
+    @patch("marketatlas.cli.DukascopyProvider")
+    @patch("marketatlas.cli.YahooProvider")
     @patch("marketatlas.strategy.loader.load_strategy")
-    def test_run_instruments_requires_registry(
-        self, mock_load: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    def test_run_instruments_uses_default_registry(
+        self,
+        mock_load: MagicMock,
+        mock_yahoo_cls: MagicMock,
+        mock_duka_cls: MagicMock,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         strategy_file, _, portfolio_path = self._setup(tmp_path, mock_load, ["GBPUSD"])
 
-        with pytest.raises(SystemExit) as exc_info:
-            _run_main(
-                "run",
-                "--strategy",
-                str(strategy_file),
-                "--instruments",
-                str(portfolio_path),
-                "--output",
-                "",
-            )
-        assert exc_info.value.code == 1
-        assert "requires an instrument registry" in capsys.readouterr().err
+        provider = MagicMock()
+
+        def fake_fetch(
+            symbol: Symbol, timeframe: Timeframe, start: datetime, end: datetime
+        ) -> MarketData:
+            return _make_market_data(symbol=symbol.name, n=200)
+
+        provider.fetch.side_effect = fake_fetch
+        mock_yahoo_cls.return_value = provider
+        mock_duka_cls.return_value = provider
+
+        data_dir = tmp_path / "cache"
+        _run_main(
+            "run",
+            "--strategy",
+            str(strategy_file),
+            "--instruments",
+            str(portfolio_path),
+            "--interval",
+            "1d",
+            "--start",
+            "2024-01-01",
+            "--end",
+            "2024-06-01",
+            "--data-dir",
+            str(data_dir),
+            "--output",
+            "",
+        )
+
+        captured = capsys.readouterr()
+        assert "PORTFOLIO DATA (1 instrument(s))" in captured.out
+        assert "GBPUSD" in captured.out
+        assert (data_dir / "GBPUSD.1d.parquet").exists()
 
     @patch("marketatlas.cli.YahooProvider")
     @patch("marketatlas.strategy.loader.load_strategy")
