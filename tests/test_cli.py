@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from marketatlas.backtesting.backtester import BacktestResult
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
-from marketatlas.data.providers.base import SymbolNotFoundError
+from marketatlas.data.providers.base import SymbolNotFoundError, UnsupportedTimeframeError
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
 
@@ -586,10 +586,10 @@ class TestRunCommand:
         mock_load.return_value = config
 
         mock_provider = MagicMock()
-        # D1 succeeds, W1 raises ValueError (unsupported)
+        # D1 succeeds, W1 raises UnsupportedTimeframeError (unsupported)
         mock_provider.fetch.side_effect = [
             _make_market_data(n=200),
-            ValueError("Unsupported timeframe: Timeframe.W1"),
+            UnsupportedTimeframeError(Symbol("GBPUSD"), Timeframe.W1),
         ]
         mock_yahoo_cls.return_value = mock_provider
 
@@ -1186,7 +1186,7 @@ class TestRunPortfolio:
             symbol: Symbol, timeframe: Timeframe, start: datetime, end: datetime
         ) -> MarketData:
             if timeframe == Timeframe.W1:
-                raise ValueError("Unsupported timeframe")
+                raise UnsupportedTimeframeError(symbol, timeframe)
             return _make_market_data(symbol=symbol.name, n=200)
 
         provider.fetch.side_effect = fake_fetch

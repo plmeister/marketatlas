@@ -3,6 +3,7 @@ from marketatlas.data.providers.base import (
     NoDataAvailableError,
     RateLimitError,
     SymbolNotFoundError,
+    UnsupportedTimeframeError,
 )
 from marketatlas.data.providers.chain import ProviderChain
 from marketatlas.data.providers.dukascopy import DukascopyProvider
@@ -15,5 +16,6 @@ __all__ = [
     "ProviderChain",
     "RateLimitError",
     "SymbolNotFoundError",
+    "UnsupportedTimeframeError",
     "YahooProvider",
 ]

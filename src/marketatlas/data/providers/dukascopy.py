@@ -13,6 +13,7 @@ from marketatlas.data.providers.base import (
     DataProvider,
     NoDataAvailableError,
     RateLimitError,
+    UnsupportedTimeframeError,
 )
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
@@ -52,10 +53,10 @@ class DukascopyProvider(DataProvider):
             return dukas
         return symbol.name
 
-    def _timeframe_minutes(self, timeframe: Timeframe) -> int:
+    def _timeframe_minutes(self, symbol: Symbol, timeframe: Timeframe) -> int:
         tf_min = self._TIMEFRAME_MINUTES.get(timeframe)
         if tf_min is None:
-            raise ValueError(f"Unsupported timeframe: {timeframe}")
+            raise UnsupportedTimeframeError(symbol, timeframe)
         return tf_min
 
     def _cache_path(
@@ -121,7 +122,7 @@ class DukascopyProvider(DataProvider):
         end: datetime,
     ) -> MarketData:
         instrument = self._resolve_symbol(symbol)
-        tf_minutes = self._timeframe_minutes(timeframe)
+        tf_minutes = self._timeframe_minutes(symbol, timeframe)
 
         all_candles: list[Candle] = []
 

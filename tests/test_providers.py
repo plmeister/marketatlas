@@ -9,6 +9,7 @@ from marketatlas.data.providers.base import (
     NoDataAvailableError,
     RateLimitError,
     SymbolNotFoundError,
+    UnsupportedTimeframeError,
 )
 from marketatlas.data.providers.chain import ProviderChain
 from marketatlas.data.providers.yahoo import YahooProvider
@@ -93,6 +94,53 @@ class TestProviderChain:
         with pytest.raises(NoDataAvailableError):
             chain.fetch(Symbol("BTC"), Timeframe.H1, datetime(2024, 1, 1), datetime(2024, 1, 2))
 
+    def test_chain_falls_back_on_unsupported_timeframe(self) -> None:
+        """A provider rejecting the timeframe must not stop the chain (073)."""
+        candles = [
+            Candle(
+                timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+                open=100.0,
+                high=105.0,
+                low=99.0,
+                close=103.0,
+                volume=1000.0,
+            )
+        ]
+        provider1 = MockProvider(error=UnsupportedTimeframeError(Symbol("EURUSD"), Timeframe.D1))
+        provider2 = MockProvider(candles=candles)
+
+        chain = ProviderChain([provider1, provider2])
+        result = chain.fetch(
+            Symbol("EURUSD"), Timeframe.D1, datetime(2024, 1, 1), datetime(2024, 1, 2)
+        )
+
+        assert result.candles == tuple(candles)
+        assert provider1.call_count == 1
+        assert provider2.call_count == 1
+
+    def test_chain_all_unsupported_re_raises_unsupported(self) -> None:
+        """Every provider rejecting the TF keeps the unsupported signal."""
+        provider1 = MockProvider(error=UnsupportedTimeframeError(Symbol("EURUSD"), Timeframe.D1))
+        provider2 = MockProvider(error=UnsupportedTimeframeError(Symbol("EURUSD"), Timeframe.D1))
+
+        chain = ProviderChain([provider1, provider2])
+
+        with pytest.raises(UnsupportedTimeframeError, match="Unsupported timeframe"):
+            chain.fetch(
+                Symbol("EURUSD"), Timeframe.D1, datetime(2024, 1, 1), datetime(2024, 1, 2)
+            )
+
+    def test_chain_hard_error_stops_chain(self) -> None:
+        """Hard failures (network) propagate instead of silently degrading."""
+        provider1 = MockProvider(error=RuntimeError("connection refused"))
+        provider2 = MockProvider()
+
+        chain = ProviderChain([provider1, provider2])
+
+        with pytest.raises(RuntimeError, match="connection refused"):
+            chain.fetch(Symbol("BTC"), Timeframe.H1, datetime(2024, 1, 1), datetime(2024, 1, 2))
+        assert provider2.call_count == 0
+
     def test_chain_supported_symbols(self) -> None:
         provider1 = MockProvider()
         provider1.supported_symbols = MagicMock(return_value=[Symbol("BTC"), Symbol("ETH")])
@@ -160,7 +208,7 @@ class TestYahooProvider:
         provider = YahooProvider()
         provider._TIMEFRAME_MAP = {}  # Clear map to test unsupported timeframe
 
-        with pytest.raises(ValueError, match="Unsupported timeframe"):
+        with pytest.raises(UnsupportedTimeframeError, match="Unsupported timeframe"):
             provider.fetch(
                 Symbol("BTC"),
                 Timeframe.H1,

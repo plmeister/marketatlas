@@ -21,6 +21,19 @@ class NoDataAvailableError(Exception):
         super().__init__(f"No data available for {symbol.name} {timeframe.value}")
 
 
+class UnsupportedTimeframeError(ValueError):
+    """Raised when a provider does not support the requested timeframe.
+
+    A capability property, not a transient failure — ProviderChain treats it
+    as fallback-able to the next provider.
+    """
+
+    def __init__(self, symbol: Symbol, timeframe: Timeframe) -> None:
+        self.symbol = symbol
+        self.timeframe = timeframe
+        super().__init__(f"Unsupported timeframe: {timeframe.value} ({symbol.name})")
+
+
 class DataProvider(ABC):
     @abstractmethod
     def fetch(

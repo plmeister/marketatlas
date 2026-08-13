@@ -14,6 +14,7 @@ from marketatlas.data.portfolio import (
     fetch_instrument_data,
     load_portfolio,
 )
+from marketatlas.data.providers.base import UnsupportedTimeframeError
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
 
@@ -211,10 +212,10 @@ class TestFetchInstrumentData:
 
         for inst in spec.instruments:
             provider = MagicMock()
-            # D1 native, W1 raises ValueError (unsupported) -> resampled
+            # D1 native, W1 raises UnsupportedTimeframeError (unsupported) -> resampled
             provider.fetch.side_effect = [
                 _market_data(inst.canonical, Timeframe.D1),
-                ValueError("Unsupported timeframe"),
+                UnsupportedTimeframeError(Symbol(inst.canonical), Timeframe.W1),
             ]
             data = fetch_instrument_data(
                 provider,
@@ -305,3 +306,73 @@ class TestFetchInstrumentData:
             Timeframe.D1,
         )
         assert set(data.timeframes) == {Timeframe.D1}
+
+    def test_chain_unsupported_timeframe_falls_back_to_next(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Forex portfolio path: dukascopy rejects 1d, yahoo serves it (073)."""
+        registry = InstrumentRegistry()
+        registry.add(_make_instruments()[0])
+        spec = load_portfolio(_write_portfolio(tmp_path, ["GBPUSD"]), registry)
+
+        dukas = MagicMock()
+        dukas.fetch.side_effect = UnsupportedTimeframeError(Symbol("GBPUSD"), Timeframe.D1)
+        yahoo = MagicMock()
+        yahoo.fetch.return_value = _market_data("GBPUSD", Timeframe.D1)
+        from marketatlas.data.providers.chain import ProviderChain
+
+        provider = ProviderChain([dukas, yahoo])
+        datastore = DataStore(tmp_path / "store")
+        start = datetime(2024, 1, 1, tzinfo=UTC)
+        end = datetime(2024, 6, 1, tzinfo=UTC)
+
+        data = fetch_instrument_data(
+            provider,
+            datastore,
+            spec.instruments[0],
+            [Timeframe.D1],
+            start,
+            end,
+            Timeframe.D1,
+        )
+
+        assert set(data.timeframes) == {Timeframe.D1}
+        assert dukas.fetch.call_count == 1
+        assert yahoo.fetch.call_count == 1
+        # chain swallowed the unsupported timeframe: no per-instrument drop log
+        assert capsys.readouterr().err == ""
+
+    def test_unsupported_timeframe_log_names_provider_tf_reason(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Bare provider rejecting a TF logs provider + timeframe + reason, then resamples."""
+        registry = InstrumentRegistry()
+        registry.add(_make_instruments()[0])
+        _write_registry(tmp_path, _make_instruments())
+        spec = load_portfolio(_write_portfolio(tmp_path, ["GBPUSD"]), registry)
+
+        provider = MagicMock()
+        provider.fetch.side_effect = [
+            _market_data("GBPUSD", Timeframe.D1),
+            UnsupportedTimeframeError(Symbol("GBPUSD"), Timeframe.W1),
+        ]
+        datastore = DataStore(tmp_path / "store")
+        start = datetime(2024, 1, 1, tzinfo=UTC)
+        end = datetime(2024, 6, 1, tzinfo=UTC)
+
+        data = fetch_instrument_data(
+            provider,
+            datastore,
+            spec.instruments[0],
+            [Timeframe.D1, Timeframe.W1],
+            start,
+            end,
+            Timeframe.D1,
+        )
+
+        assert set(data.timeframes) == {Timeframe.D1, Timeframe.W1}
+        assert data.resampled == ((Timeframe.W1, Timeframe.D1),)
+        err = capsys.readouterr().err
+        assert "1w" in err
+        assert "unsupported by MagicMock" in err
+        assert "Unsupported timeframe" in err

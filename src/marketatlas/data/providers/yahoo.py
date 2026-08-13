@@ -6,7 +6,12 @@ from time import sleep
 import yfinance as yf  # type: ignore[import-untyped]
 
 from marketatlas.data.instrument import InstrumentRegistry
-from marketatlas.data.providers.base import DataProvider, RateLimitError, SymbolNotFoundError
+from marketatlas.data.providers.base import (
+    DataProvider,
+    RateLimitError,
+    SymbolNotFoundError,
+    UnsupportedTimeframeError,
+)
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
 
@@ -49,7 +54,7 @@ class YahooProvider(DataProvider):
     ) -> MarketData:
         interval = self._TIMEFRAME_MAP.get(timeframe)
         if interval is None:
-            raise ValueError(f"Unsupported timeframe: {timeframe}")
+            raise UnsupportedTimeframeError(symbol, timeframe)
 
         resolved = self._resolve_symbol(symbol)
         ticker = yf.Ticker(resolved.name)

@@ -11,7 +11,7 @@ import yaml
 
 from marketatlas.data.datastore import DataStore
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
-from marketatlas.data.providers.base import DataProvider
+from marketatlas.data.providers.base import DataProvider, UnsupportedTimeframeError
 from marketatlas.data.resample import CannotResampleError, resample, tf_minutes
 from marketatlas.data.types import MarketData, Symbol, Timeframe
 
@@ -172,8 +172,11 @@ def fetch_instrument_data(
             fetched[tf] = md
             print(f"{prefix}{tf.value}: fetched natively ({len(md.candles)} candles)")
             continue
-        except ValueError:
-            pass
+        except UnsupportedTimeframeError as e:
+            print(
+                f"{prefix}{tf.value}: unsupported by {type(provider).__name__} — {e}",
+                file=sys.stderr,
+            )
         except Exception as e:
             print(f"{prefix}{tf.value}: fetch error — {e}", file=sys.stderr)
             continue

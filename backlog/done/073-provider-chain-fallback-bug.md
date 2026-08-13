@@ -1,6 +1,6 @@
 # 073: ProviderChain fallback misses unsupported-timeframe ValueError
 
-**Status:** pending
+**Status:** done
 **Epic:** data
 **Priority:** high
 

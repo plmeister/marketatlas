@@ -8,9 +8,12 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
-from marketatlas.data.providers.base import NoDataAvailableError, RateLimitError
+from marketatlas.data.providers.base import (
+    NoDataAvailableError,
+    RateLimitError,
+    UnsupportedTimeframeError,
+)
 from marketatlas.data.providers.dukascopy import DukascopyProvider
 from marketatlas.data.types import MarketData, Symbol, Timeframe
 
@@ -89,7 +92,7 @@ class TestDukascopyProvider:
 
     def test_fetch_unsupported_timeframe(self) -> None:
         provider = DukascopyProvider()
-        with pytest.raises(ValueError, match="Unsupported timeframe"):
+        with pytest.raises(UnsupportedTimeframeError, match="Unsupported timeframe"):
             provider.fetch(
                 Symbol("EURUSD"),
                 Timeframe.W1,
@@ -277,7 +280,7 @@ class TestDukascopyProvider:
     def test_unsupported_timeframe_raises(self) -> None:
         provider = DukascopyProvider()
 
-        with pytest.raises(ValueError, match="Unsupported timeframe"):
+        with pytest.raises(UnsupportedTimeframeError, match="Unsupported timeframe"):
             provider.fetch(
                 Symbol("EURUSD"),
                 Timeframe.D1,
