@@ -1,8 +1,18 @@
 # 070: Portfolio Backtester — Shared TradeBook with Instrument Attribution
 
-**Status:** in-progress  
+**Status:** superseded (2026-08-13) — split into 074/075/076/077; see below. Do not implement.
 **Epic:** portfolio  
 **Priority:** high
+
+> This epic was too large for a single tend run (timed out repeatedly). It is
+> split into sequential, independently-completable items:
+>
+> - **074** — trade attribution (instrument field on TradeOutcome)
+> - **075** — PortfolioBacktester core (merged calendar, shared tradebook)
+> - **076** — CLI portfolio run path
+> - **077** — portfolio visualization (index + per-instrument charts)
+>
+> The original scope below is retained for reference.
 
 ## Description
 
