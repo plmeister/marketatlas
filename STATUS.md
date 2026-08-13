@@ -19,6 +19,12 @@
 - [x] 002 — External data fetcher
 - [x] 066 — Persistent data store
 
+## Data Layer
+
+- [x] 032 — Dukascopy provider (classic bi5 feed)
+- [x] 071 — Dukascopy D1/W1 via bi5 (superseded by 072)
+- [x] 072 — Dukascopy moved to freeserv chart/json3 API (bi5 gone; `FeedUnavailableError` for feed-down, `ProviderChain` fallback)
+
 ## Strategy Layer
 
 - [x] 016 — Strategy config loader (YAML)

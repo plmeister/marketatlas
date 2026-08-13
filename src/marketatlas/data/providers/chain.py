@@ -4,6 +4,7 @@ from datetime import datetime
 
 from marketatlas.data.providers.base import (
     DataProvider,
+    FeedUnavailableError,
     NoDataAvailableError,
     RateLimitError,
     SymbolNotFoundError,
@@ -32,7 +33,12 @@ class ProviderChain(DataProvider):
         for provider in self._providers:
             try:
                 return provider.fetch(symbol, timeframe, start, end)
-            except (SymbolNotFoundError, RateLimitError, UnsupportedTimeframeError) as e:
+            except (
+                SymbolNotFoundError,
+                RateLimitError,
+                FeedUnavailableError,
+                UnsupportedTimeframeError,
+            ) as e:
                 last_error = e
                 if not isinstance(e, UnsupportedTimeframeError):
                     all_unsupported = False

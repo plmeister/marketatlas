@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import struct
-import zlib
+import json
 from datetime import UTC, datetime
 from email.message import Message
 from pathlib import Path
@@ -10,35 +9,35 @@ from unittest.mock import MagicMock, patch
 import pytest
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
 from marketatlas.data.providers.base import (
+    FeedUnavailableError,
     NoDataAvailableError,
     RateLimitError,
 )
 from marketatlas.data.providers.dukascopy import DukascopyProvider
 from marketatlas.data.types import MarketData, Symbol, Timeframe
 
-RECORD_FORMAT = struct.Struct(">Ifffff")
+
+def _make_jsonp(rows: list[list[float]]) -> bytes:
+    """Wrap [ms, open, high, low, close, volume] rows in a JSONP response."""
+    return f"probe_cb({json.dumps(rows)});".encode()
 
 
-def _make_bi5(candles: list[tuple[int, float, float, float, float, float]]) -> bytes:
-    """Pack (sec_offset, open, high, low, close, volume) tuples into BI5 binary."""
-    data = bytearray()
-    for c in candles:
-        data.extend(RECORD_FORMAT.pack(c[0], c[1], c[2], c[3], c[4], c[5]))
-    return zlib.compress(bytes(data))
+def _mock_response(body: bytes) -> MagicMock:
+    resp = MagicMock()
+    resp.__enter__.return_value = resp
+    resp.read.return_value = body
+    return resp
 
 
 class TestDukascopyProvider:
     def test_fetch_returns_market_data(self) -> None:
-        bi5 = _make_bi5([
-            (0, 100.0, 105.0, 99.0, 103.0, 1000.0),
-            (3600, 103.0, 108.0, 102.0, 107.0, 1500.0),
+        body = _make_jsonp([
+            [1705276800000, 100.0, 105.0, 99.0, 103.0, 1000.0],
+            [1705280400000, 103.0, 108.0, 102.0, 107.0, 1500.0],
         ])
 
         with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = bi5
-            mock_urlopen.return_value = mock_resp
+            mock_urlopen.return_value = _mock_response(body)
 
             provider = DukascopyProvider()
             result = provider.fetch(
@@ -68,15 +67,12 @@ class TestDukascopyProvider:
         assert c1.volume == 1500.0
 
     def test_fetch_timestamps_are_utc(self) -> None:
-        bi5 = _make_bi5([
-            (0, 100.0, 105.0, 99.0, 103.0, 1000.0),
+        body = _make_jsonp([
+            [1705276800000, 100.0, 105.0, 99.0, 103.0, 1000.0],
         ])
 
         with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = bi5
-            mock_urlopen.return_value = mock_resp
+            mock_urlopen.return_value = _mock_response(body)
 
             provider = DukascopyProvider()
             result = provider.fetch(
@@ -92,7 +88,101 @@ class TestDukascopyProvider:
     def test_all_timeframes_supported(self) -> None:
         provider = DukascopyProvider()
         for tf in Timeframe:
-            assert provider._timeframe_minutes(Symbol("EURUSD"), tf) > 0
+            assert provider._interval(Symbol("EURUSD"), tf)
+
+    def test_fetch_daily(self) -> None:
+        body = _make_jsonp([
+            [1705276800000, 100.0, 105.0, 99.0, 103.0, 1000.0],
+            [1705363200000, 104.0, 108.0, 102.0, 106.0, 1200.0],
+        ])
+
+        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = _mock_response(body)
+
+            provider = DukascopyProvider()
+            result = provider.fetch(
+                Symbol("EURUSD"),
+                Timeframe.D1,
+                datetime(2024, 1, 15, tzinfo=UTC),
+                datetime(2024, 1, 16, 23, 59, tzinfo=UTC),
+            )
+
+            assert len(result.candles) == 2
+            assert result.candles[0].timestamp == datetime(2024, 1, 15, tzinfo=UTC)
+            assert result.candles[1].timestamp == datetime(2024, 1, 16, tzinfo=UTC)
+            url = mock_urlopen.call_args[0][0].get_full_url()
+            assert "interval=1DAY" in url
+            assert "instrument=EUR/USD" in url
+            assert "offer_side=B" in url
+            assert "path=chart/json3" in url
+
+    def test_fetch_weekly(self) -> None:
+        body = _make_jsonp([
+            [1705276800000, 100.0, 105.0, 99.0, 103.0, 1000.0],
+        ])
+
+        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = _mock_response(body)
+
+            provider = DukascopyProvider()
+            result = provider.fetch(
+                Symbol("EURUSD"),
+                Timeframe.W1,
+                datetime(2024, 1, 15, tzinfo=UTC),
+                datetime(2024, 1, 21, 23, 59, tzinfo=UTC),
+            )
+
+            assert len(result.candles) == 1
+            url = mock_urlopen.call_args[0][0].get_full_url()
+            assert "interval=1WEEK" in url
+
+    def test_pagination_advances_cursor(self) -> None:
+        # Two pages; page two repeats the boundary row which must be dropped.
+        page1 = _make_jsonp([
+            [1705276800000, 100.0, 105.0, 99.0, 103.0, 1000.0],
+            [1705280400000, 103.0, 108.0, 102.0, 107.0, 1500.0],
+        ])
+        page2 = _make_jsonp([
+            [1705280400000, 103.0, 108.0, 102.0, 107.0, 1500.0],
+            [1705284000000, 107.0, 110.0, 106.0, 109.0, 900.0],
+        ])
+
+        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+            mock_urlopen.side_effect = [_mock_response(page1), _mock_response(page2)]
+
+            provider = DukascopyProvider()
+            provider._PAGE_LIMIT = 2
+            result = provider.fetch(
+                Symbol("EURUSD"),
+                Timeframe.H1,
+                datetime(2024, 1, 15, tzinfo=UTC),
+                datetime(2024, 1, 15, 23, 59, tzinfo=UTC),
+            )
+
+            assert len(result.candles) == 3
+            assert mock_urlopen.call_count == 2
+            second_url = mock_urlopen.call_args_list[1][0][0].get_full_url()
+            assert f"last_update={1705280400000}" in second_url
+
+    def test_pagination_stops_at_end(self) -> None:
+        body = _make_jsonp([
+            [1705276800000, 100.0, 105.0, 99.0, 103.0, 1000.0],
+            [1705363200000, 104.0, 108.0, 102.0, 106.0, 1200.0],
+        ])
+
+        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = _mock_response(body)
+
+            provider = DukascopyProvider()
+            result = provider.fetch(
+                Symbol("EURUSD"),
+                Timeframe.H1,
+                datetime(2024, 1, 15, tzinfo=UTC),
+                datetime(2024, 1, 15, 23, 59, tzinfo=UTC),
+            )
+
+            assert len(result.candles) == 1
+            assert mock_urlopen.call_count == 1
 
     def test_fetch_404_raises_no_data(self) -> None:
         from urllib.error import HTTPError
@@ -133,17 +223,14 @@ class TestDukascopyProvider:
     def test_rate_limit_then_succeeds(self) -> None:
         from urllib.error import HTTPError
 
-        bi5 = _make_bi5([
-            (0, 100.0, 105.0, 99.0, 103.0, 1000.0),
+        body = _make_jsonp([
+            [1705276800000, 100.0, 105.0, 99.0, 103.0, 1000.0],
         ])
 
         fail = HTTPError("http://example.com", 429, "Too Many", Message(), None)
 
         with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = bi5
-            mock_urlopen.side_effect = [fail, mock_resp]
+            mock_urlopen.side_effect = [fail, _mock_response(body)]
 
             provider = DukascopyProvider(max_retries=3, retry_delay=0.01)
             result = provider.fetch(
@@ -156,24 +243,93 @@ class TestDukascopyProvider:
             assert len(result.candles) == 1
             assert mock_urlopen.call_count == 2
 
-    def test_cache_avoids_network(self) -> None:
-        bi5 = _make_bi5([
-            (0, 100.0, 105.0, 99.0, 103.0, 1000.0),
+    def test_http_503_retries_then_feed_unavailable(self) -> None:
+        from urllib.error import HTTPError
+
+        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+            mock_urlopen.side_effect = HTTPError(
+                "http://example.com", 503, "Service Unavailable", Message(), None
+            )
+
+            provider = DukascopyProvider(max_retries=2, retry_delay=0.01)
+            with pytest.raises(FeedUnavailableError):
+                provider.fetch(
+                    Symbol("EURUSD"),
+                    Timeframe.H1,
+                    datetime(2024, 1, 15, tzinfo=UTC),
+                    datetime(2024, 1, 15, 23, 59, tzinfo=UTC),
+                )
+
+            assert mock_urlopen.call_count == 2
+
+    def test_http_503_then_succeeds(self) -> None:
+        from urllib.error import HTTPError
+
+        body = _make_jsonp([
+            [1705276800000, 100.0, 105.0, 99.0, 103.0, 1000.0],
         ])
 
+        fail = HTTPError("http://example.com", 503, "Service Unavailable", Message(), None)
+
+        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+            mock_urlopen.side_effect = [fail, _mock_response(body)]
+
+            provider = DukascopyProvider(max_retries=3, retry_delay=0.01)
+            result = provider.fetch(
+                Symbol("EURUSD"),
+                Timeframe.H1,
+                datetime(2024, 1, 15, tzinfo=UTC),
+                datetime(2024, 1, 15, 23, 59, tzinfo=UTC),
+            )
+
+            assert len(result.candles) == 1
+            assert mock_urlopen.call_count == 2
+
+    def test_urlerror_retries_then_feed_unavailable(self) -> None:
+        from urllib.error import URLError
+
+        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+            mock_urlopen.side_effect = URLError("connection reset")
+
+            provider = DukascopyProvider(max_retries=2, retry_delay=0.01)
+            with pytest.raises(FeedUnavailableError) as excinfo:
+                provider.fetch(
+                    Symbol("EURUSD"),
+                    Timeframe.H1,
+                    datetime(2024, 1, 15, tzinfo=UTC),
+                    datetime(2024, 1, 15, 23, 59, tzinfo=UTC),
+                )
+
+            assert "EUR/USD" in str(excinfo.value)
+            assert mock_urlopen.call_count == 2
+
+    def test_urlerror_then_succeeds(self) -> None:
+        from urllib.error import URLError
+
+        body = _make_jsonp([
+            [1705276800000, 100.0, 105.0, 99.0, 103.0, 1000.0],
+        ])
+
+        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+            mock_urlopen.side_effect = [URLError("reset"), _mock_response(body)]
+
+            provider = DukascopyProvider(max_retries=3, retry_delay=0.01)
+            result = provider.fetch(
+                Symbol("EURUSD"),
+                Timeframe.H1,
+                datetime(2024, 1, 15, tzinfo=UTC),
+                datetime(2024, 1, 15, 23, 59, tzinfo=UTC),
+            )
+
+            assert len(result.candles) == 1
+
+    def test_cache_avoids_network(self) -> None:
+        rows = [[1705276800000, 100.0, 105.0, 99.0, 103.0, 1000.0]]
         cache_dir = Path("/tmp/test_dukascopy_cache")
-        cache_file = (
-            cache_dir
-            / "dukascopy"
-            / "EURUSD"
-            / "1h"
-            / "2024"
-            / "01"
-            / "15.bi5"
-        )
+        cache_file = cache_dir / "dukascopy" / "EUR/USD" / "1h" / "1705276800000.json"
 
         cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_bytes(bi5)
+        cache_file.write_text(json.dumps(rows), encoding="utf-8")
 
         try:
             with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
@@ -191,43 +347,9 @@ class TestDukascopyProvider:
             import shutil
             shutil.rmtree(str(cache_dir))
 
-    def test_fetch_multiple_days(self) -> None:
-        bi5_day1 = _make_bi5([
-            (0, 100.0, 105.0, 99.0, 103.0, 1000.0),
-        ])
-        bi5_day2 = _make_bi5([
-            (0, 104.0, 108.0, 102.0, 106.0, 1200.0),
-        ])
-
-        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
-            resp1 = MagicMock()
-            resp1.__enter__.return_value = resp1
-            resp1.read.return_value = bi5_day1
-            resp2 = MagicMock()
-            resp2.__enter__.return_value = resp2
-            resp2.read.return_value = bi5_day2
-            mock_urlopen.side_effect = [resp1, resp2]
-
-            provider = DukascopyProvider()
-            result = provider.fetch(
-                Symbol("EURUSD"),
-                Timeframe.H1,
-                datetime(2024, 1, 15, tzinfo=UTC),
-                datetime(2024, 1, 16, 23, 59, tzinfo=UTC),
-            )
-
-            assert len(result.candles) == 2
-            assert result.candles[0].open == 100.0
-            assert result.candles[1].open == 104.0
-            assert mock_urlopen.call_count == 2
-
     def test_fetch_no_data_raises(self) -> None:
-        from urllib.error import HTTPError
-
         with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
-            mock_urlopen.side_effect = HTTPError(
-                "http://example.com", 404, "Not Found", Message(), None
-            )
+            mock_urlopen.return_value = _mock_response(_make_jsonp([]))
 
             provider = DukascopyProvider()
             with pytest.raises(NoDataAvailableError):
@@ -239,8 +361,8 @@ class TestDukascopyProvider:
                 )
 
     def test_symbol_resolution_with_registry(self) -> None:
-        bi5 = _make_bi5([
-            (0, 100.0, 105.0, 99.0, 103.0, 1000.0),
+        body = _make_jsonp([
+            [1705276800000, 100.0, 105.0, 99.0, 103.0, 1000.0],
         ])
 
         registry = InstrumentRegistry()
@@ -254,10 +376,7 @@ class TestDukascopyProvider:
         )
 
         with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = bi5
-            mock_urlopen.return_value = mock_resp
+            mock_urlopen.return_value = _mock_response(body)
 
             provider = DukascopyProvider(registry=registry)
             result = provider.fetch(
@@ -268,128 +387,32 @@ class TestDukascopyProvider:
             )
 
             assert len(result.candles) == 1
-            called_url = mock_urlopen.call_args[0][0]
+            called_url = mock_urlopen.call_args[0][0].get_full_url()
             assert "EUR/USD" in called_url
 
-    def test_fetch_daily(self) -> None:
-        daily = _make_bi5([
-            (0, 100.0, 105.0, 99.0, 103.0, 1000.0),
-        ])
-        weekly = _make_bi5([
-            (0, 104.0, 108.0, 102.0, 106.0, 1200.0),
+    def test_symbol_resolution_default_slash_format(self) -> None:
+        body = _make_jsonp([
+            [1705276800000, 100.0, 105.0, 99.0, 103.0, 1000.0],
         ])
 
         with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
-            resp1 = MagicMock()
-            resp1.__enter__.return_value = resp1
-            resp1.read.return_value = daily
-            resp2 = MagicMock()
-            resp2.__enter__.return_value = resp2
-            resp2.read.return_value = weekly
-            mock_urlopen.side_effect = [resp1, resp2]
+            mock_urlopen.return_value = _mock_response(body)
 
             provider = DukascopyProvider()
             result = provider.fetch(
                 Symbol("EURUSD"),
-                Timeframe.D1,
+                Timeframe.H1,
                 datetime(2024, 1, 15, tzinfo=UTC),
-                datetime(2024, 1, 16, 23, 59, tzinfo=UTC),
-            )
-
-            assert len(result.candles) == 2
-            assert result.candles[0].timestamp == datetime(2024, 1, 15, tzinfo=UTC)
-            assert result.candles[1].timestamp == datetime(2024, 1, 16, tzinfo=UTC)
-            urls = [call.args[0] for call in mock_urlopen.call_args_list]
-            assert all("_ohlcv_1440.bi5" in u for u in urls)
-
-    def test_fetch_weekly_probes_week_granular(self) -> None:
-        daily = _make_bi5([
-            (0, 100.0, 105.0, 99.0, 103.0, 1000.0),
-        ])
-
-        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
-            resp = MagicMock()
-            resp.__enter__.return_value = resp
-            resp.read.return_value = daily
-            mock_urlopen.return_value = resp
-
-            provider = DukascopyProvider()
-            result = provider.fetch(
-                Symbol("EURUSD"),
-                Timeframe.W1,
-                datetime(2024, 1, 15, tzinfo=UTC),  # Monday
-                datetime(2024, 1, 28, 23, 59, tzinfo=UTC),  # two weeks later
-            )
-
-            # Two weeks -> two candles (Monday probe succeeds each week).
-            assert len(result.candles) == 2
-            assert result.candles[0].timestamp == datetime(2024, 1, 15, tzinfo=UTC)
-            assert result.candles[1].timestamp == datetime(2024, 1, 22, tzinfo=UTC)
-            urls = [call.args[0] for call in mock_urlopen.call_args_list]
-            assert len(urls) == 2
-            assert all("_ohlcv_10080.bi5" in u for u in urls)
-
-    def test_fetch_weekly_scans_week_when_probe_404(self) -> None:
-        from urllib.error import HTTPError
-
-        daily = _make_bi5([
-            (0, 100.0, 105.0, 99.0, 103.0, 1000.0),
-        ])
-        not_found = HTTPError("http://example.com", 404, "Not Found", Message(), None)
-
-        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
-            resp = MagicMock()
-            resp.__enter__.return_value = resp
-            resp.read.return_value = daily
-            # Monday + Tuesday 404, Wednesday serves the weekly bar.
-            mock_urlopen.side_effect = [not_found, not_found, resp]
-
-            provider = DukascopyProvider()
-            result = provider.fetch(
-                Symbol("EURUSD"),
-                Timeframe.W1,
-                datetime(2024, 1, 15, tzinfo=UTC),  # Monday
-                datetime(2024, 1, 21, 23, 59, tzinfo=UTC),
+                datetime(2024, 1, 15, 23, 59, tzinfo=UTC),
             )
 
             assert len(result.candles) == 1
-            assert result.candles[0].timestamp == datetime(2024, 1, 17, tzinfo=UTC)
-            assert mock_urlopen.call_count == 3
+            called_url = mock_urlopen.call_args[0][0].get_full_url()
+            assert "instrument=EUR/USD" in called_url
 
-    def test_fetch_weekly_caches_probe_day(self) -> None:
-        daily = _make_bi5([
-            (0, 100.0, 105.0, 99.0, 103.0, 1000.0),
-        ])
-
-        cache_dir = Path("/tmp/test_dukascopy_weekly_cache")
-        cache_file = (
-            cache_dir
-            / "dukascopy"
-            / "EURUSD"
-            / "1w"
-            / "2024"
-            / "01"
-            / "15.bi5"
-        )
-
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_bytes(daily)
-
-        try:
-            with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
-                provider = DukascopyProvider(cache_dir=cache_dir)
-                result = provider.fetch(
-                    Symbol("EURUSD"),
-                    Timeframe.W1,
-                    datetime(2024, 1, 15, tzinfo=UTC),
-                    datetime(2024, 1, 21, 23, 59, tzinfo=UTC),
-                )
-
-            assert len(result.candles) == 1
-            mock_urlopen.assert_not_called()
-        finally:
-            import shutil
-            shutil.rmtree(str(cache_dir))
+    def test_symbol_resolution_passthrough_non_fx(self) -> None:
+        assert DukascopyProvider()._resolve_symbol(Symbol("BTC/USD")) == "BTC/USD"
+        assert DukascopyProvider()._resolve_symbol(Symbol("XAUUSD")) == "XAU/USD"
 
     def test_supported_symbols_returns_empty(self) -> None:
         provider = DukascopyProvider()

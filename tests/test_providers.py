@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from marketatlas.data.providers.base import (
     DataProvider,
+    FeedUnavailableError,
     NoDataAvailableError,
     RateLimitError,
     SymbolNotFoundError,
@@ -117,6 +118,40 @@ class TestProviderChain:
         assert result.candles == tuple(candles)
         assert provider1.call_count == 1
         assert provider2.call_count == 1
+
+    def test_chain_falls_back_on_feed_unavailable(self) -> None:
+        candles = [
+            Candle(
+                timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+                open=100.0,
+                high=105.0,
+                low=99.0,
+                close=103.0,
+                volume=1000.0,
+            )
+        ]
+        provider1 = MockProvider(error=FeedUnavailableError("dukascopy down"))
+        provider2 = MockProvider(candles=candles)
+
+        chain = ProviderChain([provider1, provider2])
+        result = chain.fetch(
+            Symbol("EURUSD"), Timeframe.H1, datetime(2024, 1, 1), datetime(2024, 1, 2)
+        )
+
+        assert result.candles == tuple(candles)
+        assert provider1.call_count == 1
+        assert provider2.call_count == 1
+
+    def test_chain_all_unavailable_raises_no_data(self) -> None:
+        provider1 = MockProvider(error=FeedUnavailableError("dukascopy down"))
+        provider2 = MockProvider(error=FeedUnavailableError("yahoo down"))
+
+        chain = ProviderChain([provider1, provider2])
+
+        with pytest.raises(NoDataAvailableError):
+            chain.fetch(
+                Symbol("EURUSD"), Timeframe.H1, datetime(2024, 1, 1), datetime(2024, 1, 2)
+            )
 
     def test_chain_all_unsupported_re_raises_unsupported(self) -> None:
         """Every provider rejecting the TF keeps the unsupported signal."""
