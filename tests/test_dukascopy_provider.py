@@ -12,7 +12,6 @@ from marketatlas.data.instrument import Instrument, InstrumentRegistry
 from marketatlas.data.providers.base import (
     NoDataAvailableError,
     RateLimitError,
-    UnsupportedTimeframeError,
 )
 from marketatlas.data.providers.dukascopy import DukascopyProvider
 from marketatlas.data.types import MarketData, Symbol, Timeframe
@@ -90,15 +89,10 @@ class TestDukascopyProvider:
         assert result.candles[0].timestamp.tzinfo is not None
         assert result.candles[0].timestamp == datetime(2024, 1, 15, tzinfo=UTC)
 
-    def test_fetch_unsupported_timeframe(self) -> None:
+    def test_all_timeframes_supported(self) -> None:
         provider = DukascopyProvider()
-        with pytest.raises(UnsupportedTimeframeError, match="Unsupported timeframe"):
-            provider.fetch(
-                Symbol("EURUSD"),
-                Timeframe.W1,
-                datetime(2024, 1, 1, tzinfo=UTC),
-                datetime(2024, 1, 8, tzinfo=UTC),
-            )
+        for tf in Timeframe:
+            assert provider._timeframe_minutes(Symbol("EURUSD"), tf) > 0
 
     def test_fetch_404_raises_no_data(self) -> None:
         from urllib.error import HTTPError
@@ -277,16 +271,125 @@ class TestDukascopyProvider:
             called_url = mock_urlopen.call_args[0][0]
             assert "EUR/USD" in called_url
 
-    def test_unsupported_timeframe_raises(self) -> None:
-        provider = DukascopyProvider()
+    def test_fetch_daily(self) -> None:
+        daily = _make_bi5([
+            (0, 100.0, 105.0, 99.0, 103.0, 1000.0),
+        ])
+        weekly = _make_bi5([
+            (0, 104.0, 108.0, 102.0, 106.0, 1200.0),
+        ])
 
-        with pytest.raises(UnsupportedTimeframeError, match="Unsupported timeframe"):
-            provider.fetch(
+        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+            resp1 = MagicMock()
+            resp1.__enter__.return_value = resp1
+            resp1.read.return_value = daily
+            resp2 = MagicMock()
+            resp2.__enter__.return_value = resp2
+            resp2.read.return_value = weekly
+            mock_urlopen.side_effect = [resp1, resp2]
+
+            provider = DukascopyProvider()
+            result = provider.fetch(
                 Symbol("EURUSD"),
                 Timeframe.D1,
-                datetime(2024, 1, 1, tzinfo=UTC),
-                datetime(2024, 1, 31, tzinfo=UTC),
+                datetime(2024, 1, 15, tzinfo=UTC),
+                datetime(2024, 1, 16, 23, 59, tzinfo=UTC),
             )
+
+            assert len(result.candles) == 2
+            assert result.candles[0].timestamp == datetime(2024, 1, 15, tzinfo=UTC)
+            assert result.candles[1].timestamp == datetime(2024, 1, 16, tzinfo=UTC)
+            urls = [call.args[0] for call in mock_urlopen.call_args_list]
+            assert all("_ohlcv_1440.bi5" in u for u in urls)
+
+    def test_fetch_weekly_probes_week_granular(self) -> None:
+        daily = _make_bi5([
+            (0, 100.0, 105.0, 99.0, 103.0, 1000.0),
+        ])
+
+        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+            resp = MagicMock()
+            resp.__enter__.return_value = resp
+            resp.read.return_value = daily
+            mock_urlopen.return_value = resp
+
+            provider = DukascopyProvider()
+            result = provider.fetch(
+                Symbol("EURUSD"),
+                Timeframe.W1,
+                datetime(2024, 1, 15, tzinfo=UTC),  # Monday
+                datetime(2024, 1, 28, 23, 59, tzinfo=UTC),  # two weeks later
+            )
+
+            # Two weeks -> two candles (Monday probe succeeds each week).
+            assert len(result.candles) == 2
+            assert result.candles[0].timestamp == datetime(2024, 1, 15, tzinfo=UTC)
+            assert result.candles[1].timestamp == datetime(2024, 1, 22, tzinfo=UTC)
+            urls = [call.args[0] for call in mock_urlopen.call_args_list]
+            assert len(urls) == 2
+            assert all("_ohlcv_10080.bi5" in u for u in urls)
+
+    def test_fetch_weekly_scans_week_when_probe_404(self) -> None:
+        from urllib.error import HTTPError
+
+        daily = _make_bi5([
+            (0, 100.0, 105.0, 99.0, 103.0, 1000.0),
+        ])
+        not_found = HTTPError("http://example.com", 404, "Not Found", Message(), None)
+
+        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+            resp = MagicMock()
+            resp.__enter__.return_value = resp
+            resp.read.return_value = daily
+            # Monday + Tuesday 404, Wednesday serves the weekly bar.
+            mock_urlopen.side_effect = [not_found, not_found, resp]
+
+            provider = DukascopyProvider()
+            result = provider.fetch(
+                Symbol("EURUSD"),
+                Timeframe.W1,
+                datetime(2024, 1, 15, tzinfo=UTC),  # Monday
+                datetime(2024, 1, 21, 23, 59, tzinfo=UTC),
+            )
+
+            assert len(result.candles) == 1
+            assert result.candles[0].timestamp == datetime(2024, 1, 17, tzinfo=UTC)
+            assert mock_urlopen.call_count == 3
+
+    def test_fetch_weekly_caches_probe_day(self) -> None:
+        daily = _make_bi5([
+            (0, 100.0, 105.0, 99.0, 103.0, 1000.0),
+        ])
+
+        cache_dir = Path("/tmp/test_dukascopy_weekly_cache")
+        cache_file = (
+            cache_dir
+            / "dukascopy"
+            / "EURUSD"
+            / "1w"
+            / "2024"
+            / "01"
+            / "15.bi5"
+        )
+
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_bytes(daily)
+
+        try:
+            with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+                provider = DukascopyProvider(cache_dir=cache_dir)
+                result = provider.fetch(
+                    Symbol("EURUSD"),
+                    Timeframe.W1,
+                    datetime(2024, 1, 15, tzinfo=UTC),
+                    datetime(2024, 1, 21, 23, 59, tzinfo=UTC),
+                )
+
+            assert len(result.candles) == 1
+            mock_urlopen.assert_not_called()
+        finally:
+            import shutil
+            shutil.rmtree(str(cache_dir))
 
     def test_supported_symbols_returns_empty(self) -> None:
         provider = DukascopyProvider()

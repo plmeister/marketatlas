@@ -28,6 +28,8 @@ class DukascopyProvider(DataProvider):
         Timeframe.M30: 30,
         Timeframe.H1: 60,
         Timeframe.H4: 240,
+        Timeframe.D1: 1440,
+        Timeframe.W1: 10080,
     }
 
     _RECORD_FORMAT = struct.Struct(">Ifffff")
@@ -129,41 +131,70 @@ class DukascopyProvider(DataProvider):
         current = start.replace(hour=0, minute=0, second=0, microsecond=0)
         end_date = end.replace(hour=0, minute=0, second=0, microsecond=0)
 
+        if timeframe == Timeframe.W1:
+            current -= timedelta(days=current.weekday())
+
         while current <= end_date:
-            year = current.year
-            month = current.month
-            day = current.day
-
-            cache_path = self._cache_path(instrument, timeframe, year, month, day)
-            if cache_path is not None:
-                cached = self._read_cache(cache_path)
-                if cached is not None:
-                    day_candles = self._parse_bi5(zlib.decompress(cached), current)
-                    filtered = [c for c in day_candles if start <= c.timestamp <= end]
-                    all_candles.extend(filtered)
-                    current += timedelta(days=1)
-                    continue
-
-            try:
-                compressed = self._fetch_day_raw(instrument, year, month, day, tf_minutes)
-            except NoDataAvailableError:
+            if timeframe == Timeframe.W1:
+                for offset in range(7):
+                    probe = current + timedelta(days=offset)
+                    if probe > end_date:
+                        break
+                    day_candles = self._load_day(
+                        instrument, timeframe, tf_minutes, probe, start, end
+                    )
+                    if day_candles:
+                        all_candles.extend(day_candles)
+                        break
+                current += timedelta(days=7)
+            else:
+                day_candles = self._load_day(
+                    instrument, timeframe, tf_minutes, current, start, end
+                )
+                all_candles.extend(day_candles)
                 current += timedelta(days=1)
-                continue
-
-            if cache_path is not None:
-                self._write_cache(cache_path, compressed)
-            decompressed = zlib.decompress(compressed)
-
-            day_candles = self._parse_bi5(decompressed, current)
-            filtered = [c for c in day_candles if start <= c.timestamp <= end]
-            all_candles.extend(filtered)
-
-            current += timedelta(days=1)
 
         if not all_candles:
             raise NoDataAvailableError(symbol, timeframe)
 
         return MarketData(symbol=symbol, timeframe=timeframe, candles=tuple(all_candles))
+
+    def _load_day(
+        self,
+        instrument: str,
+        timeframe: Timeframe,
+        tf_minutes: int,
+        day: datetime,
+        start: datetime,
+        end: datetime,
+    ) -> list[Candle]:
+        """Fetch + parse the OHLCV bar file for one probe day.
+
+        Returns [] when the datafeed has no file for that day (404).
+        """
+        year = day.year
+        month = day.month
+        day_of_month = day.day
+
+        cache_path = self._cache_path(instrument, timeframe, year, month, day_of_month)
+        if cache_path is not None:
+            cached = self._read_cache(cache_path)
+            if cached is not None:
+                candles = self._parse_bi5(zlib.decompress(cached), day)
+                return [c for c in candles if start <= c.timestamp <= end]
+
+        try:
+            compressed = self._fetch_day_raw(
+                instrument, year, month, day_of_month, tf_minutes
+            )
+        except NoDataAvailableError:
+            return []
+
+        if cache_path is not None:
+            self._write_cache(cache_path, compressed)
+
+        candles = self._parse_bi5(zlib.decompress(compressed), day)
+        return [c for c in candles if start <= c.timestamp <= end]
 
     def _fetch_day_raw(
         self, instrument: str, year: int, month: int, day: int, tf_minutes: int
