@@ -1,13 +1,20 @@
-# 072: Dukascopy datafeed unreachable from dev host
+# 072: Move Dukascopy provider to freeserv chart/json3 API
 
 **Status:** pending
 **Epic:** data
 **Priority:** high
 
+## Decision (2026-08-13)
+
+**Dukascopy data source is the freeserv chart/json3 web API — required, not
+optional.** The classic bi5 OHLCV feed is unreachable/unverifiable from the dev
+host (see findings below), while the JSON API is proven working live. The bi5
+D1/W1 implementation from 071 is **superseded** and may be replaced; keep or
+drop it as the JSON API rewrite dictates.
+
 ## Description
 
-Live probes from this host (2026-08-13) failed to reach the Dukascopy classic
-bi5 OHLCV datafeed:
+The classic bi5 feed failed to respond from this host:
 
 - `https://n.dukascopy.com/n/{...}_ohlcv_*.bi5` — connection timeouts (`000`)
 - `https://datafeed.dukascopy.com/datafeed/{...}_ohlcv_*.bi5` — `404`/`000`/intermittent `503`, even for intraday M1/M5 and old dates
@@ -36,17 +43,15 @@ GET https://freeserv.dukascopy.com/2.0/index.php
 - The 429 without headers explains earlier false alarm; with headers it is
   stable on this flaky connection.
 
-**Recommendation:** rework `DukascopyProvider` to use the freeserv chart/json3
-API instead of the classic bi5 feed (see 071 Technical Notes — it covers
-D1/W1 directly, sidestepping the unverifiable bi5 daily-timestamp convention).
-A D1/W1 bi5 implementation (071) was merged on 2026-08-13 but remains
-unverifiable while the bi5 feed is unreachable; the JSON API is the live,
-proven path.
+**Implementation target:** this item directs reworking `DukascopyProvider` to
+use the freeserv chart/json3 API instead of the classic bi5 feed. The JSON API
+covers D1/W1 directly, sidestepping the unverifiable bi5 daily-timestamp
+convention that 071's merged implementation relies on.
 
 ## Acceptance Criteria
 
-- [ ] Decide final data source: freeserv chart/json3 API (proven live) vs classic bi5 feed (071, currently unreachable/unverifiable)
-- [ ] If JSON API chosen: wire it into `DukascopyProvider` per 071; keep intraday M1–H4 working
+- [ ] `DukascopyProvider` fetches from the freeserv chart/json3 API (headers per Technical Notes); intraday M1–H4 and D1/W1 all work through it
+- [ ] Supersede 071's bi5 D1/W1 path: bi5 code removed or demoted, D1/W1 no longer depends on it
 - [ ] Treat `HTTPError 503` as transient (currently unhandled — surfaces as a hard error); `URLError` already retried 3× with backoff
 - [ ] Provider fails gracefully with a clear message when the feed is down, not silent per-instrument drops
 - [ ] Decide resilience strategy for flaky networks: raise timeout, more retries, longer backoff, or rely on DataStore gap-only fetch (066)
@@ -60,5 +65,5 @@ proven path.
 ## Related
 
 - `src/marketatlas/data/providers/dukascopy.py`
-- Backlog 071 — D1/W1 support (implemented via bi5 2026-08-13; verify or replace with JSON API)
+- Backlog 071 — D1/W1 support (merged 2026-08-13 via bi5; superseded by this item)
 - Backlog 073 — ProviderChain fallback bug (implemented 2026-08-13)
