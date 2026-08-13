@@ -14,6 +14,14 @@ class RateLimitError(Exception):
     pass
 
 
+class FeedUnavailableError(Exception):
+    """The data source itself is down or unreachable (transient).
+
+    Distinct from NoDataAvailableError (the source answered, no data) so a
+    dead feed surfaces a clear message instead of a silent empty result.
+    """
+
+
 class NoDataAvailableError(Exception):
     def __init__(self, symbol: Symbol, timeframe: Timeframe) -> None:
         self.symbol = symbol

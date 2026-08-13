@@ -1,6 +1,6 @@
 # 072: Move Dukascopy provider to freeserv chart/json3 API
 
-**Status:** pending
+**Status:** done
 **Epic:** data
 **Priority:** high
 
@@ -50,11 +50,36 @@ convention that 071's merged implementation relies on.
 
 ## Acceptance Criteria
 
-- [ ] `DukascopyProvider` fetches from the freeserv chart/json3 API (headers per Technical Notes); intraday M1–H4 and D1/W1 all work through it
-- [ ] Supersede 071's bi5 D1/W1 path: bi5 code removed or demoted, D1/W1 no longer depends on it
-- [ ] Treat `HTTPError 503` as transient (currently unhandled — surfaces as a hard error); `URLError` already retried 3× with backoff
-- [ ] Provider fails gracefully with a clear message when the feed is down, not silent per-instrument drops
-- [ ] Decide resilience strategy for flaky networks: raise timeout, more retries, longer backoff, or rely on DataStore gap-only fetch (066)
+- [x] `DukascopyProvider` fetches from the freeserv chart/json3 API (headers per Technical Notes); intraday M1–H4 and D1/W1 all work through it
+- [x] Supersede 071's bi5 D1/W1 path: bi5 code removed or demoted, D1/W1 no longer depends on it
+- [x] Treat `HTTPError 503` as transient (currently unhandled — surfaces as a hard error); `URLError` already retried 3× with backoff
+- [x] Provider fails gracefully with a clear message when the feed is down, not silent per-instrument drops
+- [x] Decide resilience strategy for flaky networks: raise timeout, more retries, longer backoff, or rely on DataStore gap-only fetch (066)
+
+## Implementation summary
+
+- `DukascopyProvider` rewritten on the freeserv chart/json3 web API (`_BASE_URL` =
+  `https://freeserv.dukascopy.com/2.0/index.php`), superseding the classic bi5
+  OHLCV feed entirely (bi5 struct/zlib/day-file code removed). Forward
+  pagination via `last_update` = last row timestamp; boundary row deduped;
+  stops at range end; JSONP response parsed by stripping `(...);`.
+- Instrument resolution now yields slash-format codes (`EURUSD` → `EUR/USD`,
+  registry mapping preferred); bare 6-letter FX canonicals convert, others
+  pass through — the json3 API rejects bare codes with `[null]`.
+- Timeframe map: M1–H4 + D1/W1 → `1MIN`…`4HOUR`, `1DAY`, `1WEEK` (verified
+  live: D1/W1/M5).
+- Resilience: `request_timeout` default 60s, `max_retries` default 5 with
+  linear backoff; `HTTPError 503` and `URLError` now retried and then raise
+  new `FeedUnavailableError` (clear message naming instrument + timeframe);
+  `429` → `RateLimitError`; `404` → `NoDataAvailableError`.
+- Page-level local cache (`cache_dir/dukascopy/{instrument}/{tf}/{cursor_ms}.json`);
+  DataStore gap-only fetch (066) remains the higher-level cache.
+- New `FeedUnavailableError` in `providers/base.py`; `ProviderChain` treats it
+  as fallback-able (like `RateLimitError`).
+- Tests: 20 dukascopy + 12 provider-chain tests (JSONP parse, timestamps,
+  all-8-timeframes, pagination cursor advance + dedup, end-stop, 404/429/503/
+  URLError retries + success recovery, cache reuse, symbol resolution slash
+  default + registry, chain fallback on feed down). 1349 total.
 
 ## Technical Notes
 
