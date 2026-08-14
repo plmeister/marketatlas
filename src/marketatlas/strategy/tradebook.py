@@ -75,19 +75,11 @@ class TradeBook:
 
     @property
     def gross_profit(self) -> float:
-        return sum(
-            float(t.pnl)
-            for t in self._trades
-            if t.pnl is not None and t.pnl > 0
-        )
+        return sum(float(t.pnl) for t in self._trades if t.pnl is not None and t.pnl > 0)
 
     @property
     def gross_loss(self) -> float:
-        return abs(sum(
-            float(t.pnl)
-            for t in self._trades
-            if t.pnl is not None and t.pnl < 0
-        ))
+        return abs(sum(float(t.pnl) for t in self._trades if t.pnl is not None and t.pnl < 0))
 
     @property
     def profit_factor(self) -> float:
@@ -233,6 +225,29 @@ class TradeBook:
             elif candle.low <= c.target:
                 self.close_trade(c.target, candle.timestamp)
 
+    def filtered_by_instrument(self, canonical: str) -> TradeBook:
+        """A copy of the book holding only ``canonical``'s closed trades.
+
+        The shared book is untouched; balance, peak, and drawdown are recomputed
+        from the subset so per-instrument charts and summaries stay internally
+        consistent (backlog 077).
+        """
+        book = TradeBook(self._initial_balance)
+        subset = [t for t in self._trades if t.instrument == canonical]
+        book._trades = subset
+        book._balance = self._initial_balance + sum(
+            float(t.pnl) for t in subset if t.pnl is not None
+        )
+        peak = self._initial_balance
+        balance = self._initial_balance
+        for trade in subset:
+            if trade.pnl is not None:
+                balance += trade.pnl
+            if balance > peak:
+                peak = balance
+        book._peak_balance = peak
+        return book
+
     @property
     def summary(self) -> dict[str, object]:
         return {
@@ -240,9 +255,7 @@ class TradeBook:
             "final_balance": self.balance,
             "total_pnl": self.total_pnl,
             "total_return_pct": (
-                (self.total_pnl / self.initial_balance) * 100
-                if self.initial_balance != 0
-                else 0.0
+                (self.total_pnl / self.initial_balance) * 100 if self.initial_balance != 0 else 0.0
             ),
             "total_trades": self.closed_count,
             "wins": self.win_count,
@@ -262,39 +275,27 @@ class TradeBook:
         }
 
     def _instrument_breakdown(self) -> dict[str, dict[str, object]]:
-        breakdown: dict[str, dict[str, object]] = {}
-        for trade in self._trades:
-            name = trade.instrument
-            if name not in breakdown:
-                breakdown[name] = {
-                    "wins": 0,
-                    "losses": 0,
-                    "breakevens": 0,
-                    "total_pnl": 0.0,
-                }
-            entry = breakdown[name]
-            if trade.result == "win":
-                entry["wins"] = entry["wins"] + 1  # type: ignore[operator]
-            elif trade.result == "loss":
-                entry["losses"] = entry["losses"] + 1  # type: ignore[operator]
-            elif trade.result == "breakeven":
-                entry["breakevens"] = entry["breakevens"] + 1  # type: ignore[operator]
-            if trade.pnl is not None:
-                entry["total_pnl"] = entry["total_pnl"] + trade.pnl  # type: ignore[operator]
-        return breakdown
+        return self._breakdown_by("instrument")
 
     def _strategy_breakdown(self) -> dict[str, dict[str, object]]:
+        return self._breakdown_by("source_strategy")
+
+    def _breakdown_by(self, key: str) -> dict[str, dict[str, object]]:
         breakdown: dict[str, dict[str, object]] = {}
         for trade in self._trades:
-            name = trade.source_strategy
+            name = getattr(trade, key)
             if name not in breakdown:
                 breakdown[name] = {
+                    "trades": 0,
                     "wins": 0,
                     "losses": 0,
                     "breakevens": 0,
+                    "gross_profit": 0.0,
+                    "gross_loss": 0.0,
                     "total_pnl": 0.0,
                 }
             entry = breakdown[name]
+            entry["trades"] = entry["trades"] + 1  # type: ignore[operator]
             if trade.result == "win":
                 entry["wins"] = entry["wins"] + 1  # type: ignore[operator]
             elif trade.result == "loss":
@@ -303,4 +304,20 @@ class TradeBook:
                 entry["breakevens"] = entry["breakevens"] + 1  # type: ignore[operator]
             if trade.pnl is not None:
                 entry["total_pnl"] = entry["total_pnl"] + trade.pnl  # type: ignore[operator]
+                if trade.pnl > 0:
+                    entry["gross_profit"] = entry["gross_profit"] + trade.pnl  # type: ignore[operator]
+                elif trade.pnl < 0:
+                    entry["gross_loss"] = entry["gross_loss"] + abs(trade.pnl)  # type: ignore[operator]
+        for entry in breakdown.values():
+            wins = int(entry["wins"])  # type: ignore[call-overload]
+            losses = int(entry["losses"])  # type: ignore[call-overload]
+            decided = wins + losses
+            gross_profit = float(entry["gross_profit"])  # type: ignore[arg-type]
+            gross_loss = float(entry["gross_loss"])  # type: ignore[arg-type]
+            entry["win_rate"] = wins / decided if decided else 0.0
+            entry["profit_factor"] = (
+                float("inf")
+                if gross_loss == 0 and gross_profit > 0
+                else (0.0 if gross_loss == 0 else gross_profit / gross_loss)
+            )
         return breakdown

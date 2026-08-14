@@ -7,6 +7,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from marketatlas.analysis.factkey import FactKey
+from marketatlas.backtesting.portfolio import PortfolioBacktestResult
+from marketatlas.data.instrument import Instrument
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
@@ -265,3 +267,111 @@ class TestSmokeTests:
         js_block = _extract_js_block(content)
         assert "addEventListener" in js_block
         assert "keydown" in js_block
+
+
+class TestPortfolioIndex:
+    """Backlog 077: index page rows, hrefs, and shared-book summary."""
+
+    def _render_index(self, tmp_path: object) -> Path:
+        from pathlib import Path
+
+        from marketatlas.visualization.portfolio import render_portfolio_index
+
+        out = Path(tmp_path) / "portfolio"  # type: ignore[arg-type]
+        result = _make_portfolio_result()
+        return render_portfolio_index(result, out, stem="portfolio")
+
+    def test_summary_bar_from_shared_book(self, tmp_path: object) -> None:
+        content = self._render_index(tmp_path).read_text()  # type: ignore[union-attr]
+        # A +3.00 win, B -1.00 loss -> shared total +2.00 over 2 trades
+        assert "Total P&amp;L" in content
+        assert ">+2.00</b>" in content
+        assert "Return" in content
+        assert "Max Drawdown" in content
+        assert "Trades: <b>2</b>" in content
+        assert "Balance" in content
+
+    def test_one_row_per_instrument_with_links(self, tmp_path: object) -> None:
+        content = self._render_index(tmp_path).read_text()  # type: ignore[union-attr]
+        assert '<a href="portfolio.A.html">A</a>' in content
+        assert '<a href="portfolio.B.html">B</a>' in content
+        assert content.count("<tr><td><a") == 2
+
+    def test_rows_show_pnl_trades_wl_winrate_pf(self, tmp_path: object) -> None:
+        content = self._render_index(tmp_path).read_text()  # type: ignore[union-attr]
+        # A: win-only -> PF shown as infinity symbol
+        assert '<td class="num-pos">+3.00</td>' in content
+        assert "<td>1</td>" in content
+        assert "<td>1-0</td>" in content
+        assert "<td>100.0%</td>" in content
+        assert "<td>\u221e</td>" in content
+        # B: loss-only -> PF 0.00
+        assert '<td class="num-neg">-1.00</td>' in content
+        assert "<td>0-1</td>" in content
+        assert "<td>0.0%</td>" in content
+        assert "<td>0.00</td>" in content
+
+    def test_relative_links_work_from_disk(self, tmp_path: object) -> None:
+        content = self._render_index(tmp_path).read_text()  # type: ignore[union-attr]
+        assert 'href="portfolio.A.html"' in content
+        assert "http" not in content
+        assert "lightweight-charts" not in content
+
+    def test_strategy_table(self, tmp_path: object) -> None:
+        content = self._render_index(tmp_path).read_text()  # type: ignore[union-attr]
+        assert "By Strategy" in content
+        assert "<td>test_strat</td>" in content
+
+
+def _make_tradebook_with_instruments() -> TradeBook:
+    from marketatlas.facts.structural import TrendDirection
+    from marketatlas.strategy.signals import TradeSignal
+    from marketatlas.strategy.trade import TradeCandidate
+
+    tb = TradeBook(initial_balance=1000.0)
+
+    signal = TradeSignal(
+        direction=TrendDirection.BULLISH,
+        entry_zone=(100.0, 105.0),
+        confidence=0.8,
+        source="test_signal",
+        evidence=(),
+    )
+    candidate = TradeCandidate(
+        direction=TrendDirection.BULLISH,
+        entry=103.0,
+        stop=98.0,
+        target=118.0,
+        size=0.2,
+        risk_amount=10.0,
+        reward_amount=30.0,
+        rr_ratio=3.0,
+        slippage_pct=0.1,
+        source="test",
+        evidence=(),
+    )
+
+    tb.submit_order(candidate, signal, "test_strat", BASE + timedelta(days=5), instrument="A")
+    tb.fill_order(103.0, BASE + timedelta(days=6))
+    tb.close_trade(118.0, BASE + timedelta(days=8))
+
+    tb.submit_order(candidate, signal, "test_strat", BASE + timedelta(days=10), instrument="B")
+    tb.fill_order(103.0, BASE + timedelta(days=11))
+    tb.close_trade(98.0, BASE + timedelta(days=13))
+
+    return tb
+
+
+def _make_portfolio_result() -> PortfolioBacktestResult:
+    tb = _make_tradebook_with_instruments()
+    frames = {"A": _make_frame_store(5), "B": _make_frame_store(5)}
+    return PortfolioBacktestResult(
+        instruments=(
+            Instrument(canonical="A", asset_class="crypto", description="A test asset"),
+            Instrument(canonical="B", asset_class="crypto", description="B test asset"),
+        ),
+        frames=frames,
+        tradebook=tb,
+        window_size=100,
+        max_hold_days=10,
+    )

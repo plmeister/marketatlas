@@ -224,6 +224,7 @@ def _extract_trades_json(tradebook: TradeBook) -> list[dict[str, Any]]:
                 "result": trade.result,
                 "pnl": trade.pnl,
                 "source": trade.source_strategy,
+                "instrument": trade.instrument,
                 "size": c.size,
                 "risk_amount": c.risk_amount,
                 "rr_ratio": c.rr_ratio,

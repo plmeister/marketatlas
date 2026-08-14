@@ -1,7 +1,12 @@
 import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
 
 from marketatlas.analysis.factkey import FactKey
+from marketatlas.backtesting.portfolio import PortfolioBacktestResult
+from marketatlas.data.instrument import Instrument
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
@@ -159,6 +164,74 @@ def _make_tradebook_with_trades() -> TradeBook:
     tb.close_trade(98.0, BASE + timedelta(days=13))
 
     return tb
+
+
+def _make_tradebook_with_instruments() -> TradeBook:
+    """Shared-book fixture with one win on ``A`` and one loss on ``B``."""
+    from marketatlas.facts.structural import TrendDirection
+    from marketatlas.strategy.signals import TradeSignal
+    from marketatlas.strategy.trade import TradeCandidate
+
+    tb = TradeBook(initial_balance=1000.0)
+
+    signal = TradeSignal(
+        direction=TrendDirection.BULLISH,
+        entry_zone=(100.0, 105.0),
+        confidence=0.8,
+        source="test_signal",
+        evidence=(),
+    )
+    candidate = TradeCandidate(
+        direction=TrendDirection.BULLISH,
+        entry=103.0,
+        stop=98.0,
+        target=118.0,
+        size=0.2,
+        risk_amount=10.0,
+        reward_amount=30.0,
+        rr_ratio=3.0,
+        slippage_pct=0.1,
+        source="test",
+        evidence=(),
+    )
+
+    tb.submit_order(candidate, signal, "test_strat", BASE + timedelta(days=5), instrument="A")
+    tb.fill_order(103.0, BASE + timedelta(days=6))
+    tb.close_trade(118.0, BASE + timedelta(days=8))
+
+    tb.submit_order(candidate, signal, "test_strat", BASE + timedelta(days=10), instrument="B")
+    tb.fill_order(103.0, BASE + timedelta(days=11))
+    tb.close_trade(98.0, BASE + timedelta(days=13))
+
+    return tb
+
+
+def _make_instrument(canonical: str) -> Instrument:
+    return Instrument(
+        canonical=canonical,
+        asset_class="crypto",
+        description=f"{canonical} test asset",
+        providers={"yahoo": canonical},
+    )
+
+
+def _make_portfolio_result() -> PortfolioBacktestResult:
+    tb = _make_tradebook_with_instruments()
+    frames = {"A": _make_frame_store(5), "B": _make_frame_store(5)}
+    return PortfolioBacktestResult(
+        instruments=(_make_instrument("A"), _make_instrument("B")),
+        frames=frames,
+        tradebook=tb,
+        window_size=100,
+        max_hold_days=10,
+    )
+
+
+def _make_canonical_store(canonical: str, n: int = 15) -> MarketStore:
+    candles = tuple(_make_candle(i) for i in range(n))
+    return MarketStore(
+        MarketData(symbol=Symbol(canonical), timeframe=Timeframe.D1, candles=candles)
+    )
 
 
 class TestRenderContext:
@@ -420,9 +493,7 @@ class TestExtractFactsPerFrame:
         swing = SwingFact(
             timestamp=ts,
             evidence=(),
-            swings=(
-                SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=ts),
-            ),
+            swings=(SwingPoint(price=95.0, index=0, type=SwingType.LOW, timestamp=ts),),
         )
         frame = AnalysisFrame(
             timestamp=candle.timestamp,
@@ -449,9 +520,7 @@ class TestExtractFactsPerFrame:
         swing_weekly = SwingFact(
             timestamp=ts,
             evidence=(),
-            swings=(
-                SwingPoint(price=90.0, index=1, type=SwingType.LOW, timestamp=ts),
-            ),
+            swings=(SwingPoint(price=90.0, index=1, type=SwingType.LOW, timestamp=ts),),
         )
         frame = AnalysisFrame(
             timestamp=candle.timestamp,
@@ -464,7 +533,9 @@ class TestExtractFactsPerFrame:
         )
         result = _extract_facts_per_frame([frame])
         swing_entries = {
-            v["timeframe"]: v for v in result[0].values() if isinstance(v, dict) and v.get("type") == "swing"
+            v["timeframe"]: v
+            for v in result[0].values()
+            if isinstance(v, dict) and v.get("type") == "swing"
         }
         assert set(swing_entries) == {"1d", "1w"}
         assert len(swing_entries["1d"]["swings"]) == 2
@@ -537,9 +608,7 @@ class TestInteractiveRenderer:
         # following statement starting with '(' is absorbed into the value
         # expression (e.g. `const MIN_TOUCHES = 2(function() {...})()`).
         for name in ("CANDLES", "CANDLES_BY_TF", "FRAMES", "INITIAL_BALANCE", "MIN_TOUCHES"):
-            line = next(
-                l for l in js.splitlines() if l.startswith(f"const {name} = ")
-            )
+            line = next(l for l in js.splitlines() if l.startswith(f"const {name} = "))
             assert line.endswith(";"), f"const {name} missing terminating semicolon"
         # Init IIFE must not be glued onto the last data declaration.
         assert ";(function() {" in js
@@ -906,8 +975,8 @@ class TestInteractiveRenderer:
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
         # Info panel renders O/H/L/C/Vol labels dynamically from candle keys
-        assert "'<div class=\"row\"><span class=\"label\">' +" in content
-        assert "class=\"label\">Vol</span>" in content
+        assert '\'<div class="row"><span class="label">\' +' in content
+        assert 'class="label">Vol</span>' in content
         assert "candle[key].toFixed(2)" in content
 
     def test_crosshair_snap_in_js(self, tmp_path: object) -> None:
@@ -1017,8 +1086,8 @@ class TestInteractiveRenderer:
         content = path.read_text()  # type: ignore[union-attr]
         assert "highlightCandle" in content
         assert "candleSeries.update" in content
-        assert "borderColor: \"#facc15\"" in content
-        assert "wickColor: \"#facc15\"" in content
+        assert 'borderColor: "#facc15"' in content
+        assert 'wickColor: "#facc15"' in content
         assert "candleHighlightLine" not in content
 
     def test_visibility_button_in_output(self, tmp_path: object) -> None:
@@ -1044,8 +1113,8 @@ class TestInteractiveRenderer:
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
         # JS dim mode should set borderColor and wickColor for dimmed candles
-        assert "borderColor: \"rgba(128,128,128,0.3)\"" in content
-        assert "wickColor: \"rgba(128,128,128,0.3)\"" in content
+        assert 'borderColor: "rgba(128,128,128,0.3)"' in content
+        assert 'wickColor: "rgba(128,128,128,0.3)"' in content
 
     def test_future_visibility_toggle_cycle(self, tmp_path: object) -> None:
         path = tmp_path / "toggle.html"  # type: ignore[operator]
@@ -1062,3 +1131,67 @@ class TestInteractiveRenderer:
         assert "futureVisibility" in content
         assert "const labels = {" in content
         assert "updateCandles" in content
+
+
+class TestPortfolioChartRendering:
+    """Backlog 077: per-instrument charts filtered from the shared book."""
+
+    def _render(self, tmp_path: object) -> tuple[Path, tuple[Path, ...]]:
+        from pathlib import Path
+
+        from marketatlas.visualization.portfolio import render_portfolio
+
+        out = Path(tmp_path) / "portfolio"  # type: ignore[arg-type]
+        result = _make_portfolio_result()
+        stores = {"A": _make_canonical_store("A"), "B": _make_canonical_store("B")}
+        return render_portfolio(result, stores, out, stem="portfolio")
+
+    def test_renders_index_and_per_instrument_charts(self, tmp_path: object) -> None:
+        index, charts = self._render(tmp_path)
+        assert index.name == "portfolio.html"
+        assert {c.name for c in charts} == {"portfolio.A.html", "portfolio.B.html"}
+        assert index.exists()
+        assert all(c.exists() for c in charts)
+
+    def _trades_array(self, path: Path) -> list[dict[str, object]]:
+        import json
+
+        content = path.read_text()
+        match = re.search(r"const TRADES = (\[.+?\]);", content, re.DOTALL)
+        assert match is not None, "TRADES constant not found"
+        return json.loads(match.group(1))
+
+    def _summary(self, path: Path) -> dict[str, object]:
+        import json
+
+        content = path.read_text()
+        match = re.search(r"const SUMMARY = (\{.+?\});", content, re.DOTALL)
+        assert match is not None, "SUMMARY constant not found"
+        return json.loads(match.group(1))
+
+    def test_chart_trades_only_matching_instrument(self, tmp_path: object) -> None:
+        _, charts = self._render(tmp_path)
+        chart_a = next(c for c in charts if c.stem.endswith(".A"))
+        chart_b = next(c for c in charts if c.stem.endswith(".B"))
+
+        assert [t["instrument"] for t in self._trades_array(chart_a)] == ["A"]
+        assert [t["instrument"] for t in self._trades_array(chart_b)] == ["B"]
+
+    def test_chart_summary_scoped_to_instrument(self, tmp_path: object) -> None:
+        _, charts = self._render(tmp_path)
+        chart_a = next(c for c in charts if c.stem.endswith(".A"))
+        chart_b = next(c for c in charts if c.stem.endswith(".B"))
+
+        summary_a = self._summary(chart_a)
+        summary_b = self._summary(chart_b)
+        assert summary_a["wins"] == 1 and summary_a["losses"] == 0
+        assert summary_b["wins"] == 0 and summary_b["losses"] == 1
+        assert summary_a["final_balance"] == pytest.approx(1003.0)
+        assert summary_b["final_balance"] == pytest.approx(999.0)
+
+    def test_chart_title_carries_canonical(self, tmp_path: object) -> None:
+        _, charts = self._render(tmp_path)
+        chart_a = next(c for c in charts if c.stem.endswith(".A"))
+        content = chart_a.read_text()
+        assert "<h1>A</h1>" in content
+        assert "<title>A</title>" in content
