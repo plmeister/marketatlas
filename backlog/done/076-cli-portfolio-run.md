@@ -16,10 +16,10 @@ the CLI stops after `PORTFOLIO DATA` — the backtest never runs.
 
 ## Acceptance Criteria
 
-- [ ] `run --instruments` completes: data load → portfolio backtest → summary output
-- [ ] Summary prints shared balance, total P&L, return, drawdown, trade counts + `by_instrument` + `by_strategy`
-- [ ] Single-`--symbol` run unchanged (existing CLI tests pass)
-- [ ] Exit code reflects success/failure; data-load failures per instrument are reported, not fatal to the run
+- [x] `run --instruments` completes: data load → portfolio backtest → summary output
+- [x] Summary prints shared balance, total P&L, return, drawdown, trade counts + `by_instrument` + `by_strategy`
+- [x] Single-`--symbol` run unchanged (existing CLI tests pass)
+- [x] Exit code reflects success/failure; data-load failures per instrument are reported, not fatal to the run
 
 ## Related
 

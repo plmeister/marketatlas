@@ -323,12 +323,85 @@ def run_portfolio_command(args: argparse.Namespace) -> None:
     print("\n" + "=" * 60)
     print(f"PORTFOLIO DATA ({len(loaded)} instrument(s))")
     print("=" * 60)
+
+    from marketatlas.strategy.bundle import StrategyBundle
+    from marketatlas.strategy.strategy import Strategy
+
+    stores: dict[str, MarketStore] = {}
+    pairs: list[tuple[Instrument, MarketStore]] = []
     for instrument, timeframes in loaded:
         store = MarketStore(timeframes)
+        stores[instrument.canonical] = store
+        pairs.append((instrument, store))
         print(
             f"  {instrument.canonical}: {len(store)} candles ({store.timeframe.value}), "
             f"{len(store.available_timeframes)} timeframe(s)"
         )
+
+    strategy = Strategy(config.name, config)
+    bundle = StrategyBundle([strategy], initial_balance=args.balance)
+
+    from marketatlas.backtesting.portfolio import PortfolioBacktester
+
+    bt = PortfolioBacktester(bundle, pairs, window_size=100, max_hold_days=args.max_hold_days)
+    print(f"\nRunning portfolio backtest ({bt.frame_count} merged frames)...")
+
+    def progress(cur: int, total: int) -> None:
+        print(f"\r  Frame {cur}/{total}", end="", flush=True)
+
+    result = bt.run_with_progress(progress)
+    print("\n")
+
+    summary: dict[str, object] = result.tradebook.summary
+    print("=" * 60)
+    print("PORTFOLIO RESULTS")
+    print("=" * 60)
+    print(f"  Initial balance: ${summary['initial_balance']:.2f}")
+    print(f"  Final balance:   ${summary['final_balance']:.2f}")
+    pnl = summary["total_pnl"]
+    pct = summary["total_return_pct"]
+    print(f"  Total P&L:       ${pnl:+.2f} ({pct:+.1f}%)")
+    print(f"  Total trades:    {summary['total_trades']}")
+    print(f"  Wins:            {summary['wins']}")
+    print(f"  Losses:          {summary['losses']}")
+    print(f"  Win rate:        {summary['win_rate']:.1%}")
+    print(f"  Max drawdown:    {summary['max_drawdown']:.1%}")
+    print(f"  Profit factor:   {summary['profit_factor']:.2f}")
+
+    by_instrument = summary["by_instrument"]
+    if by_instrument and isinstance(by_instrument, dict):
+        print("\n  By instrument:")
+        for name, stats in by_instrument.items():
+            assert isinstance(stats, dict)
+            print(
+                f"    {name}: {stats['wins']}W/{stats['losses']}L,"
+                f" P&L=${stats['total_pnl']:+.2f}"
+            )
+
+    by_strategy = summary["by_strategy"]
+    if by_strategy and isinstance(by_strategy, dict):
+        print("\n  By strategy:")
+        for name, stats in by_strategy.items():
+            assert isinstance(stats, dict)
+            print(
+                f"    {name}: {stats['wins']}W/{stats['losses']}L,"
+                f" P&L=${stats['total_pnl']:+.2f}"
+            )
+
+    if args.output:
+        from marketatlas.visualization.portfolio import render_portfolio
+
+        output_path = Path(args.output)
+        index, charts = render_portfolio(result, stores, output_path.parent, output_path.stem)
+        print(f"\nPortfolio HTML: {index}")
+        print(f"Per-instrument charts: {', '.join(str(p) for p in charts)}")
+
+    if args.pickle:
+        import pickle
+
+        with open(args.pickle, "wb") as f:
+            pickle.dump(result, f)
+        print(f"Pickle: {args.pickle}")
 
 
 def instruments_list_command(args: argparse.Namespace) -> None:

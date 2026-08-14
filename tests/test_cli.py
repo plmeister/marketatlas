@@ -821,6 +821,50 @@ class TestRunPortfolio:
         )
         return strategy_file, registry_path, portfolio_path
 
+    def _run_portfolio(self, *args: str) -> None:
+        """Run the portfolio path with the backtest pipeline mocked.
+
+        ``Strategy``/``StrategyBundle``/``PortfolioBacktester``/``render_portfolio``
+        are all mocked so tests can drive the CLI through data loading (069)
+        and the summary output (076) without a real analysis graph.
+        """
+        with (
+            patch("marketatlas.backtesting.portfolio.PortfolioBacktester") as bt_cls,
+            patch("marketatlas.strategy.bundle.StrategyBundle") as bundle_cls,
+            patch("marketatlas.strategy.strategy.Strategy") as strategy_cls,
+            patch("marketatlas.visualization.portfolio.render_portfolio") as _render_portfolio,
+        ):
+            strategy_cls.return_value = MagicMock()
+            bundle_cls.return_value = MagicMock()
+
+            mock_tradebook = MagicMock()
+            mock_tradebook.summary = {
+                "initial_balance": 1000.0,
+                "final_balance": 1000.0,
+                "total_pnl": 0.0,
+                "total_return_pct": 0.0,
+                "total_trades": 0,
+                "wins": 0,
+                "losses": 0,
+                "breakevens": 0,
+                "win_rate": 0.0,
+                "max_drawdown": 0.0,
+                "profit_factor": 0.0,
+                "expectancy": 0.0,
+                "by_instrument": {},
+                "by_strategy": {},
+            }
+            mock_tradebook.trades = []
+            mock_result = MagicMock()
+            mock_result.tradebook = mock_tradebook
+
+            mock_bt = MagicMock()
+            mock_bt.frame_count = 0
+            mock_bt.run_with_progress.return_value = mock_result
+            bt_cls.return_value = mock_bt
+
+            _run_main(*args)
+
     @patch("marketatlas.cli.YahooProvider")
     @patch("marketatlas.strategy.loader.load_strategy")
     def test_run_instruments_loads_all_identical_range(
@@ -845,7 +889,7 @@ class TestRunPortfolio:
         mock_yahoo_cls.return_value = provider
 
         data_dir = tmp_path / "cache"
-        _run_main(
+        self._run_portfolio(
             "run",
             "--strategy",
             str(strategy_file),
@@ -921,7 +965,7 @@ class TestRunPortfolio:
             "--output",
             "",
         ]
-        _run_main(*args)
+        self._run_portfolio(*args)
         assert provider.fetch.call_count == 2
 
         provider.fetch.reset_mock()
@@ -1033,7 +1077,7 @@ class TestRunPortfolio:
         mock_duka_cls.return_value = provider
 
         data_dir = tmp_path / "cache"
-        _run_main(
+        self._run_portfolio(
             "run",
             "--strategy",
             str(strategy_file),
@@ -1082,7 +1126,7 @@ class TestRunPortfolio:
         mock_yahoo_cls.return_value = provider
 
         data_dir = tmp_path / "cache"
-        _run_main(
+        self._run_portfolio(
             "run",
             "--strategy",
             str(strategy_file),
@@ -1170,7 +1214,7 @@ class TestRunPortfolio:
         provider.fetch.side_effect = fake_fetch
         mock_yahoo_cls.return_value = provider
 
-        _run_main(
+        self._run_portfolio(
             "run",
             "--strategy",
             str(strategy_file),
@@ -1223,7 +1267,7 @@ class TestRunPortfolio:
         mock_yahoo_cls.return_value = provider
 
         data_dir = tmp_path / "cache"
-        _run_main(
+        self._run_portfolio(
             "run",
             "--strategy",
             str(strategy_file),
@@ -1248,6 +1292,116 @@ class TestRunPortfolio:
         assert "resampled from 1d" in captured.out
         assert (data_dir / "GBPUSD.1w.parquet").exists()
         assert (data_dir / "BTCUSD.1w.parquet").exists()
+
+    @patch("marketatlas.cli.YahooProvider")
+    @patch("marketatlas.strategy.loader.load_strategy")
+    def test_run_instruments_runs_backtest_and_renders(
+        self,
+        mock_load: MagicMock,
+        mock_yahoo_cls: MagicMock,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        strategy_file, registry_path, portfolio_path = self._setup(
+            tmp_path, mock_load, ["GBPUSD", "BTCUSD"]
+        )
+
+        provider = MagicMock()
+
+        def fake_fetch(
+            symbol: Symbol, timeframe: Timeframe, start: datetime, end: datetime
+        ) -> MarketData:
+            return _make_market_data(symbol=symbol.name, n=200)
+
+        provider.fetch.side_effect = fake_fetch
+        mock_yahoo_cls.return_value = provider
+
+        with (
+            patch("marketatlas.backtesting.portfolio.PortfolioBacktester") as bt_cls,
+            patch("marketatlas.strategy.bundle.StrategyBundle") as bundle_cls,
+            patch("marketatlas.strategy.strategy.Strategy") as strategy_cls,
+            patch("marketatlas.visualization.portfolio.render_portfolio") as render_portfolio,
+        ):
+            strategy_cls.return_value = MagicMock()
+            bundle_cls.return_value = MagicMock()
+
+            render_portfolio.return_value = (
+                tmp_path / "portfolio.html",
+                (tmp_path / "portfolio.GBPUSD.html", tmp_path / "portfolio.BTCUSD.html"),
+            )
+
+            mock_tradebook = MagicMock()
+            mock_tradebook.summary = {
+                "initial_balance": 1000.0,
+                "final_balance": 1100.0,
+                "total_pnl": 100.0,
+                "total_return_pct": 10.0,
+                "total_trades": 3,
+                "wins": 2,
+                "losses": 1,
+                "breakevens": 0,
+                "win_rate": 0.667,
+                "max_drawdown": 0.02,
+                "profit_factor": 2.0,
+                "expectancy": 33.3,
+                "by_instrument": {
+                    "GBPUSD": {"wins": 2, "losses": 0, "total_pnl": 120.0},
+                    "BTCUSD": {"wins": 0, "losses": 1, "total_pnl": -20.0},
+                },
+                "by_strategy": {"test": {"wins": 2, "losses": 1, "total_pnl": 100.0}},
+            }
+            mock_tradebook.trades = []
+            mock_result = MagicMock()
+            mock_result.tradebook = mock_tradebook
+
+            mock_bt = MagicMock()
+            mock_bt.frame_count = 50
+            mock_bt.run_with_progress.return_value = mock_result
+            bt_cls.return_value = mock_bt
+
+            output = tmp_path / "portfolio.html"
+            _run_main(
+                "run",
+                "--strategy",
+                str(strategy_file),
+                "--instruments",
+                str(portfolio_path),
+                "--registry",
+                str(registry_path),
+                "--interval",
+                "1d",
+                "--start",
+                "2024-01-01",
+                "--end",
+                "2024-06-01",
+                "--data-dir",
+                str(tmp_path / "cache"),
+                "--output",
+                str(output),
+                "--balance",
+                "5000",
+                "--max-hold-days",
+                "7",
+            )
+
+            bt_cls.assert_called_once()
+            bt_kwargs = bt_cls.call_args.kwargs
+            assert bt_kwargs["window_size"] == 100
+            assert bt_kwargs["max_hold_days"] == 7
+
+            render_portfolio.assert_called_once()
+            render_args = render_portfolio.call_args.args
+            assert render_args[0] is mock_result
+            assert render_args[2] == output.parent
+            assert render_args[3] == output.stem
+
+        captured = capsys.readouterr()
+        assert "PORTFOLIO RESULTS" in captured.out
+        assert "Running portfolio backtest (50 merged frames)" in captured.out
+        assert "GBPUSD" in captured.out
+        assert "BTCUSD" in captured.out
+        assert "By instrument:" in captured.out
+        assert "By strategy:" in captured.out
 
 
 class TestParserValidation:
