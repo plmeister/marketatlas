@@ -426,3 +426,49 @@ class TestSingleTradeConstraint:
         # After fill: open trade exists, no pending order
         assert not tb.has_no_open_trade
         assert not tb.has_pending_order
+
+
+class TestPortfolioNoReadahead:
+    """Portfolio path (075): future candles on one instrument never change
+    another instrument's frames, or the shared tradebook's early trades."""
+
+    def _make_stores(self) -> tuple[MarketStore, MarketStore, MarketStore]:
+        from marketatlas.data.instrument import Instrument
+
+        self.inst_a = Instrument("AAA", "crypto", "Asset A", providers={"yahoo": "AAA"})
+        self.inst_b = Instrument("BBB", "crypto", "Asset B", providers={"yahoo": "BBB"})
+        store_a = _make_store(200)
+        store_b_short = _make_store(200)
+        store_b_long = _make_store(230)
+        return store_a, store_b_short, store_b_long
+
+    def test_future_data_does_not_change_past_frames(self) -> None:
+        from marketatlas.backtesting.portfolio import PortfolioBacktester
+
+        store_a, store_b_short, store_b_long = self._make_stores()
+        pairs_short = [(self.inst_a, store_a), (self.inst_b, store_b_short)]
+        pairs_long = [(self.inst_a, store_a), (self.inst_b, store_b_long)]
+
+        result_short = PortfolioBacktester(_make_bundle(), pairs_short, window_size=50).run()
+        result_long = PortfolioBacktester(_make_bundle(), pairs_long, window_size=50).run()
+
+        frames_a_short = result_short.frames["AAA"]
+        frames_a_long = result_long.frames["AAA"]
+        assert len(frames_a_short) == len(frames_a_long) == 150
+        for i in range(150):
+            assert _snapshot_frame(frames_a_short[i]) == _snapshot_frame(frames_a_long[i])
+
+        frames_b_short = result_short.frames["BBB"]
+        frames_b_long = result_long.frames["BBB"]
+        assert len(frames_b_short) == 150
+        for i in range(len(frames_b_short)):
+            assert _snapshot_frame(frames_b_short[i]) == _snapshot_frame(frames_b_long[i])
+            assert frames_b_short[i].evidence == frames_b_long[i].evidence
+            assert frames_b_short[i].risk_evidence == frames_b_long[i].risk_evidence
+
+        # trades closed before the extension point are identical; the final
+        # end-of-run forced close of the short run may differ from the long
+        # run, where the position keeps trading on the extended calendar
+        short_trades = result_short.tradebook.trades
+        long_trades = result_long.tradebook.trades
+        assert long_trades[: len(short_trades) - 1] == short_trades[:-1]

@@ -396,6 +396,7 @@ class _SignalBundle:
         self._risk_engine = risk_engine
         self._graph = graph or AnalysisGraph([])
         self._tradebook = tradebook or TradeBook()
+        self._strategies = {name: None for name, _ in signals}
 
     @property
     def graph(self) -> AnalysisGraph:
@@ -404,6 +405,10 @@ class _SignalBundle:
     @property
     def tradebook(self) -> TradeBook:
         return self._tradebook
+
+    @property
+    def strategies(self) -> dict[str, object]:
+        return dict(self._strategies)
 
     def evaluate_all(
         self, view: MarketView, facts: dict[FactKey, Fact]
