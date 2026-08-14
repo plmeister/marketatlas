@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-
 from marketatlas.data.resample import CannotResampleError, resample, tf_minutes
 from marketatlas.data.types import Candle, Timeframe
 

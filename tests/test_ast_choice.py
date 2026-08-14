@@ -1,7 +1,6 @@
 import dataclasses
 
 import pytest
-
 from marketatlas.analysis.ast.builder import AnalysisBuilder
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.ast.expressions import (

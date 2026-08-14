@@ -6,7 +6,7 @@ from marketatlas.analysis.result import AnalysisResult
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
-from marketatlas.facts.structural import SwingFact, SwingType, SwingStructureFact
+from marketatlas.facts.structural import SwingFact, SwingStructureFact, SwingType
 
 
 class SwingStructureAnalyzer(Analyzer):

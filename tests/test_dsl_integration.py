@@ -38,7 +38,7 @@ from marketatlas.analysis.graph import (
     CyclicDependencyError,
     UnsatisfiedDependencyError,
 )
-from marketatlas.strategy.config import RiskConfig, SignalConfig
+from marketatlas.strategy.config import RiskConfig
 
 # -- spec fixtures (docs/dsl.md §7) --------------------------------------
 

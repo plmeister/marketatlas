@@ -5,7 +5,6 @@ from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
-from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import ATRPoint, ATRSeriesFact
 from marketatlas.facts.structural import (

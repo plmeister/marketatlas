@@ -6,8 +6,6 @@ from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
-from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
-from marketatlas.facts.base import Fact
 from marketatlas.facts.structural import SwingFact, SwingPoint, SwingStructureFact, SwingType
 
 BASE = datetime(2024, 1, 1, tzinfo=UTC)

@@ -1,15 +1,14 @@
 import pytest
-
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.ast.constructors import (
     ATR,
     EMA,
     SR,
-    PullbackPattern,
     GenerateSignal,
     ManageRisk,
     ProviderConstructionError,
+    PullbackPattern,
     Swings,
     SwingStructure,
     Trend,

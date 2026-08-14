@@ -54,12 +54,17 @@ Notes:
 
 ## Lint & Type Check
 
+Run ruff with auto-fix first — it safely corrects whatever it can:
+
 ```bash
-poetry run ruff check src/ tests/
-poetry run ruff check src/ tests/ --fix   # safe auto-fix, do before agent edits
+poetry run ruff check src/ tests/ --fix   # auto-fix safe issues (default, always use this)
+poetry run ruff check src/ tests/         # verify; remaining errors are unsafe/manual
 poetry run ruff format src/ tests/        # format source
 poetry run mypy src/
 ```
+
+Always run `ruff check --fix` (not plain `ruff check`) before edits; leftover
+errors after `--fix` are ones ruff refuses to auto-fix and need manual review.
 
 ## Backtest
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +9,7 @@ from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle
 from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.facts.primitive import ATRFact, EMAFact
-from marketatlas.facts.structural import TrendDirection, TrendFact, SwingStructureFact
+from marketatlas.facts.structural import SwingStructureFact, TrendDirection, TrendFact
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.frames.store import FrameStore
 
@@ -25,9 +26,9 @@ def _candle_to_dict(c: Candle) -> dict[str, Any]:
 
 
 def _ts_to_time(ts: float) -> str:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+    return datetime.fromtimestamp(ts, tz=UTC).strftime("%Y-%m-%d")
 
 
 def _extract_ema_lines(

@@ -17,7 +17,6 @@ an undeclared cross-timeframe dependency fails at graph construction.
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.ast.parser import parse
 from marketatlas.analysis.ast.pipeline import CompilationError, _ast_to_config
