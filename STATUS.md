@@ -50,6 +50,7 @@
 ## Portfolio Layer
 
 - [x] 069 — Portfolio instrument file & data loading (`PortfolioSpec`/`load_portfolio`, shared `fetch_instrument_data` helper, `run --instruments <file>` loads all instruments over identical start/end into the canonical-keyed store, per-instrument abort with context)
+- [x] 075 — PortfolioBacktester core (merged primary-timeframe calendar, shared TradeBook, per-instrument frame alignment, deterministic entry order, `BundleProtocol.strategies`, `PortfolioBacktestResult.by_instrument`)
 
 ## AST Layer
 
