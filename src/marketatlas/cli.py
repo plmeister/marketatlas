@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -332,6 +333,54 @@ def _ab_row(label: str, summary: dict[str, object]) -> str:
     )
 
 
+def _render_ab_variants(
+    output_arg: str,
+    templates: tuple[TemplateGraph, ...],
+    rows: list[tuple[TemplateGraph, Any]],
+    stores: Mapping[str, MarketStore],
+    single_canonical: str | None,
+) -> list[Path]:
+    """Write the A/B output tree: one directory per variant slug (backlog 080).
+
+    ``--output out.html`` becomes ``out/<slug>/<stem>.html`` for the
+    single-symbol path (``single_canonical`` set) and
+    ``out/<slug>/portfolio.<canonical>.html`` per instrument for the portfolio
+    path (``render_per_instrument_charts`` with the variant's filtered book).
+    Slugs come from ``variant_slugs`` — the same variant identity the 079
+    labels use — so identical choice combinations are diffable across runs and
+    no ordinal indexes appear in the output tree. Shared by both ``--ab``
+    paths so the chart-write block is not duplicated.
+    """
+    from marketatlas.analysis.ast.variant import variant_slugs
+    from marketatlas.visualization.context import RenderContext
+    from marketatlas.visualization.interactive import InteractiveRenderer
+    from marketatlas.visualization.portfolio import render_per_instrument_charts
+
+    output_path = Path(output_arg)
+    root = output_path.parent / output_path.stem if output_path.suffix else output_path
+    written: list[Path] = []
+    for (_, result), slug in zip(rows, variant_slugs(templates)):
+        variant_dir = root / slug
+        if single_canonical is not None:
+            ctx = RenderContext(
+                frames=result.frames,
+                store=stores[single_canonical],
+                tradebook=result.tradebook,
+                title=single_canonical,
+                window_size=result.window_size,
+                max_hold_days=result.max_hold_days,
+            )
+            chart = variant_dir / f"{output_path.stem}.html"
+            InteractiveRenderer(ctx).render(chart)
+            written.append(chart)
+        else:
+            written.extend(
+                render_per_instrument_charts(result, stores, variant_dir, stem="portfolio")
+            )
+        print(f"HTML chart: {variant_dir}")
+    return written
+
+
 def _run_ab_test(args: argparse.Namespace, strategy_path: Path) -> None:
     """A/B test every concrete variant of a choice template (backlog 048).
 
@@ -345,8 +394,6 @@ def _run_ab_test(args: argparse.Namespace, strategy_path: Path) -> None:
     from marketatlas.backtesting.backtester import Backtester
     from marketatlas.strategy.bundle import StrategyBundle
     from marketatlas.strategy.strategy import Strategy
-    from marketatlas.visualization.context import RenderContext
-    from marketatlas.visualization.interactive import InteractiveRenderer
 
     templates = _compile_ab_templates(args, strategy_path)
 
@@ -374,19 +421,14 @@ def _run_ab_test(args: argparse.Namespace, strategy_path: Path) -> None:
         print(f"  [{i}] {_ab_row(label, result.tradebook.summary)}")
 
     if args.output:
-        output_path = Path(args.output)
-        for i, (_, result) in enumerate(rows, 1):
-            ctx = RenderContext(
-                frames=result.frames,
-                store=store,
-                tradebook=result.tradebook,
-                max_hold_days=args.max_hold_days,
-                window_size=100,
-            )
-            renderer = InteractiveRenderer(ctx)
-            variant_path = output_path.with_name(f"{output_path.stem}_v{i}{output_path.suffix}")
-            renderer.render(variant_path)
-            print(f"HTML chart: {variant_path}")
+        written = _render_ab_variants(
+            args.output,
+            templates,
+            rows,
+            {instrument.canonical: store},
+            single_canonical=instrument.canonical,
+        )
+        print(f"\nA/B charts ({len(written)} file(s)): {written[0].parent}")
 
 
 def _run_portfolio_ab_test(args: argparse.Namespace, strategy_path: Path) -> None:
@@ -445,6 +487,13 @@ def _run_portfolio_ab_test(args: argparse.Namespace, strategy_path: Path) -> Non
     labels = variant_labels(templates)
     for i, ((_, result), label) in enumerate(zip(results, labels), 1):
         print(f"  [{i}] {_ab_row(label, result.tradebook.summary)}")
+
+    if args.output:
+        stores = {inst.canonical: store for inst, store in pairs}
+        written = _render_ab_variants(
+            args.output, templates, results, stores, single_canonical=None
+        )
+        print(f"\nA/B charts ({len(written)} file(s)): {written[0].parent}")
 
 
 def _compile_ab_templates(

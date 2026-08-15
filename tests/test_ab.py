@@ -16,7 +16,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.ast.parser import parse_with_positions
-from marketatlas.analysis.ast.variant import variant_identity, variant_labels
+from marketatlas.analysis.ast.variant import (
+    variant_identity,
+    variant_labels,
+    variant_slug,
+    variant_slugs,
+)
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.strategy.bundle import StrategyBundle
@@ -181,6 +186,95 @@ class TestVariantIdentity:
         assert identity.get("TrendAnalyzer.timeframe") is None
 
 
+class TestVariantSlugs:
+    """Backlog 080: deterministic, filesystem-safe, ordinal-free slugs."""
+
+    def _templates(self, source: str) -> tuple:
+        analysis, _ = parse_with_positions(source, name="t")
+        return ASTCompiler.compile_templates(analysis)
+
+    def test_choice_free_single_default(self) -> None:
+        templates = self._templates(CHOICE_FREE_DSL)
+        assert len(templates) == 1
+        assert variant_slugs(templates) == ["default"]
+        assert variant_slug(templates[0]) == "default"
+
+    def test_signal_choice_slug_values(self) -> None:
+        templates = self._templates(
+            "ema := ema { period: 20 }\n"
+            "sig := generate_signal { min_strength: <0.3 | 0.5> }"
+        )
+        assert variant_slugs(templates) == ["ms030", "ms050"]
+
+    def test_analyzer_param_choice_slugs(self) -> None:
+        templates = self._templates("ema := ema { period: <20 | 50> }")
+        assert variant_slugs(templates) == ["p20", "p50"]
+
+    def test_risk_param_choice_slugs(self) -> None:
+        templates = self._templates(
+            "ema := ema { period: 20 }\n" "risk := manage_risk { max_stop_atr: <3 | 5> }"
+        )
+        assert variant_slugs(templates) == ["atr3", "atr5"]
+
+    def test_multi_dimension_cartesian_slugs(self) -> None:
+        templates = self._templates(
+            "ema := ema { period: <20 | 50> }\n"
+            "sig := generate_signal { min_strength: <0.3 | 0.5> }"
+        )
+        assert len(templates) == 4
+        assert variant_slugs(templates) == [
+            "p20_ms030",
+            "p20_ms050",
+            "p50_ms030",
+            "p50_ms050",
+        ]
+
+    def test_slugs_deterministic_across_expansions(self) -> None:
+        src = "ema := ema { period: <20 | 50> }\nrisk := manage_risk { max_stop_atr: <3 | 5> }"
+        assert variant_slugs(self._templates(src)) == variant_slugs(self._templates(src))
+
+    def test_slugs_filesystem_safe(self) -> None:
+        templates = self._templates(
+            "ema := ema { period: <20 | 50> }\nrisk := manage_risk { max_stop_atr: <3 | 5> }"
+        )
+        for slug in variant_slugs(templates):
+            assert slug
+            assert not any(ch in slug for ch in "/\\ \t\n")
+            assert Path(slug).name == slug
+
+    def test_slugs_collision_free_for_distinct_combinations(self) -> None:
+        templates = self._templates(
+            "ema := ema { period: <20 | 50> }\nsig := generate_signal { min_strength: <0.3 | 0.5> }"
+        )
+        slugs = variant_slugs(templates)
+        assert len(slugs) == len(set(slugs)) == 4
+
+    def test_slugs_share_varying_dimensions_with_labels(self) -> None:
+        templates = self._templates(
+            "ema := ema { period: <20 | 50> }\nsig := generate_signal { min_strength: <0.3 | 0.5> }"
+        )
+        labels = variant_labels(templates)
+        slugs = variant_slugs(templates)
+        assert len(labels) == len(slugs)
+        # Every slug names the same choice dimensions its label does (period,
+        # min_strength) — no ordinal indexes, no extra non-varying params.
+        assert all("20" in s or "50" in s for s in slugs)
+        assert all("ms0" in s for s in slugs)
+
+    def test_unknown_param_name_falls_back_to_full_name(self) -> None:
+        templates = self._templates(
+            "swings := swings { lookback: 50, left_bars: <1 | 2> }"
+        )
+        assert variant_slugs(templates) == ["leftbars1", "leftbars2"]
+
+    def test_string_timeframe_choice_slug(self) -> None:
+        templates = self._templates(
+            'tf := timeframe { resolution: <"1h" | "1d"> }\n'
+            "ema := ema { timeframe: tf, period: 20 }"
+        )
+        assert variant_slugs(templates) == ["tf1h", "tf1d"]
+
+
 class TestCLIAbFlagWiring:
     def test_run_ab_single_symbol_calls_ab_test(self, tmp_path: Path) -> None:
         dsl = tmp_path / "s.dsl"
@@ -299,6 +393,111 @@ class TestCLIAbFlagWiring:
         assert "default" in captured.out
         assert "HTML chart:" in captured.out
 
+    @patch("marketatlas.visualization.interactive.InteractiveRenderer")
+    @patch("marketatlas.backtesting.backtester.Backtester")
+    def test_run_ab_output_tree_single_symbol(
+        self,
+        mock_bt_cls: MagicMock,
+        mock_renderer_cls: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        dsl = tmp_path / "s.dsl"
+        dsl.write_text("ema := ema { period: <20 | 50> }")
+
+        provider = MagicMock()
+        provider.fetch.return_value = _market_data("BTC-USD")
+        with (
+            patch("marketatlas.cli.YahooProvider") as yahoo,
+            patch("marketatlas.cli.DukascopyProvider") as duka,
+        ):
+            yahoo.return_value = provider
+            duka.return_value = provider
+
+            mock_tradebook = MagicMock()
+            mock_tradebook.summary = {
+                "initial_balance": 1000.0,
+                "final_balance": 1000.0,
+                "total_pnl": 0.0,
+                "total_return_pct": 0.0,
+                "total_trades": 0,
+                "wins": 0,
+                "losses": 0,
+                "breakevens": 0,
+                "win_rate": 0.0,
+                "max_drawdown": 0.0,
+                "profit_factor": 0.0,
+                "expectancy": 0.0,
+            }
+            mock_tradebook.trades = []
+            mock_bt_cls.return_value.run.return_value = _result(mock_tradebook)
+
+            _run_main(
+                "run",
+                "--ab",
+                "--strategy",
+                str(dsl),
+                "--symbol",
+                "BTC-USD",
+                "--start",
+                "2024-01-01",
+                "--end",
+                "2024-06-01",
+                "--output",
+                str(tmp_path / "out.html"),
+            )
+
+        rendered = [c.args[0] for c in mock_renderer_cls.return_value.render.call_args_list]
+        assert rendered == [
+            tmp_path / "out" / "p20" / "out.html",
+            tmp_path / "out" / "p50" / "out.html",
+        ]
+
+    def test_run_ab_output_tree_portfolio(self, tmp_path: Path) -> None:
+        dsl, registry_path, portfolio = _setup(tmp_path)
+        provider = MagicMock()
+        provider.fetch.side_effect = lambda symbol, tf, start, end: _market_data(symbol.name)
+        with (
+            patch("marketatlas.cli.YahooProvider") as yahoo,
+            patch("marketatlas.cli.DukascopyProvider") as duka,
+            patch("marketatlas.strategy.bundle.StrategyBundle") as bundle_cls,
+            patch(
+                "marketatlas.visualization.portfolio.render_per_instrument_charts"
+            ) as render_charts,
+        ):
+            yahoo.return_value = provider
+            duka.return_value = provider
+            bundle_cls.side_effect = _real_bundle
+            render_charts.return_value = (Path("chart.html"),)
+            _run_main(
+                "run",
+                "--ab",
+                "--strategy",
+                str(dsl),
+                "--instruments",
+                str(portfolio),
+                "--registry",
+                str(registry_path),
+                "--interval",
+                "1d",
+                "--start",
+                "2024-01-01",
+                "--end",
+                "2025-01-01",
+                "--data-dir",
+                str(tmp_path / "cache"),
+                "--output",
+                str(tmp_path / "ab.html"),
+            )
+
+        variant_dirs = [c.args[2] for c in render_charts.call_args_list]
+        assert variant_dirs == [
+            tmp_path / "ab" / "ms010",
+            tmp_path / "ab" / "ms099",
+        ]
+        # Per-instrument charts share the portfolio stem under each variant dir.
+        for call in render_charts.call_args_list:
+            assert call.kwargs["stem"] == "portfolio"
+
 
 def _result(mock_tradebook: MagicMock) -> MagicMock:
     result = MagicMock()
@@ -308,6 +507,10 @@ def _result(mock_tradebook: MagicMock) -> MagicMock:
 
 
 class TestPortfolioABRunner:
+    @pytest.fixture(autouse=True)
+    def _reset_bundle_recorder(self) -> None:
+        _created_bundles.clear()
+
     def _run(self, args: list[str]) -> None:
         provider = MagicMock()
         provider.fetch.side_effect = lambda symbol, tf, start, end: _market_data(symbol.name)
