@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.store import MarketStore
@@ -512,3 +512,98 @@ class TestRiskEngine:
                     "candidate target should not cross S/R — "
                     "_find_valid_rr should have filtered it"
                 )
+
+    def test_stop_uses_most_recent_swing_low(self) -> None:
+        """Bullish stop anchors to the most recent swing low below entry.
+
+        Older swing low may be higher/closer to entry; recency wins.
+        """
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0, max_stop_atr=10.0)
+        older = BASE - timedelta(days=10)
+        swings = _swings_fact(
+            (
+                SwingPoint(price=97.0, index=0, type=SwingType.LOW, timestamp=older),
+                SwingPoint(price=94.0, index=2, type=SwingType.LOW, timestamp=BASE),
+            )
+        )
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), swing=swings, sr=_sr_fact(())), view
+        )
+        assert candidate is not None
+        expected_stop = 94.0 - 0.2 * 2.0
+        assert abs(candidate.stop - expected_stop) < 0.01
+
+    def test_stop_uses_most_recent_swing_high(self) -> None:
+        """Bearish stop anchors to the most recent swing high above entry."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0, max_stop_atr=10.0)
+        older = BASE - timedelta(days=10)
+        swings = _swings_fact(
+            (
+                SwingPoint(price=103.0, index=0, type=SwingType.HIGH, timestamp=older),
+                SwingPoint(price=107.0, index=2, type=SwingType.HIGH, timestamp=BASE),
+            )
+        )
+        candidate, _evidence = engine.evaluate(
+            _bearish_signal(), _facts(atr=_atr_fact(2.0), swing=swings, sr=_sr_fact(())), view
+        )
+        assert candidate is not None
+        expected_stop = 107.0 + 0.2 * 2.0
+        assert abs(candidate.stop - expected_stop) < 0.01
+
+    def test_sr_buffer_rejects_target_too_close_to_resistance(self) -> None:
+        """Target landing within sr_buffer_atr of an S/R level is rejected.
+
+        No swings -> fallback stop. Entry 100, atr 2.0, buffer 0.5*2=1.0.
+        rr=2.0 gives target 108.8; resistance at 109.5 -> target within
+        buffer but not crossing -> every rr either sits in the buffer zone
+        or crosses 109.5 -> reject.
+        """
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(min_rr=2.0, max_rr=4.0, slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=109.5, strength=3, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is None
+        assert any("RR" in e.text for e in evidence)
+
+    def test_sr_buffer_zero_allows_target_near_resistance(self) -> None:
+        """sr_buffer_atr=0 removes the proximity constraint.
+
+        Same setup as above: rr=2.0 target 108.8 vs resistance 109.5 is fine
+        when the buffer is zero (target does not cross the level).
+        """
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(
+            min_rr=2.0, max_rr=4.0, slippage_pct=0.0, sr_buffer_atr=0.0
+        )
+        sr = _sr_fact((SRLevel(price=109.5, strength=3, type="resistance"),))
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is not None
+        expected_target = 100.0 + 2.0 * abs(100.0 - 95.6)
+        assert abs(candidate.target - expected_target) < 0.01
+
+    def test_sr_buffer_rejects_target_too_close_to_support(self) -> None:
+        """Bearish mirror of the resistance-buffer rejection."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(min_rr=2.0, max_rr=4.0, slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=90.5, strength=3, type="support"),))
+        candidate, evidence = engine.evaluate(
+            _bearish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is None
+        assert any("RR" in e.text for e in evidence)

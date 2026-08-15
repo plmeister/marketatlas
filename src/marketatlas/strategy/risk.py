@@ -29,6 +29,8 @@ class RiskEngine:
         atr_key: str = "atr_14",
         sr_key: str = "sr",
         swing_key: str = "swing",
+        swing_buffer_atr: float = 0.2,
+        sr_buffer_atr: float = 0.5,
     ) -> None:
         self._risk_pct = risk_pct
         self._min_rr = min_rr
@@ -37,6 +39,8 @@ class RiskEngine:
         self._max_hold_days = max_hold_days
         self._avoid_srxing = avoid_srxing
         self._slippage_pct = slippage_pct
+        self._swing_buffer_atr = swing_buffer_atr
+        self._sr_buffer_atr = sr_buffer_atr
         self._atr_key = atr_key
         self._sr_key = sr_key
         self._swing_key = swing_key
@@ -90,12 +94,12 @@ class RiskEngine:
             entry = open_price * (1 - self._slippage_pct / 100)
 
         swing_fact = facts.get(swing_key) if swing_key is not None else None
-        nearest_swing = self._find_nearest_swing(signal.direction, entry, atr_val, swing_fact)
+        stop_anchor = self._find_stop_anchor(signal.direction, entry, atr_val, swing_fact)
 
         if signal.direction == TrendDirection.BULLISH:
-            stop = nearest_swing - 0.2 * atr_val
+            stop = stop_anchor - self._swing_buffer_atr * atr_val
         else:
-            stop = nearest_swing + 0.2 * atr_val
+            stop = stop_anchor + self._swing_buffer_atr * atr_val
 
         stop_distance = abs(entry - stop)
         if stop_distance <= 0:
@@ -121,7 +125,7 @@ class RiskEngine:
             )
             return None, tuple(rejection)
 
-        rr_ratio = self._find_valid_rr(signal.direction, entry, stop_distance, sr_fact)
+        rr_ratio = self._find_valid_rr(signal.direction, entry, stop_distance, sr_fact, atr_val)
         if rr_ratio is None:
             rejection.append(
                 EvidenceEntry(
@@ -167,7 +171,7 @@ class RiskEngine:
                 text=(
                     f"Stop: {stop:.2f} "
                     f"({stop_distance / atr_val:.1f} ATR below entry, "
-                    f"beyond swing at {nearest_swing:.2f})"
+                    f"beyond last swing at {stop_anchor:.2f})"
                 ),
                 level=EvidenceLevel.INFO,
                 source="RiskEngine",
@@ -210,7 +214,7 @@ class RiskEngine:
             evidence=tuple(evidence),
         ), tuple(evidence)
 
-    def _find_nearest_swing(
+    def _find_stop_anchor(
         self,
         direction: TrendDirection,
         entry: float,
@@ -220,20 +224,20 @@ class RiskEngine:
         if isinstance(swing_fact, SwingFact) and swing_fact.swings:
             if direction == TrendDirection.BULLISH:
                 lows = [
-                    s.price
+                    s
                     for s in swing_fact.swings
                     if s.type == SwingType.LOW and s.price < entry
                 ]
                 if lows:
-                    return max(lows)
+                    return max(lows, key=lambda s: s.timestamp).price
             else:
                 highs = [
-                    s.price
+                    s
                     for s in swing_fact.swings
                     if s.type == SwingType.HIGH and s.price > entry
                 ]
                 if highs:
-                    return min(highs)
+                    return max(highs, key=lambda s: s.timestamp).price
 
         if direction == TrendDirection.BULLISH:
             return entry - 2.0 * atr
@@ -246,6 +250,7 @@ class RiskEngine:
         entry: float,
         stop_distance: float,
         sr_fact: SRFact,
+        atr: float,
     ) -> float | None:
         for rr in _frange(self._min_rr, self._max_rr + 0.001, 0.1):
             if direction == TrendDirection.BULLISH:
@@ -256,10 +261,27 @@ class RiskEngine:
             if not self._avoid_srxing:
                 return rr
 
-            if not self._crosses_sr(direction, entry, target, sr_fact.levels):
+            if self._target_clear(direction, entry, target, sr_fact.levels, atr):
                 return rr
 
         return None
+
+    def _target_clear(
+        self,
+        direction: TrendDirection,
+        entry: float,
+        target: float,
+        levels: tuple[SRLevel, ...],
+        atr: float,
+    ) -> bool:
+        buffer = self._sr_buffer_atr * atr
+        lo, hi = min(entry, target), max(entry, target)
+        for level in levels:
+            if lo < level.price < hi:
+                return False
+            if abs(level.price - target) < buffer:
+                return False
+        return True
 
     def _crosses_sr(
         self,
