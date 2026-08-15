@@ -1,0 +1,386 @@
+"""Backlog 079: portfolio A/B test runner.
+
+Choice templates (`<a | b | c>`) expand into one portfolio backtest per
+concrete variant; each variant runs on its own ``StrategyBundle``/``TradeBook``
+and the comparison output names the chosen values on any node type. The
+variant identity (``variant_identity``/``variant_labels``) is unit-tested here
+too, since the CLI labels are built from it.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+from marketatlas.analysis.ast.compiler import ASTCompiler
+from marketatlas.analysis.ast.parser import parse_with_positions
+from marketatlas.analysis.ast.variant import variant_identity, variant_labels
+from marketatlas.data.instrument import Instrument, InstrumentRegistry
+from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
+from marketatlas.strategy.bundle import StrategyBundle
+from marketatlas.strategy.tradebook import TradeBook
+
+BASE = datetime(2024, 1, 1, tzinfo=UTC)
+
+PULLBACK_AB_DSL = "\n".join(
+    [
+        "ema := ema { period: 20 }",
+        "ema50 := ema { period: 50 }",
+        "atr_14 := atr { period: 14 }",
+        "atr_14_series := atr_series { period: 14 }",
+        "trend := trend { ema_20: ema, ema_50: ema50 }",
+        "swing := swings { lookback: 50, left_bars: 1, right_bars: 1 }",
+        "swing_structure := swingstructure { swing }",
+        "sr := sr { swing, atr_14_series }",
+        "pullback := pullbackpattern { swing_structure }",
+        "signal := generate_signal { pullback_pattern: pullback, trend: trend,",
+        "atr_14: atr_14, min_strength: <0.1 | 0.99> }",
+        "risk := manage_risk { risk_pct: 1.0, min_rr: 2.0,",
+        "max_rr: 4.0, sr_buffer_atr: 0.0 }",
+        "",
+    ]
+)
+
+CHOICE_FREE_DSL = "ema := ema { period: 20 }"
+
+
+def _zigzag() -> list[tuple[float, float, float, float]]:
+    """Bullish LHLHL zigzag ending in a strong confirmation (067 fixture)."""
+    return [
+        (100.0, 101.0, 99.0, 100.0),  # 0
+        (100.0, 102.0, 100.0, 101.0),  # 1: SH 102
+        (101.0, 101.0, 97.0, 100.0),  # 2: SL 97
+        (100.0, 108.0, 100.0, 106.0),  # 3: SH 108
+        (106.0, 106.0, 99.0, 102.0),  # 4: SL 99
+        (102.0, 114.0, 102.0, 112.0),  # 5: SH 114
+        (112.0, 112.0, 101.0, 106.0),  # 6: SL 101  <- final swing
+        (102.0, 116.0, 104.0, 114.0),  # 7: strong bullish confirmation
+        (114.0, 118.0, 113.0, 117.0),  # 8: later candle
+    ]
+
+
+def _pullback_candles(n_warmup: int = 101) -> tuple[Candle, ...]:
+    """Rising warmup (for EMA/ATR/swing lookbacks) + the confirmation zigzag.
+
+    110 candles total so the CLI's ``window_size=100`` leaves a nonzero frame
+    count; the confirmation candle lands at index ``n_warmup + 7``.
+    """
+    rows: list[tuple[float, float, float, float]] = []
+    for i in range(n_warmup):
+        price = 100.0 + i * 0.1
+        rows.append((price, price + 0.5, price - 0.5, price + 0.2))
+    rows += _zigzag()
+    return tuple(
+        Candle(
+            timestamp=BASE + timedelta(days=i),
+            open=o,
+            high=h,
+            low=low,
+            close=c,
+            volume=1000.0,
+        )
+        for i, (o, h, low, c) in enumerate(rows)
+    )
+
+
+def _market_data(symbol: str) -> MarketData:
+    return MarketData(symbol=Symbol(symbol), timeframe=Timeframe.D1, candles=_pullback_candles())
+
+
+def _write_registry(path: Path, instruments: list[Instrument]) -> None:
+    registry = InstrumentRegistry()
+    for inst in instruments:
+        registry.add(inst)
+    registry.save(path)
+
+
+def _setup(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """DSL, registry (A/B), portfolio files ready for a CLI run."""
+    dsl = tmp_path / "pullback_ab.dsl"
+    dsl.write_text(PULLBACK_AB_DSL)
+    registry_path = tmp_path / "instruments.yaml"
+    _write_registry(
+        registry_path,
+        [
+            Instrument("A", "crypto", "Asset A", providers={"yahoo": "A"}),
+            Instrument("B", "crypto", "Asset B", providers={"yahoo": "B"}),
+        ],
+    )
+    portfolio = tmp_path / "portfolio.yaml"
+    portfolio.write_text("instruments:\n  - A\n  - B\n")
+    return dsl, registry_path, portfolio
+
+
+def _run_main(*args: str) -> None:
+    with patch("sys.argv", ["marketatlas", *args]):
+        from marketatlas.cli import main
+
+        main()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MARKETATLAS_DATA_DIR", str(tmp_path / "marketatlas-cache"))
+
+
+class TestVariantIdentity:
+    def _templates(self, source: str) -> tuple:
+        analysis, _ = parse_with_positions(source, name="t")
+        return ASTCompiler.compile_templates(analysis)
+
+    def test_choice_free_single_default_label(self) -> None:
+        templates = self._templates(CHOICE_FREE_DSL)
+        assert len(templates) == 1
+        assert variant_labels(templates) == ["default"]
+
+    def test_signal_choice_labels_values(self) -> None:
+        templates = self._templates(
+            "ema := ema { period: 20 }\n" "sig := generate_signal { min_strength: <0.3 | 0.5> }"
+        )
+        assert len(templates) == 2
+        assert variant_labels(templates) == ["min_strength=0.3", "min_strength=0.5"]
+
+    def test_analyzer_param_choice_labeled(self) -> None:
+        templates = self._templates("ema := ema { period: <20 | 50> }")
+        assert len(templates) == 2
+        assert variant_labels(templates) == ["period=20", "period=50"]
+
+    def test_risk_param_choice_labeled(self) -> None:
+        templates = self._templates(
+            "ema := ema { period: 20 }\n" "risk := manage_risk { max_stop_atr: <3 | 5> }"
+        )
+        assert len(templates) == 2
+        assert variant_labels(templates) == ["max_stop_atr=3", "max_stop_atr=5"]
+
+    def test_multi_dimension_cartesian_labels(self) -> None:
+        templates = self._templates(
+            "ema := ema { period: <20 | 50> }\n"
+            "sig := generate_signal { min_strength: <0.3 | 0.5> }"
+        )
+        assert len(templates) == 4
+        # Column-major cartesian: (20,0.3), (20,0.5), (50,0.3), (50,0.5).
+        assert variant_labels(templates) == [
+            "period=20, min_strength=0.3",
+            "period=20, min_strength=0.5",
+            "period=50, min_strength=0.3",
+            "period=50, min_strength=0.5",
+        ]
+
+    def test_identity_excludes_derived_wiring(self) -> None:
+        templates = self._templates(
+            "ema := ema { period: 20 }\n"
+            "trend := trend { ema_20: ema, ema_50: ema50 }\n"
+            "ema50 := ema { period: 50 }"
+        )
+        identity = variant_identity(templates[0])
+        assert all("bindings" not in k for k in identity)
+        assert "TrendAnalyzer.timeframe" in identity or "TrendAnalyzer.timeframe" not in identity
+        # The timeframe slot is None for every analyzer here (base timeframe).
+        assert identity.get("TrendAnalyzer.timeframe") is None
+
+
+class TestCLIAbFlagWiring:
+    def test_run_ab_single_symbol_calls_ab_test(self, tmp_path: Path) -> None:
+        dsl = tmp_path / "s.dsl"
+        dsl.write_text(CHOICE_FREE_DSL)
+        with patch("marketatlas.cli._run_ab_test") as ab:
+            _run_main("run", "--ab", "--strategy", str(dsl), "--symbol", "BTC-USD")
+        ab.assert_called_once()
+
+    def test_run_ab_instruments_calls_portfolio_ab_test(self, tmp_path: Path) -> None:
+        dsl, registry_path, portfolio = _setup(tmp_path)
+        with patch("marketatlas.cli._run_portfolio_ab_test") as ab:
+            _run_main(
+                "run",
+                "--ab",
+                "--strategy",
+                str(dsl),
+                "--instruments",
+                str(portfolio),
+                "--registry",
+                str(registry_path),
+            )
+        ab.assert_called_once()
+
+    def test_run_instruments_without_ab_uses_portfolio_command(self, tmp_path: Path) -> None:
+        dsl, registry_path, portfolio = _setup(tmp_path)
+        with (
+            patch("marketatlas.cli.run_portfolio_command") as pc,
+            patch("marketatlas.cli._run_portfolio_ab_test") as ab,
+        ):
+            _run_main(
+                "run",
+                "--strategy",
+                str(dsl),
+                "--instruments",
+                str(portfolio),
+                "--registry",
+                str(registry_path),
+            )
+        pc.assert_called_once()
+        ab.assert_not_called()
+
+    @pytest.mark.parametrize("with_instruments", [False, True])
+    def test_run_ab_yaml_errors_cleanly(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], with_instruments: bool
+    ) -> None:
+        yaml_file = tmp_path / "s.yaml"
+        yaml_file.write_text("strategy:\n  name: test\n")
+        args = ["run", "--ab", "--strategy", str(yaml_file)]
+        if with_instruments:
+            _, registry_path, portfolio = _setup(tmp_path)
+            args += ["--instruments", str(portfolio), "--registry", str(registry_path)]
+        with pytest.raises(SystemExit) as exc:
+            _run_main(*args)
+        assert exc.value.code == 1
+        captured = capsys.readouterr()
+        assert "requires a DSL strategy file" in captured.err
+
+    @patch("marketatlas.visualization.interactive.InteractiveRenderer")
+    @patch("marketatlas.backtesting.backtester.Backtester")
+    def test_run_ab_choice_free_single_variant(
+        self,
+        mock_bt_cls: MagicMock,
+        mock_renderer_cls: MagicMock,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        dsl = tmp_path / "s.dsl"
+        dsl.write_text(CHOICE_FREE_DSL)
+
+        provider = MagicMock()
+        provider.fetch.return_value = _market_data("BTC-USD")
+        with (
+            patch("marketatlas.cli.YahooProvider") as yahoo,
+            patch("marketatlas.cli.DukascopyProvider") as duka,
+        ):
+            yahoo.return_value = provider
+            duka.return_value = provider
+
+            mock_tradebook = MagicMock()
+            mock_tradebook.summary = {
+                "initial_balance": 1000.0,
+                "final_balance": 1000.0,
+                "total_pnl": 0.0,
+                "total_return_pct": 0.0,
+                "total_trades": 0,
+                "wins": 0,
+                "losses": 0,
+                "breakevens": 0,
+                "win_rate": 0.0,
+                "max_drawdown": 0.0,
+                "profit_factor": 0.0,
+                "expectancy": 0.0,
+            }
+            mock_tradebook.trades = []
+            mock_bt = MagicMock()
+            mock_bt.run.return_value = _result(mock_tradebook)
+            mock_bt_cls.return_value = mock_bt
+
+            _run_main(
+                "run",
+                "--ab",
+                "--strategy",
+                str(dsl),
+                "--symbol",
+                "BTC-USD",
+                "--start",
+                "2024-01-01",
+                "--end",
+                "2024-06-01",
+                "--output",
+                str(tmp_path / "out.html"),
+            )
+
+        captured = capsys.readouterr()
+        assert "A/B TEST — 1 variant(s)" in captured.out
+        assert "default" in captured.out
+        assert "HTML chart:" in captured.out
+
+
+def _result(mock_tradebook: MagicMock) -> MagicMock:
+    result = MagicMock()
+    result.tradebook = mock_tradebook
+    result.frames = MagicMock()
+    return result
+
+
+class TestPortfolioABRunner:
+    def _run(self, args: list[str]) -> None:
+        provider = MagicMock()
+        provider.fetch.side_effect = lambda symbol, tf, start, end: _market_data(symbol.name)
+        with (
+            patch("marketatlas.cli.YahooProvider") as yahoo,
+            patch("marketatlas.cli.DukascopyProvider") as duka,
+            patch("marketatlas.strategy.bundle.StrategyBundle") as bundle_cls,
+        ):
+            yahoo.return_value = provider
+            duka.return_value = provider
+            bundle_cls.side_effect = _real_bundle
+            _run_main(*args)
+
+    @pytest.mark.parametrize("two_value_choice", [True])
+    def test_real_two_instrument_two_value_choice(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        two_value_choice: bool,
+    ) -> None:
+        dsl, registry_path, portfolio = _setup(tmp_path)
+        self._run(
+            [
+                "run",
+                "--ab",
+                "--strategy",
+                str(dsl),
+                "--instruments",
+                str(portfolio),
+                "--registry",
+                str(registry_path),
+                "--interval",
+                "1d",
+                "--start",
+                "2024-01-01",
+                "--end",
+                "2025-01-01",
+                "--data-dir",
+                str(tmp_path / "cache"),
+                "--output",
+                "",
+            ]
+        )
+
+        captured = capsys.readouterr()
+        assert "A/B TEST (PORTFOLIO) — 2 variant(s)" in captured.out
+        # Variant 0: low min_strength fires the confirmed pullback; variant 1
+        # (min_strength 0.99) rejects it. Labels name the chosen values.
+        assert "min_strength=0.1" in captured.out
+        assert "min_strength=0.99" in captured.out
+        assert "1 trades" in captured.out
+        assert "0 trades" in captured.out
+
+        # Each variant runs on a fresh StrategyBundle and its own TradeBook:
+        # no cross-variant state, exactly one pair of created bundles.
+        bundles = list(_created_bundles)
+        assert len(bundles) == 2
+        assert bundles[0] is not bundles[1]
+        tradebooks = [b.tradebook for b in bundles]
+        assert all(isinstance(t, TradeBook) for t in tradebooks)
+        assert tradebooks[0] is not tradebooks[1]
+
+
+def _real_bundle(*args: object, **kwargs: object) -> StrategyBundle:
+    """StrategyBundle factory that records created instances side-by-side.
+
+    ``_real_bundle`` is installed as ``StrategyBundle.side_effect`` on the
+    patched class; the patch is active during the run so every instance the
+    CLI builds is recorded (for the distinct-tradebook assertion).
+    """
+    instance = StrategyBundle(*args, **kwargs)  # type: ignore[arg-type]
+    _created_bundles.append(instance)
+    return instance
+
+
+_created_bundles: list[StrategyBundle] = []

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from marketatlas.analysis.ast.instrument import TemplateGraph
+    from marketatlas.data.store import MarketStore
 
 from marketatlas.data.datastore import DataStore
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
@@ -123,6 +124,9 @@ def run_command(args: argparse.Namespace) -> None:
     from marketatlas.visualization.interactive import InteractiveRenderer
 
     if getattr(args, "instruments", ""):
+        if getattr(args, "ab", False):
+            _run_portfolio_ab_test(args, Path(args.strategy))
+            return
         run_portfolio_command(args)
         return
 
@@ -256,23 +260,203 @@ def run_command(args: argparse.Namespace) -> None:
         print(f"Pickle: {args.pickle}")
 
 
+def _load_ab_stores(
+    args: argparse.Namespace,
+    templates: tuple[TemplateGraph, ...],
+    instruments: list[Instrument],
+    *,
+    fail_fast: bool,
+) -> tuple[list[tuple[Instrument, MarketStore]], datetime, datetime]:
+    """Fetch/store setup shared by the single-symbol and portfolio ``--ab`` paths.
+
+    Computes the required timeframes from the first template, builds the
+    provider chain and persistent datastore, and fetches one ``MarketStore``
+    per instrument over the same range. A failed fetch aborts the run when
+    ``fail_fast`` (single-symbol) or is skipped (portfolio, matching
+    ``run_portfolio_command``).
+    """
+    from marketatlas.data.resample import tf_minutes
+    from marketatlas.data.store import MarketStore
+
+    base_tf = Timeframe(args.interval)
+    default_start = datetime.now() - timedelta(days=730)
+    start = datetime.fromisoformat(args.start) if args.start else default_start
+    end = datetime.fromisoformat(args.end) if args.end else datetime.now()
+    all_tfs = sorted(
+        set([base_tf] + [Timeframe(tf) for tf in templates[0].config.timeframes]),
+        key=lambda tf: tf_minutes(tf),
+    )
+    print(f"\nFetching {len(all_tfs)} timeframe(s): {', '.join(tf.value for tf in all_tfs)}")
+    print(f"Range: {start.date()} to {end.date()}")
+    registry = _load_registry(args)
+    datastore = DataStore(Path(args.data_dir) if args.data_dir else None)
+    print(f"Data store: {datastore.base_path}")
+
+    pairs: list[tuple[Instrument, MarketStore]] = []
+    for instrument in instruments:
+        canonical = instrument.canonical
+        provider = _build_chain(canonical, registry)
+        print("  Providers: " + ", ".join(type(p).__name__ for p in provider.providers))
+        try:
+            data = fetch_instrument_data(
+                provider,
+                datastore,
+                instrument,
+                all_tfs,
+                start,
+                end,
+                base_tf,
+                label=canonical,
+            )
+        except InstrumentDataError as e:
+            if fail_fast:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
+            print(f"  ERROR: {e}", file=sys.stderr)
+            continue
+        pairs.append((instrument, MarketStore(data.timeframes)))
+    return pairs, start, end
+
+
+def _ab_row(label: str, summary: dict[str, object]) -> str:
+    """One comparison line: trades, W/L, P&L, return, drawdown, PF, expectancy."""
+    return (
+        f"{label:<40s}"
+        f"{summary['total_trades']:3d} trades "
+        f"{summary['wins']}W/{summary['losses']}L "
+        f"P&L=${summary['total_pnl']:+.2f} "
+        f"({summary['total_return_pct']:+.1f}%) "
+        f"DD={summary['max_drawdown']:.1%} "
+        f"PF={summary['profit_factor']:.2f} "
+        f"EXP=${summary['expectancy']:.2f}"
+    )
+
+
 def _run_ab_test(args: argparse.Namespace, strategy_path: Path) -> None:
     """A/B test every concrete variant of a choice template (backlog 048).
 
     Expands the DSL's ``<a | b | c>`` template choices into one backtest per
-    variant and prints a comparison. The variant's signal rules identify it
-    (e.g. ``min_strength=0.3``), so template substitution is a single-source
-    A/B workflow. ``--output`` writes one HTML chart per variant.
+    variant and prints a comparison. The variant's chosen values across all
+    definitions (analyzer params, signal rules, risk params) identify it, so
+    template substitution is a single-source A/B workflow. ``--output`` writes
+    one HTML chart per variant.
     """
-    from marketatlas.analysis.ast.compiler import ASTCompiler
-    from marketatlas.analysis.ast.parser import parse_with_positions
+    from marketatlas.analysis.ast.variant import variant_labels
     from marketatlas.backtesting.backtester import Backtester
-    from marketatlas.data.resample import tf_minutes
-    from marketatlas.data.store import MarketStore
     from marketatlas.strategy.bundle import StrategyBundle
     from marketatlas.strategy.strategy import Strategy
     from marketatlas.visualization.context import RenderContext
     from marketatlas.visualization.interactive import InteractiveRenderer
+
+    templates = _compile_ab_templates(args, strategy_path)
+
+    symbol = Symbol(args.symbol)
+    instrument = _portfolio_instrument(args, symbol)
+    pairs, _, _ = _load_ab_stores(args, templates, [instrument], fail_fast=True)
+    store = pairs[0][1]
+
+    print("\n" + "=" * 60)
+    print(f"A/B TEST — {len(templates)} variant(s)")
+    print("=" * 60)
+
+    rows: list[tuple[TemplateGraph, Any]] = []
+    for i, template in enumerate(templates, 1):
+        strategy = Strategy(template.config.name, template.config)
+        bundle = StrategyBundle([strategy], initial_balance=args.balance)
+        bt = Backtester(store, bundle, window_size=100, max_hold_days=args.max_hold_days)
+        print(f"\r  Variant {i}/{len(templates)}", end="", flush=True)
+        result = bt.run()
+        rows.append((template, result))
+
+    print("\n")
+    labels = variant_labels(templates)
+    for i, ((_, result), label) in enumerate(zip(rows, labels), 1):
+        print(f"  [{i}] {_ab_row(label, result.tradebook.summary)}")
+
+    if args.output:
+        output_path = Path(args.output)
+        for i, (_, result) in enumerate(rows, 1):
+            ctx = RenderContext(
+                frames=result.frames,
+                store=store,
+                tradebook=result.tradebook,
+                max_hold_days=args.max_hold_days,
+                window_size=100,
+            )
+            renderer = InteractiveRenderer(ctx)
+            variant_path = output_path.with_name(f"{output_path.stem}_v{i}{output_path.suffix}")
+            renderer.render(variant_path)
+            print(f"HTML chart: {variant_path}")
+
+
+def _run_portfolio_ab_test(args: argparse.Namespace, strategy_path: Path) -> None:
+    """Portfolio A/B: one portfolio backtest per concrete variant (backlog 079).
+
+    When ``--ab`` and ``--instruments`` are both set, the choice template is
+    expanded once per concrete variant; each variant runs on its own
+    ``StrategyBundle``/``TradeBook`` (fresh analyzers, no cross-variant state)
+    over the same fetched instrument data, and the comparison line per variant
+    is printed with choice-value labels.
+    """
+    from marketatlas.analysis.ast.variant import variant_labels
+    from marketatlas.backtesting.portfolio import PortfolioBacktester
+    from marketatlas.strategy.bundle import StrategyBundle
+    from marketatlas.strategy.strategy import Strategy
+
+    templates = _compile_ab_templates(args, strategy_path)
+
+    registry = _load_registry(args)
+    if registry is None:
+        print(
+            "Error: --instruments requires an instrument registry " f"({_registry_path(args)})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        spec = load_portfolio(Path(args.instruments), registry)
+    except PortfolioError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(
+        f"Portfolio: {len(spec)} instrument(s): " + ", ".join(i.canonical for i in spec.instruments)
+    )
+
+    pairs, _, _ = _load_ab_stores(args, templates, list(spec.instruments), fail_fast=False)
+    if not pairs:
+        print("\nError: no instrument data loaded", file=sys.stderr)
+        sys.exit(1)
+
+    print("\n" + "=" * 60)
+    print(f"A/B TEST (PORTFOLIO) — {len(templates)} variant(s)")
+    print("=" * 60)
+
+    results: list[tuple[TemplateGraph, Any]] = []
+    for i, template in enumerate(templates, 1):
+        strategy = Strategy(template.config.name, template.config)
+        bundle = StrategyBundle([strategy], initial_balance=args.balance)
+        bt = PortfolioBacktester(bundle, pairs, window_size=100, max_hold_days=args.max_hold_days)
+        print(f"\r  Variant {i}/{len(templates)}", end="", flush=True)
+        result = bt.run()
+        results.append((template, result))
+
+    print("\n")
+    labels = variant_labels(templates)
+    for i, ((_, result), label) in enumerate(zip(results, labels), 1):
+        print(f"  [{i}] {_ab_row(label, result.tradebook.summary)}")
+
+
+def _compile_ab_templates(
+    args: argparse.Namespace, strategy_path: Path
+) -> tuple[TemplateGraph, ...]:
+    """Parse and expand a DSL strategy into concrete template variants.
+
+    ``--ab`` requires a DSL file: choice templates are a DSL construct, so a
+    YAML strategy errors cleanly (the same file is fine without ``--ab``).
+    """
+    from marketatlas.analysis.ast.compiler import ASTCompiler
+    from marketatlas.analysis.ast.parser import parse_with_positions
 
     if strategy_path.suffix != ".dsl":
         print(
@@ -292,79 +476,7 @@ def _run_ab_test(args: argparse.Namespace, strategy_path: Path) -> None:
     if not templates:
         print("Error: DSL produced no template variants", file=sys.stderr)
         sys.exit(1)
-
-    symbol = Symbol(args.symbol)
-    base_tf = Timeframe(args.interval)
-    default_start = datetime.now() - timedelta(days=730)
-    start = datetime.fromisoformat(args.start) if args.start else default_start
-    end = datetime.fromisoformat(args.end) if args.end else datetime.now()
-
-    all_tfs = sorted(
-        set([base_tf] + [Timeframe(tf) for tf in templates[0].config.timeframes]),
-        key=lambda tf: tf_minutes(tf),
-    )
-    print(f"\nFetching {len(all_tfs)} timeframe(s): {', '.join(tf.value for tf in all_tfs)}")
-    print(f"Range: {start.date()} to {end.date()}")
-    registry = _load_registry(args)
-    provider = _build_chain(symbol.name, registry)
-    datastore = DataStore(Path(args.data_dir) if args.data_dir else None)
-    instrument = _portfolio_instrument(args, symbol)
-    try:
-        data = fetch_instrument_data(provider, datastore, instrument, all_tfs, start, end, base_tf)
-    except InstrumentDataError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-    store = MarketStore(data.timeframes)
-
-    print("\n" + "=" * 60)
-    print(f"A/B TEST — {len(templates)} variant(s)")
-    print("=" * 60)
-
-    rows: list[tuple[TemplateGraph, Any, dict[str, object]]] = []
-    for i, template in enumerate(templates, 1):
-        strategy = Strategy(template.config.name, template.config)
-        bundle = StrategyBundle([strategy], initial_balance=args.balance)
-        bt = Backtester(store, bundle, window_size=100, max_hold_days=args.max_hold_days)
-        print(f"\r  Variant {i}/{len(templates)}", end="", flush=True)
-        result = bt.run()
-        rows.append((template, result, result.tradebook.summary))
-
-    print("\n")
-    for i, (template, result, summary) in enumerate(rows, 1):
-        label = _variant_label(template)
-        pnl = summary["total_pnl"]
-        pct = summary["total_return_pct"]
-        print(
-            f"  [{i}] {label:<40s} {summary['total_trades']:3d} trades "
-            f"{summary['wins']}W/{summary['losses']}L "
-            f"P&L=${pnl:+.2f} ({pct:+.1f}%)"
-        )
-
-    if args.output:
-        output_path = Path(args.output)
-        for i, (template, result, _) in enumerate(rows, 1):
-            ctx = RenderContext(
-                frames=result.frames,
-                store=store,
-                tradebook=result.tradebook,
-                max_hold_days=args.max_hold_days,
-                window_size=100,
-            )
-            renderer = InteractiveRenderer(ctx)
-            variant_path = output_path.with_name(
-                f"{output_path.stem}_v{i}{output_path.suffix}"
-            )
-            renderer.render(variant_path)
-            print(f"HTML chart: {variant_path}")
-
-
-def _variant_label(template: TemplateGraph) -> str:
-    """Human label for a concrete variant: its distinguishing signal rules."""
-    parts: list[str] = []
-    for sc in template.config.signals:
-        for k, v in sc.rules.items():
-            parts.append(f"{k}={v}")
-    return ", ".join(parts) if parts else "default"
+    return templates
 
 
 def run_portfolio_command(args: argparse.Namespace) -> None:

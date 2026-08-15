@@ -52,6 +52,7 @@
 - [x] 069 — Portfolio instrument file & data loading (`PortfolioSpec`/`load_portfolio`, shared `fetch_instrument_data` helper, `run --instruments <file>` loads all instruments over identical start/end into the canonical-keyed store, per-instrument abort with context)
 - [x] 075 — PortfolioBacktester core (merged primary-timeframe calendar, shared TradeBook, per-instrument frame alignment, deterministic entry order, `BundleProtocol.strategies`, `PortfolioBacktestResult.by_instrument`)
 - [x] 077 — Portfolio visualization (`render_portfolio`/`render_portfolio_index` in `visualization/portfolio.py`: per-instrument charts reuse `InteractiveRenderer` with `TradeBook.filtered_by_instrument`, lightweight static index page `{stem}.html` with shared-book summary + per-instrument rows linking to `{stem}.{canonical}.html`; `TradeBook` by-instrument/by-strategy breakdowns extended with `trades`/`win_rate`/`profit_factor` consumed from `summary` directly)
+- [x] 079 — Portfolio A/B test runner (`run --ab --instruments` expands choice templates and runs one `PortfolioBacktester` per variant on a fresh `StrategyBundle`/`TradeBook`; `analysis/ast/variant.py` derives variant identity/labels across every node type — analyzer params, signal rules, risk params; shared `_load_ab_stores` fetch/store helper for both `--ab` paths; `.dsl` required under `--ab`)
 
 ## AST Layer
 
