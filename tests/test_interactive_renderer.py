@@ -3,7 +3,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.backtesting.portfolio import PortfolioBacktestResult
 from marketatlas.data.instrument import Instrument
@@ -592,6 +591,7 @@ class TestInteractiveRenderer:
         assert "const TRADES =" in content
         assert "const PULLBACKS =" in content
         assert "const FACTS_DATA =" in content
+        assert "const MAX_HOLD_DAYS =" in content
 
     def test_data_placeholders_terminated_with_semicolon(self, tmp_path: object) -> None:
         path = tmp_path / "semicolons.html"  # type: ignore[operator]
@@ -607,11 +607,18 @@ class TestInteractiveRenderer:
         # Each data placeholder must keep a terminating semicolon; otherwise a
         # following statement starting with '(' is absorbed into the value
         # expression (e.g. `const MIN_TOUCHES = 2(function() {...})()`).
-        for name in ("CANDLES", "CANDLES_BY_TF", "FRAMES", "INITIAL_BALANCE", "MIN_TOUCHES"):
-            line = next(l for l in js.splitlines() if l.startswith(f"const {name} = "))
+        for name in (
+            "CANDLES",
+            "CANDLES_BY_TF",
+            "FRAMES",
+            "INITIAL_BALANCE",
+            "MIN_TOUCHES",
+            "MAX_HOLD_DAYS",
+        ):
+            line = next(ln for ln in js.splitlines() if ln.startswith(f"const {name} = "))
             assert line.endswith(";"), f"const {name} missing terminating semicolon"
         # Init IIFE must not be glued onto the last data declaration.
-        assert ";(function() {" in js
+        assert "(function () {" in js
 
     def test_contains_controls(self, tmp_path: object) -> None:
         path = tmp_path / "controls.html"  # type: ignore[operator]
@@ -1000,8 +1007,7 @@ class TestInteractiveRenderer:
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
         assert "scrollToFrame" in content
-        assert "scrollToPosition" in content
-        assert "animation" in content
+        assert "setVisibleLogicalRange" in content
 
     def test_autoscroll_all_modes_in_js(self, tmp_path: object) -> None:
         path = tmp_path / "modes.html"  # type: ignore[operator]
@@ -1026,7 +1032,7 @@ class TestInteractiveRenderer:
         renderer = InteractiveRenderer(ctx)
         renderer.render(path)  # type: ignore[arg-type]
         content = path.read_text()  # type: ignore[union-attr]
-        assert "case 'a':" in content
+        assert 'case "a":' in content
 
     def test_volume_container_in_output(self, tmp_path: object) -> None:
         path = tmp_path / "vol.html"  # type: ignore[operator]

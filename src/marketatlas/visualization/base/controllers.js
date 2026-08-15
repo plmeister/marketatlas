@@ -6,9 +6,9 @@
 class PlaybackController {
   constructor(model, views, opts) {
     this.model = model;
-    this.views = views;           // { chart, info, evidence, summary, timeline }
+    this.views = views; // { chart, info, evidence, summary, timeline }
     this.speed = opts.speed || 150;
-    this.render = opts.render || function() {};
+    this.render = opts.render || function () {};
   }
 
   togglePlaying() {
@@ -36,7 +36,9 @@ class PlaybackController {
     this.model.playing = false;
   }
 
-  setSpeed(speed) { this.speed = speed; }
+  setSpeed(speed) {
+    this.speed = speed;
+  }
 
   stepForward() {
     this._pause();
@@ -62,6 +64,24 @@ class PlaybackController {
     this.render();
   }
 
+  jumpToNextEvent() {
+    this._pause();
+    const target = this.model.nextEventIndex(this.model.currentFrame);
+    if (target !== null) {
+      this.model.goTo(target);
+      this.render();
+    }
+  }
+
+  jumpToPrevEvent() {
+    this._pause();
+    const target = this.model.prevEventIndex(this.model.currentFrame);
+    if (target !== null) {
+      this.model.goTo(target);
+      this.render();
+    }
+  }
+
   toggleFutureVisibility() {
     const mode = this.model.toggleFutureVisibility();
     this.render();
@@ -75,47 +95,62 @@ class KeyboardController {
     this.pb = playbackCtrl;
     this.opts = opts || {};
     this._bound = this._handler.bind(this);
-    document.addEventListener('keydown', this._bound);
+    document.addEventListener("keydown", this._bound);
   }
 
   _handler(e) {
     // Skip when typing in input
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+    if (
+      e.target.tagName === "INPUT" ||
+      e.target.tagName === "TEXTAREA" ||
+      e.target.isContentEditable
+    )
+      return;
 
     switch (e.key) {
-      case 'ArrowRight':
+      case "ArrowRight":
         e.preventDefault();
         this.pb.stepForward();
         break;
-      case 'ArrowLeft':
+      case "ArrowLeft":
         e.preventDefault();
         this.pb.stepBackward();
         break;
-      case ' ':
+      case " ":
         e.preventDefault();
         this.pb.togglePlaying();
         break;
-      case 'Home':
+      case "Home":
         e.preventDefault();
         this.pb.jumpToStart();
         break;
-      case 'End':
+      case "End":
         e.preventDefault();
         this.pb.jumpToEnd();
         break;
-      case 'f':
-      case 'F':
+      case "f":
+      case "F":
         this.pb.toggleFutureVisibility();
         break;
-      case 'a':
-      case 'A':
+      case "a":
+      case "A":
         if (this.opts.toggleAutoscroll) this.opts.toggleAutoscroll();
+        break;
+      case "n":
+      case "N":
+        e.preventDefault();
+        this.pb.jumpToNextEvent();
+        break;
+      case "p":
+      case "P":
+        e.preventDefault();
+        this.pb.jumpToPrevEvent();
         break;
     }
   }
 
   destroy() {
-    document.removeEventListener('keydown', this._bound);
+    document.removeEventListener("keydown", this._bound);
   }
 }
 
@@ -163,7 +198,7 @@ class TFController {
   }
 }
 
-if (typeof module !== 'undefined' && module.exports) {
+if (typeof module !== "undefined" && module.exports) {
   module.exports = { PlaybackController, KeyboardController, TFController };
 } else {
   window.PlaybackController = PlaybackController;

@@ -268,6 +268,7 @@ _JS_PLACEHOLDERS = [
     "SUMMARY",
     "INITIAL_BALANCE",
     "MIN_TOUCHES",
+    "MAX_HOLD_DAYS",
 ]
 
 _INTERACTIVE_TEMPLATE = """\
@@ -369,10 +370,12 @@ _INTERACTIVE_TEMPLATE = """\
 </div>
 <div id="frame-controls">
   <button id="btn-first" title="First frame (Home)">&#9654;&#9664; First</button>
+  <button id="btn-event-prev" title="Previous significant event (P)">&#9664; Event</button>
   <button id="btn-prev" title="Previous frame (Left arrow)">&#9664; Prev</button>
   <span class="frame-label">Frame
     <span id="frame-num">0</span> / <span id="frame-total">0</span></span>
   <button id="btn-next" title="Next frame (Right arrow)">Next &#9654;</button>
+  <button id="btn-event-next" title="Next significant event (N)">Event &#9654;</button>
   <button id="btn-last" title="Last frame (End)">Last &#9654;&#9664;</button>
   <button id="btn-play" title="Play/Pause (Space)">&#9654; Play</button>
   <select id="speed-select" title="Playback speed">
@@ -481,6 +484,7 @@ class InteractiveRenderer:
             "SUMMARY": json.dumps(summary_json),
             "INITIAL_BALANCE": json.dumps(ctx.tradebook.initial_balance),
             "MIN_TOUCHES": json.dumps(ctx.min_touches),
+            "MAX_HOLD_DAYS": json.dumps(ctx.max_hold_days),
         }
         for name in sorted(_JS_PLACEHOLDERS, key=len, reverse=True):
             js_template = js_template.replace(f"null; // @data:{name}", data_map[name] + ";")

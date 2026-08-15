@@ -2,7 +2,9 @@
  * AppModel — central state + data access for backtest chart.
  * Pure business logic, no DOM or charting library deps.
  */
-function _t(t) { return Date.parse(t); }
+function _t(t) {
+  return Date.parse(t);
+}
 
 class AppModel {
   constructor(data) {
@@ -20,9 +22,10 @@ class AppModel {
     this.evidenceMap = data.EVIDENCE_MAP || {};
     this.initialBalance = data.INITIAL_BALANCE || 0;
     this.minTouches = data.MIN_TOUCHES || 2;
+    this.maxHoldDays = data.MAX_HOLD_DAYS || 10;
 
     // Primary timeframe (carries overlay data)
-    this.tfCandleKey = this.availableTFs.length > 0 ? this.availableTFs[0] : '1d';
+    this.tfCandleKey = this.availableTFs.length > 0 ? this.availableTFs[0] : "1d";
 
     // Mutable state
     this.currentFrame = 0;
@@ -31,7 +34,8 @@ class AppModel {
     this.playInterval = null;
     this.autoScrollDisabled = false;
     this.programmaticScroll = false;
-    this.futureVisibility = 'hide'; // 'hide' | 'dim' | 'show'
+    this.futureVisibility = "hide"; // 'hide' | 'dim' | 'show'
+    this._events = null;
   }
 
   // --- Candle access ---
@@ -39,7 +43,9 @@ class AppModel {
     return this.candlesByTF[this.activeTF] || this.candles;
   }
 
-  isPrimaryTF() { return this.activeTF === this.tfCandleKey; }
+  isPrimaryTF() {
+    return this.activeTF === this.tfCandleKey;
+  }
 
   // --- Frame queries ---
   frameTime(idx) {
@@ -79,31 +85,84 @@ class AppModel {
 
   // --- Trade queries ---
   activeTradesAt(frameTime) {
-    return this.trades.filter(t =>
-      t.entry_time <= frameTime && (t.exit_time === null || t.exit_time >= frameTime)
+    return this.trades.filter(
+      (t) => t.entry_time <= frameTime && (t.exit_time === null || t.exit_time >= frameTime),
     );
   }
 
   closedTradesBefore(frameTime) {
-    return this.trades.filter(t =>
-      t.exit_time !== null && t.exit_time <= frameTime
-    );
+    return this.trades.filter((t) => t.exit_time !== null && t.exit_time <= frameTime);
+  }
+
+  // --- Significant-event navigation ---
+  // Frames that carry evidence/signals or a trade entry/exit.
+  eventIndices() {
+    if (!this._events) this._events = this._computeEvents();
+    return this._events;
+  }
+
+  _computeEvents() {
+    const set = new Set();
+    this.frames.forEach((f, i) => {
+      if (
+        (f.evidence && f.evidence.length) ||
+        (f.risk_evidence && f.risk_evidence.length) ||
+        (f.signals && f.signals.length)
+      ) {
+        set.add(i);
+      }
+    });
+    this.trades.forEach((t) => {
+      [t.entry_time, t.exit_time].forEach((tm) => {
+        if (tm === null) return;
+        const i = this.frames.findIndex((f) => f.time === tm);
+        if (i >= 0) set.add(i);
+      });
+    });
+    return Array.from(set).sort((a, b) => a - b);
+  }
+
+  nextEventIndex(fromIdx) {
+    const ev = this.eventIndices();
+    for (let i = 0; i < ev.length; i++) {
+      if (ev[i] > fromIdx) return ev[i];
+    }
+    return null;
+  }
+
+  prevEventIndex(fromIdx) {
+    const ev = this.eventIndices();
+    for (let i = ev.length - 1; i >= 0; i--) {
+      if (ev[i] < fromIdx) return ev[i];
+    }
+    return null;
   }
 
   // --- Summary computation ---
   computeSummary(frameTime) {
     let bal = this.initialBalance;
-    let wins = 0, losses = 0, breakevens = 0, pnl = 0;
-    let grossProfit = 0, grossLoss = 0;
-    let peak = this.initialBalance, worst = 0;
+    let wins = 0,
+      losses = 0,
+      breakevens = 0,
+      pnl = 0;
+    let grossProfit = 0,
+      grossLoss = 0;
+    let peak = this.initialBalance,
+      worst = 0;
 
-    this.trades.forEach(t => {
+    this.trades.forEach((t) => {
       if (t.exit_time !== null && t.exit_time <= frameTime && t.pnl !== null) {
         bal += t.pnl;
         pnl += t.pnl;
-        if (t.result === 'win') { wins++; grossProfit += t.pnl; }
-        else if (t.result === 'loss') { losses++; grossLoss += Math.abs(t.pnl); }
-        else if (t.result === 'breakeven') { breakevens++; }
+        if (t.result === "win") {
+          wins++;
+          grossProfit += t.pnl;
+        } else if (t.result === "loss") {
+          losses++;
+          grossLoss += Math.abs(t.pnl);
+        } else if (t.result === "breakeven") {
+          breakevens++;
+        }
       }
       if (bal > peak) peak = bal;
       const dd = peak > 0 ? (peak - bal) / peak : 0;
@@ -112,16 +171,27 @@ class AppModel {
 
     const totalClosed = wins + losses + breakevens;
     const winLossTotal = wins + losses;
-    const winRate = winLossTotal > 0 ? (wins / winLossTotal * 100) : 0;
-    const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? Infinity : 0);
+    const winRate = winLossTotal > 0 ? (wins / winLossTotal) * 100 : 0;
+    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0;
     const avgWin = wins > 0 ? grossProfit / wins : 0;
     const avgLoss = losses > 0 ? -grossLoss / losses : 0;
     const expectancy = winLossTotal > 0 ? pnl / winLossTotal : 0;
-    const returnPct = this.initialBalance > 0 ? (pnl / this.initialBalance * 100) : 0;
+    const returnPct = this.initialBalance > 0 ? (pnl / this.initialBalance) * 100 : 0;
 
     return {
-      balance: bal, pnl, returnPct, wins, losses, breakevens,
-      totalClosed, winRate, profitFactor, avgWin, avgLoss, expectancy, drawdown: worst,
+      balance: bal,
+      pnl,
+      returnPct,
+      wins,
+      losses,
+      breakevens,
+      totalClosed,
+      winRate,
+      profitFactor,
+      avgWin,
+      avgLoss,
+      expectancy,
+      drawdown: worst,
     };
   }
 
@@ -132,11 +202,26 @@ class AppModel {
     return idx;
   }
 
-  goFirst() { this.currentFrame = this._clamp(0); return this.currentFrame; }
-  goLast() { this.currentFrame = this._clamp(this.frames.length - 1); return this.currentFrame; }
-  goNext() { this.currentFrame = this._clamp(this.currentFrame + 1); return this.currentFrame; }
-  goPrev() { this.currentFrame = this._clamp(this.currentFrame - 1); return this.currentFrame; }
-  goTo(idx) { this.currentFrame = this._clamp(idx); return this.currentFrame; }
+  goFirst() {
+    this.currentFrame = this._clamp(0);
+    return this.currentFrame;
+  }
+  goLast() {
+    this.currentFrame = this._clamp(this.frames.length - 1);
+    return this.currentFrame;
+  }
+  goNext() {
+    this.currentFrame = this._clamp(this.currentFrame + 1);
+    return this.currentFrame;
+  }
+  goPrev() {
+    this.currentFrame = this._clamp(this.currentFrame - 1);
+    return this.currentFrame;
+  }
+  goTo(idx) {
+    this.currentFrame = this._clamp(idx);
+    return this.currentFrame;
+  }
 
   // --- Step sizing ---
   // Frames advance on the primary TF (e.g. 1d) while the chart may show a
@@ -150,7 +235,7 @@ class AppModel {
   nextStepIndex(fromIdx) {
     const curTime = this.frameTime(fromIdx);
     if (curTime === null) return fromIdx;
-    const nextBar = this._viewCandles().find(c => _t(c.time) > _t(curTime));
+    const nextBar = this._viewCandles().find((c) => _t(c.time) > _t(curTime));
     if (!nextBar) return this.frames.length - 1;
     for (let i = fromIdx + 1; i < this.frames.length; i++) {
       if (this.frameTime(i) >= nextBar.time) return i;
@@ -164,7 +249,10 @@ class AppModel {
     const viewCandles = this._viewCandles();
     let lastVisible = null;
     for (let i = viewCandles.length - 1; i >= 0; i--) {
-      if (_t(viewCandles[i].time) <= _t(curTime)) { lastVisible = viewCandles[i].time; break; }
+      if (_t(viewCandles[i].time) <= _t(curTime)) {
+        lastVisible = viewCandles[i].time;
+        break;
+      }
     }
     if (lastVisible === null) return 0;
     for (let i = fromIdx - 1; i >= 0; i--) {
@@ -181,7 +269,7 @@ class AppModel {
 
   // --- Future visibility ---
   toggleFutureVisibility() {
-    const modes = ['hide', 'dim', 'show'];
+    const modes = ["hide", "dim", "show"];
     const idx = (modes.indexOf(this.futureVisibility) + 1) % modes.length;
     this.futureVisibility = modes[idx];
     return this.futureVisibility;
@@ -189,7 +277,7 @@ class AppModel {
 }
 
 // Export for Node tests, attach to window for browser
-if (typeof module !== 'undefined' && module.exports) {
+if (typeof module !== "undefined" && module.exports) {
   module.exports = { AppModel, _t };
 } else {
   window.AppModel = AppModel;
