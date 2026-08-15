@@ -35,31 +35,32 @@ class TradeBoxPrimitive {
   _draw(target) {
     const boxes = this._getBoxes();
     if (!boxes || boxes.length === 0) return;
-    const media = target.useMediaCoordinateSpace();
-    const ctx = media.context;
-    const timeScale = this._chart.timeScale();
-    const series = this._series;
-    ctx.save();
-    for (const b of boxes) {
-      const x1 = timeScale.timeToCoordinate(b.fromTime);
-      const x2 = timeScale.timeToCoordinate(b.toTime);
-      if (x1 === null || x2 === null) continue;
-      const x = Math.min(x1, x2);
-      const w = Math.abs(x2 - x1);
-      const eY = series.priceToCoordinate(b.entry);
-      const tY = series.priceToCoordinate(b.target);
-      const sY = series.priceToCoordinate(b.stop);
-      if (eY === null || tY === null || sY === null) continue;
-      // Reward zone: entry <-> target (flips below entry for shorts).
-      ctx.globalAlpha = 0.3;
-      ctx.fillStyle = "#22c55e";
-      ctx.fillRect(x, Math.min(eY, tY), w, Math.abs(tY - eY));
-      // Risk zone: entry <-> stop (flips above entry for shorts).
-      ctx.globalAlpha = 0.3;
-      ctx.fillStyle = "#ef4444";
-      ctx.fillRect(x, Math.min(eY, sY), w, Math.abs(sY - eY));
-    }
-    ctx.restore();
+    // v4.1.3 useMediaCoordinateSpace is a callback API: the library sets the
+    // device-pixel-ratio transform, then invokes the callback with
+    // { context, mediaSize }; coordinates stay in CSS pixels.
+    target.useMediaCoordinateSpace(({ context: ctx }) => {
+      const timeScale = this._chart.timeScale();
+      const series = this._series;
+      for (const b of boxes) {
+        const x1 = timeScale.timeToCoordinate(b.fromTime);
+        const x2 = timeScale.timeToCoordinate(b.toTime);
+        if (x1 === null || x2 === null) continue;
+        const x = Math.min(x1, x2);
+        const w = Math.abs(x2 - x1);
+        const eY = series.priceToCoordinate(b.entry);
+        const tY = series.priceToCoordinate(b.target);
+        const sY = series.priceToCoordinate(b.stop);
+        if (eY === null || tY === null || sY === null) continue;
+        // Reward zone: entry <-> target (flips below entry for shorts).
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = "#22c55e";
+        ctx.fillRect(x, Math.min(eY, tY), w, Math.abs(tY - eY));
+        // Risk zone: entry <-> stop (flips above entry for shorts).
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = "#ef4444";
+        ctx.fillRect(x, Math.min(eY, sY), w, Math.abs(sY - eY));
+      }
+    });
   }
 }
 

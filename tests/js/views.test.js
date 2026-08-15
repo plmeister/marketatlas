@@ -294,7 +294,48 @@ test("trade tooltip hides when hovering off any box", () => {
   assert.strictEqual(tooltip.style.display, "none");
 });
 
-// --- updateCandles(): future candle visibility modes ---
+// --- TradeBoxPrimitive._draw: rectangle rendering via callback API ---
+test("trade box primitive draws green reward and red risk rectangles", () => {
+  const model = makeModel();
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateTrades(5); // all trades placed by frame 2024-01-10
+  assert.ok(cv.tradeBoxPrimitive, "primitive attached");
+  const ops = [];
+  const ctx = {
+    fillRect(x, y, w, h) {
+      ops.push({ x, y, w, h, style: this.fillStyle });
+    },
+    save() {},
+    restore() {},
+    setTransform() {},
+    scale() {},
+  };
+  // v4.1.3 useMediaCoordinateSpace is a callback API: invoke with target-like
+  // object that calls the callback with { context, mediaSize }.
+  const target = {
+    useMediaCoordinateSpace(cb) {
+      return cb({ context: ctx, mediaSize: { x: 800, y: 500 } });
+    },
+  };
+  const views = cv.tradeBoxPrimitive.paneViews();
+  assert.ok(views.length >= 1, "pane views present");
+  const renderer = views[0].renderer();
+  renderer.draw(target);
+  assert.ok(ops.length >= 2, "at least one rectangle per zone");
+  assert.ok(
+    ops.some((o) => o.style === "#22c55e"),
+    "green reward zone drawn",
+  );
+  assert.ok(
+    ops.some((o) => o.style === "#ef4444"),
+    "red risk zone drawn",
+  );
+  for (const o of ops) {
+    assert.ok(Number.isFinite(o.x) && Number.isFinite(o.y), "x/y finite");
+    assert.ok(o.w > 0 && o.h > 0, "positive width/height");
+  }
+});
 test("updateCandles hides future candles in hide mode", () => {
   const model = makeModel();
   const cv = new ChartView(model, makeContainers());
