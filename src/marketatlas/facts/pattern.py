@@ -15,3 +15,4 @@ class PullbackStatus(Enum):
 class PullbackFact(Fact):
     direction: TrendDirection
     swing_pattern: tuple[float, ...] = ()
+    strength: float | None = None

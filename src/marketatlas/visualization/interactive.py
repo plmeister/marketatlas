@@ -161,6 +161,7 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
                     "type": "pullback",
                     "direction": fact.direction.value,
                     "swing_pattern": list(fact.swing_pattern),
+                    "strength": fact.strength,
                 }
             elif isinstance(fact, SwingStructureFact):
                 # Match swing_pattern prices to SwingFact swings for indices/times

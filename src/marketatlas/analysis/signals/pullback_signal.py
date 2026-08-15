@@ -57,7 +57,11 @@ class PullbackSignal(Signal):
         if pullback.direction == TrendDirection.NEUTRAL:
             return None
 
-        strength = _pullback_strength(pullback.swing_pattern)
+        strength = (
+            pullback.strength
+            if pullback.strength is not None
+            else _pullback_strength(pullback.swing_pattern)
+        )
         if strength < self._min_strength:
             return None
 
@@ -73,7 +77,7 @@ class PullbackSignal(Signal):
             EvidenceEntry(
                 text=(
                     f"Signal: {pullback.direction.value} pullback detected, "
-                    f"confidence {confidence:.2f}"
+                    f"strength {strength:.2f}, confidence {confidence:.2f}"
                 ),
                 level=EvidenceLevel.SIGNAL,
                 source="PullbackSignal",

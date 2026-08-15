@@ -112,6 +112,17 @@ class TestPullbackFact:
         )
         assert f.direction == TrendDirection.BULLISH
         assert f.swing_pattern == (48200.0, 51500.0, 49100.0)
+        assert f.strength is None
+
+    def test_strength_optional(self) -> None:
+        f = PullbackFact(
+            timestamp=TS,
+            evidence=(),
+            direction=TrendDirection.BULLISH,
+            swing_pattern=(),
+            strength=0.78,
+        )
+        assert f.strength == 0.78
 
     def test_status_enum_values(self) -> None:
         assert PullbackStatus.DETECTED.value == "detected"

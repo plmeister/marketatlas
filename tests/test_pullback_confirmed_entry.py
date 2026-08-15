@@ -243,6 +243,8 @@ class TestConfirmationGate:
         fact = result.facts[0]
         assert isinstance(fact, PullbackFact)
         assert fact.direction == TrendDirection.BEARISH
+        assert fact.strength is not None
+        assert 0.0 < fact.strength <= 1.0
 
     def test_lookback_swings_limits_pattern(self) -> None:
         data = _bullish_zigzag()
@@ -314,6 +316,94 @@ class TestCrossTimeframe:
         key = FactKey("swing_structure", timeframe=Timeframe("1w"))
         result = analyzer.analyze(view, {key: self._weekly_structure()})
         assert result.facts == ()
+
+
+class TestPatternStrength:
+    """Four composable strength terms: compactness, leg strength, pivot
+    quality, inclination (geometric mean in (0, 1])."""
+
+    def _points(self, indices: list[int]) -> tuple[SwingPoint, ...]:
+        prices = [97.0, 108.0, 99.0, 114.0, 101.0]
+        types = [SwingType.LOW, SwingType.HIGH, SwingType.LOW, SwingType.HIGH, SwingType.LOW]
+        return tuple(
+            SwingPoint(
+                price=price,
+                index=idx,
+                type=stype,
+                timestamp=BASE + timedelta(days=idx),
+            )
+            for price, stype, idx in zip(prices, types, indices)
+        )
+
+    def test_strength_in_range_for_valid_structure(self) -> None:
+        pts = self._points([2, 3, 4, 5, 6])
+        s = PullbackPatternAnalyzer._pattern_strength(
+            pts, entry_close=114.0, direction=TrendDirection.BULLISH
+        )
+        assert 0.0 < s <= 1.0
+
+    def test_compactness_penalizes_wide_spacing(self) -> None:
+        tight = PullbackPatternAnalyzer._pattern_strength(
+            self._points([2, 3, 4, 5, 6]),
+            entry_close=114.0,
+            direction=TrendDirection.BULLISH,
+        )
+        wide = PullbackPatternAnalyzer._pattern_strength(
+            self._points([2, 3, 4, 30, 50]),
+            entry_close=114.0,
+            direction=TrendDirection.BULLISH,
+        )
+        assert tight > wide
+
+    def test_pivot_quality_penalizes_shallow_recovery(self) -> None:
+        pts = self._points([2, 3, 4, 5, 6])
+        strong = PullbackPatternAnalyzer._pattern_strength(
+            pts, entry_close=114.0, direction=TrendDirection.BULLISH
+        )
+        shallow = PullbackPatternAnalyzer._pattern_strength(
+            pts, entry_close=102.0, direction=TrendDirection.BULLISH
+        )
+        assert strong > shallow
+
+    def test_deep_choppy_retrace_scores_lower_than_balanced(self) -> None:
+        balanced = PullbackPatternAnalyzer._pattern_strength(
+            self._points([2, 3, 4, 5, 6]),
+            entry_close=114.0,
+            direction=TrendDirection.BULLISH,
+        )
+        # Deep retraces that give back most of each trend leg (near-flat trend).
+        pts = (
+            SwingPoint(price=97.0, index=2, type=SwingType.LOW, timestamp=BASE + timedelta(days=2)),
+            SwingPoint(
+                price=108.0, index=3, type=SwingType.HIGH, timestamp=BASE + timedelta(days=3)
+            ),
+            SwingPoint(price=96.0, index=4, type=SwingType.LOW, timestamp=BASE + timedelta(days=4)),
+            SwingPoint(
+                price=114.0, index=5, type=SwingType.HIGH, timestamp=BASE + timedelta(days=5)
+            ),
+            SwingPoint(price=94.0, index=6, type=SwingType.LOW, timestamp=BASE + timedelta(days=6)),
+        )
+        choppy = PullbackPatternAnalyzer._pattern_strength(
+            pts, entry_close=114.0, direction=TrendDirection.BULLISH
+        )
+        assert balanced > choppy
+
+    def test_fewer_than_two_points_scores_zero(self) -> None:
+        single = (SwingPoint(price=97.0, index=2, type=SwingType.LOW, timestamp=BASE),)
+        s = PullbackPatternAnalyzer._pattern_strength(
+            single, entry_close=100.0, direction=TrendDirection.BULLISH
+        )
+        assert s == 0.0
+
+    def test_strength_emitted_on_entry_fact(self) -> None:
+        data = _bullish_zigzag()
+        analyzer = _analyzer()
+        result = analyzer.analyze(_view(7, data), {STRUCTURE_KEY: _bullish_structure()})
+        assert len(result.facts) == 1
+        fact = result.facts[0]
+        assert isinstance(fact, PullbackFact)
+        assert fact.strength is not None
+        assert 0.0 < fact.strength <= 1.0
 
 
 class TestEndToEnd:

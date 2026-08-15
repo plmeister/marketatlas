@@ -331,6 +331,63 @@ class TestPullbackSignal:
         )
         assert result is None
 
+    def test_fact_strength_used_when_provided(self) -> None:
+        store = _make_store(_flat_candles())
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = PullbackSignal()
+        fact = _bullish_pullback_fact()
+        fact = PullbackFact(
+            timestamp=fact.timestamp,
+            evidence=fact.evidence,
+            direction=fact.direction,
+            swing_pattern=fact.swing_pattern,
+            strength=0.85,
+        )
+        result = signal.evaluate(
+            view,
+            _keyed_facts(fact, _bullish_trend_fact(), _atr_fact(50.0)),
+        )
+        assert result is not None
+        assert result.confidence == round(0.85 * 0.7, 4)
+
+    def test_fact_strength_below_min_filtered(self) -> None:
+        store = _make_store(_flat_candles())
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = PullbackSignal(min_strength=0.5)
+        fact = PullbackFact(
+            timestamp=BASE,
+            evidence=(),
+            direction=TrendDirection.BULLISH,
+            swing_pattern=(),
+            strength=0.2,
+        )
+        result = signal.evaluate(
+            view,
+            _keyed_facts(fact, _bullish_trend_fact(), _atr_fact(50.0)),
+        )
+        assert result is None
+
+    def test_fact_strength_overrides_weak_pattern(self) -> None:
+        """Explicit strength wins over the pattern-based fallback, so a
+        high-confidence fact passes even when the raw retracement is shallow."""
+        store = _make_store(_flat_candles())
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = PullbackSignal(min_strength=0.5)
+        # shallow retracement: |c-b|/|b-a| = 100/1000 = 0.1 -> fallback 0.1
+        fact = PullbackFact(
+            timestamp=BASE,
+            evidence=(),
+            direction=TrendDirection.BULLISH,
+            swing_pattern=(100.0, 1100.0, 1000.0, 1200.0),
+            strength=0.9,
+        )
+        result = signal.evaluate(
+            view,
+            _keyed_facts(fact, _bullish_trend_fact(), _atr_fact(50.0)),
+        )
+        assert result is not None
+        assert result.confidence == round(0.9 * 0.7, 4)
+
     def test_evidence_populated(self) -> None:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)

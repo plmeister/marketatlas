@@ -1,3 +1,4 @@
+import math
 from typing import Any
 
 from marketatlas.analysis.base import Analyzer
@@ -23,6 +24,7 @@ class PullbackPatternAnalyzer(Analyzer):
         min_body_pct: float = 0.6,
         confirm_beyond_swing: bool = True,
         lookback_swings: int = 5,
+        compact_candles: int = 40,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -30,6 +32,7 @@ class PullbackPatternAnalyzer(Analyzer):
         self._min_body_pct = min_body_pct
         self._confirm_beyond_swing = confirm_beyond_swing
         self._lookback_swings = lookback_swings
+        self._compact_candles = compact_candles
 
     @property
     def instance_key(self) -> str:
@@ -181,6 +184,13 @@ class PullbackPatternAnalyzer(Analyzer):
             )
             pattern = tuple(p.price for p in pts)
 
+        strength = self._pattern_strength(
+            points,
+            entry_close=view.current.close,
+            direction=direction,
+            compact_candles=self._compact_candles,
+        )
+
         evidence = (
             EvidenceEntry(
                 text=f"pullback detected {direction} on entry candle",
@@ -195,10 +205,67 @@ class PullbackPatternAnalyzer(Analyzer):
                     evidence=evidence,
                     direction=direction,
                     swing_pattern=pattern,
+                    strength=strength,
                 ),
             ),
             evidence=evidence,
         )
+
+    @staticmethod
+    def _pattern_strength(
+        points: tuple[SwingPoint, ...],
+        entry_close: float,
+        direction: TrendDirection,
+        compact_candles: int = 40,
+    ) -> float:
+        """Quality of the detected HH/HL structure as a pullback setup.
+
+        Geometric mean of four terms, each in (0, 1]:
+        * ``compactness`` — swings complete within ``compact_candles``.
+        * ``leg_strength`` — legs move evenly (each leg vs. the longest leg).
+        * ``pivot_quality`` — entry candle recovers a large share of the
+          last swing's retracement (well-defined V).
+        * ``inclination`` — trend legs outpace retracement legs (not flat).
+        """
+        if len(points) < 2:
+            return 0.0
+        legs = [abs(b.price - a.price) for a, b in zip(points, points[1:])]
+        total = sum(legs)
+        if total <= 0:
+            return 0.0
+
+        max_leg = max(legs)
+        leg_strength = math.prod(min(leg / max_leg, 1.0) for leg in legs) ** (
+            1.0 / len(legs)
+        )
+
+        span = points[-1].index - points[0].index
+        compactness = max(0.0, 1.0 - span / max(compact_candles, 1))
+
+        bullish = direction == TrendDirection.BULLISH
+        last = points[-1]
+        prev = points[-2]
+        if bullish:
+            drop = prev.price - last.price
+            recovery = entry_close - last.price
+        else:
+            drop = last.price - prev.price
+            recovery = last.price - entry_close
+        pivot_quality = (
+            min(drop, recovery) / max(drop, recovery)
+            if drop > 0 and recovery > 0
+            else 0.0
+        )
+
+        up_legs = sum(
+            abs(b.price - a.price)
+            for a, b in zip(points, points[1:])
+            if (b.price - a.price) * (1 if bullish else -1) > 0
+        )
+        inclination = up_legs / total if total > 0 else 0.0
+
+        terms = (compactness, leg_strength, pivot_quality, inclination)
+        return math.prod(terms) ** (1.0 / len(terms))
 
     @staticmethod
     def _entry_day_index(view: MarketView, last_swing: SwingPoint) -> int | None:

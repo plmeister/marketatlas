@@ -4,6 +4,10 @@ import argparse
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from marketatlas.analysis.ast.instrument import TemplateGraph
 
 from marketatlas.data.datastore import DataStore
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
@@ -127,6 +131,10 @@ def run_command(args: argparse.Namespace) -> None:
         print(f"Error: strategy file not found: {strategy_path}", file=sys.stderr)
         sys.exit(1)
 
+    if getattr(args, "ab", False):
+        _run_ab_test(args, strategy_path)
+        return
+
     try:
         config = load_strategy(strategy_path)
     except Exception as e:
@@ -246,6 +254,117 @@ def run_command(args: argparse.Namespace) -> None:
         with open(args.pickle, "wb") as f:
             pickle.dump(result, f)
         print(f"Pickle: {args.pickle}")
+
+
+def _run_ab_test(args: argparse.Namespace, strategy_path: Path) -> None:
+    """A/B test every concrete variant of a choice template (backlog 048).
+
+    Expands the DSL's ``<a | b | c>`` template choices into one backtest per
+    variant and prints a comparison. The variant's signal rules identify it
+    (e.g. ``min_strength=0.3``), so template substitution is a single-source
+    A/B workflow. ``--output`` writes one HTML chart per variant.
+    """
+    from marketatlas.analysis.ast.compiler import ASTCompiler
+    from marketatlas.analysis.ast.parser import parse_with_positions
+    from marketatlas.backtesting.backtester import Backtester
+    from marketatlas.data.resample import tf_minutes
+    from marketatlas.data.store import MarketStore
+    from marketatlas.strategy.bundle import StrategyBundle
+    from marketatlas.strategy.strategy import Strategy
+    from marketatlas.visualization.context import RenderContext
+    from marketatlas.visualization.interactive import InteractiveRenderer
+
+    if strategy_path.suffix != ".dsl":
+        print(
+            "Error: --ab requires a DSL strategy file (.dsl) with template choices",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    source = strategy_path.read_text()
+    try:
+        analysis, _ = parse_with_positions(source, name=strategy_path.stem)
+        templates = ASTCompiler.compile_templates(analysis)
+    except Exception as e:
+        print(f"Error compiling DSL '{strategy_path}': {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not templates:
+        print("Error: DSL produced no template variants", file=sys.stderr)
+        sys.exit(1)
+
+    symbol = Symbol(args.symbol)
+    base_tf = Timeframe(args.interval)
+    default_start = datetime.now() - timedelta(days=730)
+    start = datetime.fromisoformat(args.start) if args.start else default_start
+    end = datetime.fromisoformat(args.end) if args.end else datetime.now()
+
+    all_tfs = sorted(
+        set([base_tf] + [Timeframe(tf) for tf in templates[0].config.timeframes]),
+        key=lambda tf: tf_minutes(tf),
+    )
+    print(f"\nFetching {len(all_tfs)} timeframe(s): {', '.join(tf.value for tf in all_tfs)}")
+    print(f"Range: {start.date()} to {end.date()}")
+    registry = _load_registry(args)
+    provider = _build_chain(symbol.name, registry)
+    datastore = DataStore(Path(args.data_dir) if args.data_dir else None)
+    instrument = _portfolio_instrument(args, symbol)
+    try:
+        data = fetch_instrument_data(provider, datastore, instrument, all_tfs, start, end, base_tf)
+    except InstrumentDataError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    store = MarketStore(data.timeframes)
+
+    print("\n" + "=" * 60)
+    print(f"A/B TEST — {len(templates)} variant(s)")
+    print("=" * 60)
+
+    rows: list[tuple[TemplateGraph, Any, dict[str, object]]] = []
+    for i, template in enumerate(templates, 1):
+        strategy = Strategy(template.config.name, template.config)
+        bundle = StrategyBundle([strategy], initial_balance=args.balance)
+        bt = Backtester(store, bundle, window_size=100, max_hold_days=args.max_hold_days)
+        print(f"\r  Variant {i}/{len(templates)}", end="", flush=True)
+        result = bt.run()
+        rows.append((template, result, result.tradebook.summary))
+
+    print("\n")
+    for i, (template, result, summary) in enumerate(rows, 1):
+        label = _variant_label(template)
+        pnl = summary["total_pnl"]
+        pct = summary["total_return_pct"]
+        print(
+            f"  [{i}] {label:<40s} {summary['total_trades']:3d} trades "
+            f"{summary['wins']}W/{summary['losses']}L "
+            f"P&L=${pnl:+.2f} ({pct:+.1f}%)"
+        )
+
+    if args.output:
+        output_path = Path(args.output)
+        for i, (template, result, _) in enumerate(rows, 1):
+            ctx = RenderContext(
+                frames=result.frames,
+                store=store,
+                tradebook=result.tradebook,
+                max_hold_days=args.max_hold_days,
+                window_size=100,
+            )
+            renderer = InteractiveRenderer(ctx)
+            variant_path = output_path.with_name(
+                f"{output_path.stem}_v{i}{output_path.suffix}"
+            )
+            renderer.render(variant_path)
+            print(f"HTML chart: {variant_path}")
+
+
+def _variant_label(template: TemplateGraph) -> str:
+    """Human label for a concrete variant: its distinguishing signal rules."""
+    parts: list[str] = []
+    for sc in template.config.signals:
+        for k, v in sc.rules.items():
+            parts.append(f"{k}={v}")
+    return ", ".join(parts) if parts else "default"
 
 
 def run_portfolio_command(args: argparse.Namespace) -> None:
@@ -471,7 +590,12 @@ def main() -> None:
     )
 
     run_parser = subparsers.add_parser("run", help="Run a strategy backtest")
-    run_parser.add_argument("--strategy", "-s", required=True, help="Strategy YAML file path")
+    run_parser.add_argument("--strategy", "-s", required=True, help="Strategy file (DSL or YAML)")
+    run_parser.add_argument(
+        "--ab",
+        action="store_true",
+        help="A/B test: expand DSL template choices (<a | b | c>) into one backtest per variant",
+    )
     run_parser.add_argument("--symbol", default="BTC-USD", help="Market symbol (default: BTC-USD)")
     run_parser.add_argument(
         "--instruments",
