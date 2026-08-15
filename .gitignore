@@ -9,3 +9,4 @@ output/
 /data/
 .venv/
 /strategy/
+node_modules/

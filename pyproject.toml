@@ -8,6 +8,8 @@ packages = [{include = "marketatlas", from = "src"}]
 
 [tool.poetry.scripts]
 marketatlas = "marketatlas.cli:main"
+lint = "marketatlas.devtools:lint"
+fmt = "marketatlas.devtools:fmt"
 
 [tool.poetry.dependencies]
 python = "^3.11"

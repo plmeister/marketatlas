@@ -90,9 +90,7 @@ class RiskEngine:
             entry = open_price * (1 - self._slippage_pct / 100)
 
         swing_fact = facts.get(swing_key) if swing_key is not None else None
-        nearest_swing = self._find_nearest_swing(
-            signal.direction, entry, atr_val, swing_fact
-        )
+        nearest_swing = self._find_nearest_swing(signal.direction, entry, atr_val, swing_fact)
 
         if signal.direction == TrendDirection.BULLISH:
             stop = nearest_swing - 0.2 * atr_val
@@ -123,9 +121,7 @@ class RiskEngine:
             )
             return None, tuple(rejection)
 
-        rr_ratio = self._find_valid_rr(
-            signal.direction, entry, stop_distance, sr_fact
-        )
+        rr_ratio = self._find_valid_rr(signal.direction, entry, stop_distance, sr_fact)
         if rr_ratio is None:
             rejection.append(
                 EvidenceEntry(
@@ -139,16 +135,17 @@ class RiskEngine:
             )
             return None, tuple(rejection)
 
-        target = entry + rr_ratio * stop_distance if signal.direction == TrendDirection.BULLISH else entry - rr_ratio * stop_distance
+        target = (
+            entry + rr_ratio * stop_distance
+            if signal.direction == TrendDirection.BULLISH
+            else entry - rr_ratio * stop_distance
+        )
 
         if self._avoid_srxing and self._crosses_sr(signal.direction, entry, target, sr_fact.levels):
             crossing = [
-                lv for lv in sr_fact.levels
-                if min(entry, target) < lv.price < max(entry, target)
+                lv for lv in sr_fact.levels if min(entry, target) < lv.price < max(entry, target)
             ]
-            crossing_desc = ", ".join(
-                f"{lv.type} at {lv.price:.2f}" for lv in crossing
-            )
+            crossing_desc = ", ".join(f"{lv.type} at {lv.price:.2f}" for lv in crossing)
             rejection.append(
                 EvidenceEntry(
                     text=(
@@ -222,11 +219,19 @@ class RiskEngine:
     ) -> float:
         if isinstance(swing_fact, SwingFact) and swing_fact.swings:
             if direction == TrendDirection.BULLISH:
-                lows = [s.price for s in swing_fact.swings if s.type == SwingType.LOW and s.price < entry]
+                lows = [
+                    s.price
+                    for s in swing_fact.swings
+                    if s.type == SwingType.LOW and s.price < entry
+                ]
                 if lows:
                     return max(lows)
             else:
-                highs = [s.price for s in swing_fact.swings if s.type == SwingType.HIGH and s.price > entry]
+                highs = [
+                    s.price
+                    for s in swing_fact.swings
+                    if s.type == SwingType.HIGH and s.price > entry
+                ]
                 if highs:
                     return min(highs)
 

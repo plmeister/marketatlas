@@ -27,7 +27,9 @@ def _make_store(candles_data: list[tuple[float, float, float, float]]) -> Market
     return MarketStore(data)
 
 
-def _view(candles: list[tuple[float, float, float, float]], cursor: int | None = None) -> MarketView:
+def _view(
+    candles: list[tuple[float, float, float, float]], cursor: int | None = None
+) -> MarketView:
     store = _make_store(candles)
     cur = cursor if cursor is not None else len(candles) - 1
     return MarketView(store, cursor=cur, window_size=len(candles))
@@ -187,25 +189,25 @@ class TestBasicSwingAnalyzer:
 
     def test_swings_stable_across_window_boundary(self) -> None:
         candles = [
-            (100.0, 102.0, 98.0, 100.0),   # 0
+            (100.0, 102.0, 98.0, 100.0),  # 0
             (100.0, 108.0, 100.0, 104.0),  # 1: SH at 108
-            (104.0, 104.0, 94.0, 100.0),   # 2: SL at 94
+            (104.0, 104.0, 94.0, 100.0),  # 2: SL at 94
             (100.0, 112.0, 100.0, 108.0),  # 3: SH at 112
-            (108.0, 108.0, 90.0, 104.0),   # 4: SL at 90
+            (108.0, 108.0, 90.0, 104.0),  # 4: SL at 90
             (104.0, 116.0, 104.0, 112.0),  # 5: SH at 116
-            (112.0, 112.0, 86.0, 108.0),   # 6: SL at 86
+            (112.0, 112.0, 86.0, 108.0),  # 6: SL at 86
             (108.0, 120.0, 108.0, 116.0),  # 7: SH at 120
-            (116.0, 116.0, 82.0, 112.0),   # 8: SL at 82
+            (116.0, 116.0, 82.0, 112.0),  # 8: SL at 82
             (112.0, 124.0, 112.0, 120.0),  # 9: SH at 124
-            (120.0, 120.0, 78.0, 116.0),   # 10: SL at 78
+            (120.0, 120.0, 78.0, 116.0),  # 10: SL at 78
             (116.0, 128.0, 116.0, 124.0),  # 11: SH at 128
-            (124.0, 124.0, 74.0, 120.0),   # 12: SL at 74
+            (124.0, 124.0, 74.0, 120.0),  # 12: SL at 74
             (120.0, 132.0, 120.0, 128.0),  # 13: SH at 132
-            (128.0, 128.0, 70.0, 124.0),   # 14: SL at 70
+            (128.0, 128.0, 70.0, 124.0),  # 14: SL at 70
             (124.0, 136.0, 124.0, 132.0),  # 15: SH at 136
-            (132.0, 132.0, 66.0, 128.0),   # 16: SL at 66
+            (132.0, 132.0, 66.0, 128.0),  # 16: SL at 66
             (128.0, 140.0, 128.0, 136.0),  # 17: SH at 140
-            (136.0, 136.0, 62.0, 132.0),   # 18: SL at 62
+            (136.0, 136.0, 62.0, 132.0),  # 18: SL at 62
             (132.0, 144.0, 132.0, 140.0),  # 19: SH at 144
         ]
         cursor = len(candles) - 1

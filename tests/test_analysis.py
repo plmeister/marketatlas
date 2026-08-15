@@ -491,9 +491,7 @@ class TestAnalyzerTimeframe:
             def produces(self) -> tuple[FactKey, ...]:
                 return (FactKey("weekly_indicator"),)
 
-            def analyze(
-                self, view: MarketView, facts: dict[FactKey, Fact]
-            ) -> AnalysisResult:
+            def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
                 return AnalysisResult(facts=(), evidence=())
 
         analyzer = WeeklyAnalyzer()
@@ -509,16 +507,22 @@ class TestCrossResolutionGraph:
         daily = tuple(
             Candle(
                 timestamp=base + timedelta(days=i),
-                open=100.0 + i, high=105.0 + i,
-                low=99.0 + i, close=103.0 + i, volume=1000.0,
+                open=100.0 + i,
+                high=105.0 + i,
+                low=99.0 + i,
+                close=103.0 + i,
+                volume=1000.0,
             )
             for i in range(100)
         )
         weekly = tuple(
             Candle(
                 timestamp=base + timedelta(weeks=i),
-                open=100.0 + i * 5, high=110.0 + i * 5,
-                low=95.0 + i * 5, close=105.0 + i * 5, volume=5000.0,
+                open=100.0 + i * 5,
+                high=110.0 + i * 5,
+                low=95.0 + i * 5,
+                close=105.0 + i * 5,
+                volume=5000.0,
             )
             for i in range(15)
         )
@@ -526,9 +530,7 @@ class TestCrossResolutionGraph:
         ww = MarketData(symbol=Symbol("TEST"), timeframe=Timeframe.W1, candles=weekly)
         return MarketStore({Timeframe.D1: dd, Timeframe.W1: ww})
 
-    def test_weekly_analyzer_gets_correct_data(
-        self, multi_tf_store: MarketStore
-    ) -> None:
+    def test_weekly_analyzer_gets_correct_data(self, multi_tf_store: MarketStore) -> None:
         class WeeklyHighAnalyzer(Analyzer):
             @property
             def timeframe(self) -> Timeframe:
@@ -540,10 +542,7 @@ class TestCrossResolutionGraph:
             def produces(self) -> tuple[FactKey, ...]:
                 return (FactKey("weekly_high", timeframe=Timeframe.W1),)
 
-            def analyze(
-                self, view: MarketView, facts: dict[FactKey, Fact]
-            ) -> AnalysisResult:
-                weekly_high = max(view.highs[-5:]) if view.highs else 0.0
+            def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
                 return AnalysisResult(
                     facts=(
                         Fact(
@@ -562,9 +561,7 @@ class TestCrossResolutionGraph:
         assert weekly_key in facts
         assert facts[weekly_key].visible_on == frozenset({Timeframe.W1})
 
-    def test_mixed_resolution_graph(
-        self, multi_tf_store: MarketStore
-    ) -> None:
+    def test_mixed_resolution_graph(self, multi_tf_store: MarketStore) -> None:
         class DailyEMAAnalyzer(Analyzer):
             def requires(self) -> tuple[FactKey, ...]:
                 return ()
@@ -572,15 +569,14 @@ class TestCrossResolutionGraph:
             def produces(self) -> tuple[FactKey, ...]:
                 return (FactKey("ema_20"),)
 
-            def analyze(
-                self, view: MarketView, facts: dict[FactKey, Fact]
-            ) -> AnalysisResult:
+            def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
                 return AnalysisResult(
                     facts=(
                         EMAFact(
                             timestamp=view.current.timestamp,
                             evidence=(),
-                            value=100.0, period=20,
+                            value=100.0,
+                            period=20,
                         ),
                     ),
                     evidence=(),
@@ -597,9 +593,7 @@ class TestCrossResolutionGraph:
             def produces(self) -> tuple[FactKey, ...]:
                 return (FactKey("weekly_signal", timeframe=Timeframe.W1),)
 
-            def analyze(
-                self, view: MarketView, facts: dict[FactKey, Fact]
-            ) -> AnalysisResult:
+            def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
                 ema = facts[FactKey("ema_20")]
                 assert isinstance(ema, EMAFact)
                 return AnalysisResult(

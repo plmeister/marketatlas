@@ -1,0 +1,19 @@
+{
+  "name": "marketatlas-js",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Frontend JS for the MarketAtlas backtest chart",
+  "scripts": {
+    "lint": "eslint src tests/js && prettier --check src tests/js",
+    "lint:fix": "eslint src tests/js --fix && prettier --write src tests/js",
+    "format": "prettier --write src tests/js",
+    "test": "node tests/js/models.test.js && node tests/js/controllers.test.js && node tests/js/views.test.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.0.0",
+    "prettier": "^3.3.0"
+  }
+}

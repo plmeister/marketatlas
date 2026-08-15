@@ -223,12 +223,12 @@ class TestRiskIsolation:
         store_200 = _make_store(200)
         bt_200 = Backtester(store_200, _make_bundle(), window_size=50)
         result_200 = bt_200.run()
-        frames_200, tb_200 = result_200.frames, result_200.tradebook
+        frames_200 = result_200.frames
 
         store_210 = _make_store(210)
         bt_210 = Backtester(store_210, _make_bundle(), window_size=50)
         result_210 = bt_210.run()
-        frames_210, tb_210 = result_210.frames, result_210.tradebook
+        frames_210 = result_210.frames
 
         assert len(frames_210) > len(frames_200)
         for i in range(len(frames_200)):
