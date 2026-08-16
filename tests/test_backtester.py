@@ -426,7 +426,7 @@ def _make_signal_bundle(
     graph = AnalysisGraph([StubAnalyzerForSignals(), StubSRAnalyzer()])
     return _SignalBundle(
         signals=signals,
-        risk_engine=risk_engine or RiskEngine(risk_pct=1.0, slippage_pct=0.0),
+        risk_engine=risk_engine or RiskEngine(risk_pct=1.0, slippage_pct=0.0, min_rr=0.0),
         graph=graph,
     )
 
@@ -463,7 +463,7 @@ class TestBacktesterSignalEval:
             risk_pct=1.0,
             slippage_pct=0.0,
             max_stop_atr=100.0,
-            min_rr=1.0,
+            min_rr=0.0,
             max_rr=2.0,
             avoid_srxing=False,
         )

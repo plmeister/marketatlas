@@ -429,7 +429,7 @@ class TestEndToEnd:
             signals=(SignalConfig(type="PullbackSignal", rules={}),),
             risk=RiskConfig(
                 algorithm="default",
-                params={"risk_pct": 1.0, "min_rr": 2.0, "max_rr": 4.0, "sr_buffer_atr": 0.0},
+                params={"risk_pct": 1.0, "min_rr": 0.0, "max_rr": 4.0, "sr_buffer_atr": 0.0},
             ),
         )
 

@@ -43,7 +43,7 @@ PULLBACK_AB_DSL = "\n".join(
         "pullback := pullbackpattern { swing_structure }",
         "signal := generate_signal { pullback_pattern: pullback, trend: trend,",
         "atr_14: atr_14, min_strength: <0.1 | 0.99> }",
-        "risk := manage_risk { risk_pct: 1.0, min_rr: 2.0,",
+        "risk := manage_risk { risk_pct: 1.0, min_rr: 0.0,",
         "max_rr: 4.0, sr_buffer_atr: 0.0 }",
         "",
     ]

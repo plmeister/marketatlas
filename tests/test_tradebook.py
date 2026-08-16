@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 import pytest
@@ -334,6 +335,25 @@ class TestFillCandleResolution:
         assert tb.has_no_open_trade is True
         assert tb.trades[0].result == "win"
         assert tb.total_pnl == pytest.approx((120.0 - 100.0) * 0.2)
+
+    def test_fill_rejected_when_actual_rr_below_min(self) -> None:
+        tb = TradeBook()
+        t0 = datetime(2024, 1, 1)
+        cand = replace(_candidate(stop=95.0, target=115.0), min_rr=1.0)
+        self._fill(tb, t0 + timedelta(days=1), fill_price=106.0, cand=cand)
+        assert tb.has_pending_order is False
+        assert tb.has_no_open_trade is True
+        assert tb.closed_count == 0
+
+    def test_fill_kept_when_actual_rr_meets_min(self) -> None:
+        tb = TradeBook()
+        t0 = datetime(2024, 1, 1)
+        cand = replace(_candidate(stop=95.0, target=115.0), min_rr=1.0)
+        self._fill(tb, t0 + timedelta(days=1), fill_price=102.0, cand=cand)
+        assert tb.has_pending_order is False
+        assert tb.has_no_open_trade is False
+        assert tb._open_trade is not None
+        assert tb._open_trade.candidate.rr_ratio >= 1.0
 
 
 class TestSummary:

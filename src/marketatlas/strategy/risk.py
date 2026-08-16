@@ -219,6 +219,7 @@ class RiskEngine:
             slippage_pct=self._slippage_pct,
             source=signal.source,
             evidence=tuple(evidence),
+            min_rr=self._min_rr,
         ), tuple(evidence)
 
     def _find_stop_anchor(
@@ -260,6 +261,8 @@ class RiskEngine:
         atr: float,
     ) -> float | None:
         for rr in _frange(self._min_rr, self._max_rr + 0.001, 0.1):
+            if rr <= 0:
+                continue
             if direction == TrendDirection.BULLISH:
                 target = entry + rr * stop_distance
             else:

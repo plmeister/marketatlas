@@ -19,3 +19,4 @@ class TradeCandidate:
     slippage_pct: float
     source: str
     evidence: tuple[EvidenceEntry, ...]
+    min_rr: float = 0.0

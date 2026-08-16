@@ -158,6 +158,13 @@ class TradeBook:
         if candidate is None or signal is None:
             return
         filled = self._reprice_at_fill(candidate, open_price)
+        if filled is None:
+            self._pending_order = None
+            self._pending_signal = None
+            self._pending_source = ""
+            self._pending_instrument = ""
+            self._pending_timestamp = None
+            return
         self._open_trade = TradeOutcome(
             entry_timestamp=timestamp,
             exit_timestamp=None,
@@ -177,14 +184,16 @@ class TradeBook:
     @staticmethod
     def _reprice_at_fill(
         candidate: TradeCandidate, fill_price: float
-    ) -> TradeCandidate:
+    ) -> TradeCandidate | None:
         """Rebase a pending candidate onto its actual fill price.
 
         The order fills at the next candle's open while the planned entry was
         derived from the signal candle's open, so using the planned entry
         would pair an entry price from one date with an entry timestamp from
-        another. Re-pricing here keeps both on the same candle and re-sizes to
-        hold the planned dollar risk fixed.
+        another. Re-pricing here keeps both on the same candle, re-sizes to
+        hold the planned dollar risk fixed, and cancels the order when the
+        move between the signal open and the fill open pushes the actual
+        reward/risk below the planned minimum.
         """
         if candidate.direction == TrendDirection.BULLISH:
             entry = fill_price * (1 + candidate.slippage_pct / 100)
@@ -193,10 +202,14 @@ class TradeBook:
 
         stop_distance = abs(entry - candidate.stop)
         if stop_distance <= 0:
-            return replace(candidate, entry=entry)
+            return None
+
+        distance = abs(candidate.target - entry)
+        rr_ratio = distance / stop_distance
+        if candidate.min_rr > 0 and rr_ratio < candidate.min_rr:
+            return None
 
         size = candidate.risk_amount / stop_distance
-        distance = abs(candidate.target - entry)
         note = (
             f"Filled at {entry:.2f} (open {fill_price:.2f}); "
             f"re-sized {size:.4f} to hold fixed risk"
@@ -205,7 +218,7 @@ class TradeBook:
             candidate,
             entry=entry,
             size=size,
-            rr_ratio=distance / stop_distance,
+            rr_ratio=rr_ratio,
             reward_amount=size * distance,
             evidence=candidate.evidence
             + (EvidenceEntry(text=note, level=EvidenceLevel.INFO, source="TradeBook"),),
