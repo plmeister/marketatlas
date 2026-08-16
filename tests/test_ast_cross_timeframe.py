@@ -112,6 +112,45 @@ class TestCompile:
         }
 
 
+class TestRiskBindings:
+    """Backlog 083: risk nodes consume facts via explicit DSL references."""
+
+    def test_risk_reference_compiles_to_bindings(self) -> None:
+        source = (
+            'tf1d := timeframe { resolution: "1d" }\n'
+            "atr_14 := atr { timeframe: tf1d, period: 14 }\n"
+            "sr := sr {}\n"
+            "swing1d := swings { timeframe: tf1d, lookback: 50 }\n"
+            "risk := manage_risk { atr_14: atr_14, sr: sr, swing: swing1d }\n"
+        )
+        config = _ast_to_config(parse(source, name="demo"))
+        assert config.risk.params["bindings"] == {
+            "atr_14": "atr_14@1d",
+            "sr": "sr@1d",
+            "swing": "swing@1d",
+        }
+
+    def test_cross_tf_risk_reference_carries_source_timeframe(self) -> None:
+        source = (
+            'tf1d := timeframe { resolution: "1d" }\n'
+            'tf1w := timeframe { resolution: "1w" }\n'
+            "swing1d := swings { timeframe: tf1d, lookback: 50 }\n"
+            "swing1w := swings { timeframe: tf1w, lookback: 50 }\n"
+            "risk := manage_risk { swing: swing1w }\n"
+        )
+        config = _ast_to_config(parse(source, name="demo"))
+        assert config.risk.params["bindings"] == {"swing": "swing@1w"}
+
+    def test_risk_reference_undeclared_output_fails(self) -> None:
+        source = (
+            'tf1d := timeframe { resolution: "1d" }\n'
+            "swing1d := swings { timeframe: tf1d, lookback: 50 }\n"
+            "risk := manage_risk { sr: swing1d }\n"
+        )
+        with pytest.raises(CompilationError):
+            _ast_to_config(parse(source, name="demo"))
+
+
 class TestSignalRequires:
     def test_cross_tf_requires_carries_source_timeframe(self) -> None:
         source = (

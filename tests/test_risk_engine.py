@@ -366,6 +366,58 @@ class TestRiskEngine:
         candidate, _evidence = engine.evaluate(_bullish_signal(), facts, view)
         assert candidate is not None
 
+    def test_bindings_override_legacy_keys(self) -> None:
+        """DSL-compiled bindings win over the name-convention defaults (backlog 083)."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(
+            slippage_pct=0.0,
+            bindings={"atr_14": "atr_series_daily", "sr": "sr_daily", "swing": "swing_daily"},
+        )
+        atr = ATRFact(timestamp=BASE, evidence=(), value=2.0, period=14)
+        swings = _swings_fact(
+            (SwingPoint(price=96.0, index=0, type=SwingType.LOW, timestamp=BASE),)
+        )
+        sr = _sr_fact(())
+        facts = {
+            FactKey("atr_series_daily"): atr,
+            FactKey("swing_daily"): swings,
+            FactKey("sr_daily"): sr,
+        }
+        candidate, _evidence = engine.evaluate(_bullish_signal(), facts, view)
+        assert candidate is not None
+        expected_stop = 96.0 - 0.2 * 2.0
+        assert abs(candidate.stop - expected_stop) < 0.01
+
+    def test_bindings_with_timeframe_suffix_disambiguates(self) -> None:
+        """``swing@1d`` binding resolves the daily swing even when weekly exists."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(
+            slippage_pct=0.0,
+            max_stop_atr=10.0,
+            bindings={"swing": "swing@1d"},
+        )
+        daily_low = _swings_fact(
+            (SwingPoint(price=94.0, index=0, type=SwingType.LOW, timestamp=BASE),)
+        )
+        weekly_high = _swings_fact(
+            (SwingPoint(price=120.0, index=0, type=SwingType.LOW, timestamp=BASE),)
+        )
+        sr = _sr_fact(())
+        facts = {
+            FactKey("atr_14"): _atr_fact(2.0),
+            FactKey("swing", timeframe=Timeframe("1d")): daily_low,
+            FactKey("swing", timeframe=Timeframe("1w")): weekly_high,
+            FactKey("sr"): sr,
+        }
+        candidate, _evidence = engine.evaluate(_bullish_signal(), facts, view)
+        assert candidate is not None
+        # Stop anchored on the daily swing low (94.0), not the weekly (120.0).
+        assert abs(candidate.stop - (94.0 - 0.2 * 2.0)) < 0.01
+
     def test_no_swing_fact_fallback_stop(self) -> None:
         """Without swing fact, stop uses default 2*ATR fallback minus 0.2*ATR buffer."""
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5

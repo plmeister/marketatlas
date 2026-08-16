@@ -758,13 +758,13 @@ class _ResolvedReference:
     A reference resolves to exactly one of three things:
     * ``timeframe`` — value substitution: a ``TimeFrame`` definition fills the
       consumer's ``AnalyzerConfig.timeframe`` slot (backlog 061);
-    * ``binding`` — an analyzer fact dependency: the consumed fact name with an
-      explicit ``name@timeframe`` suffix when it crosses timeframes, injected
-      into the analyzer's ``bindings`` so its ``requires()``/``analyze()``
-      resolve the right ``FactKey``;
+    * ``binding`` — an analyzer or risk fact dependency: the consumed fact name
+      with an explicit ``name@timeframe`` suffix when it crosses timeframes (or
+      whenever the source timeframe is known), injected into the consumer's
+      ``bindings`` so it resolves the right ``FactKey``;
     * ``requires`` — a signal fact dependency: the consumed fact name, carrying
       the source timeframe suffix for cross-timeframe references.
-    A reference on an opaque consumer (risk) contributes nothing.
+    A reference on an opaque consumer (risk) resolves to a binding (backlog 083).
     """
 
     timeframe: str | None = None
@@ -806,12 +806,13 @@ def _resolve_reference(
     061). A reference to a fact-producing definition is a dependency edge: on
     an analyzer it becomes a ``bindings`` override carrying the source
     timeframe when the reference crosses timeframes; on a signal it becomes a
-    ``requires`` entry with the source timeframe suffix. References are always
-    explicit declarations in the DSL — a consumer at ``1d`` referencing a
-    producer at ``1w`` is declared by the reference itself, so no separate
-    cross-timeframe opt-in exists (the fallback, an undeclared cross-timeframe
-    dependency, fails loudly at graph construction as an unsatisfied
-    dependency).
+    ``requires`` entry with the source timeframe suffix; on a risk node it
+    becomes a ``bindings`` override carrying the source timeframe (backlog
+    083). References are always explicit declarations in the DSL — a consumer
+    at ``1d`` referencing a producer at ``1w`` is declared by the reference
+    itself, so no separate cross-timeframe opt-in exists (the fallback, an
+    undeclared cross-timeframe dependency, fails loudly at graph construction
+    as an unsatisfied dependency).
     """
     target = def_by_name.get(reference.name)
     if target is None:
@@ -861,6 +862,13 @@ def _resolve_reference(
         else:
             entry = f"{param_name}@{source_tf}"
         return _ResolvedReference(requires=entry)
+    if provider.category == "risk":
+        _check_fact_declared(param_name, target, source_tf, providers, owner)
+        # The reference param names the consumed fact; the binding carries the
+        # source-timeframe suffix whenever one is known so a name shared across
+        # timeframes (e.g. ``swing@1d`` vs ``swing@1w``) resolves unambiguously.
+        binding = param_name if source_tf is None else f"{param_name}@{source_tf}"
+        return _ResolvedReference(binding=binding)
     return _ResolvedReference()
 
 

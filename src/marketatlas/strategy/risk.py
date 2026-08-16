@@ -31,6 +31,7 @@ class RiskEngine:
         swing_key: str = "swing",
         swing_buffer_atr: float = 0.2,
         sr_buffer_atr: float = 0.5,
+        bindings: dict[str, str] | None = None,
     ) -> None:
         self._risk_pct = risk_pct
         self._min_rr = min_rr
@@ -44,6 +45,7 @@ class RiskEngine:
         self._atr_key = atr_key
         self._sr_key = sr_key
         self._swing_key = swing_key
+        self._bindings = dict(bindings) if bindings else {}
 
     @property
     def max_hold_days(self) -> int:
@@ -58,9 +60,14 @@ class RiskEngine:
     ) -> tuple[TradeCandidate | None, tuple[EvidenceEntry, ...]]:
         rejection: list[EvidenceEntry] = []
 
-        atr_key = resolve_fact_key(facts, self._atr_key)
-        sr_key = resolve_fact_key(facts, self._sr_key)
-        swing_key = resolve_fact_key(facts, self._swing_key)
+        # DSL-compiled risk nodes declare their inputs as explicit fact
+        # references (backlog 083), compiled into ``bindings`` keyed by the
+        # consumer's default key. A binding override wins; without one the
+        # legacy name-convention defaults apply (YAML loader, direct
+        # construction).
+        atr_key = resolve_fact_key(facts, self._bindings.get("atr_14", self._atr_key))
+        sr_key = resolve_fact_key(facts, self._bindings.get("sr", self._sr_key))
+        swing_key = resolve_fact_key(facts, self._bindings.get("swing", self._swing_key))
 
         atr = facts.get(atr_key) if atr_key is not None else None
         if not isinstance(atr, ATRFact) or atr.value <= 0:
