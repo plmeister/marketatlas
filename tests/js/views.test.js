@@ -316,6 +316,109 @@ test("trade tooltip hides when hovering off any box", () => {
   assert.strictEqual(tooltip.style.display, "none");
 });
 
+// --- annotation hover tooltips (SR lines, swings, pullbacks, signals) ---
+function tooltipHtmlFor(cv, param) {
+  const chart = global.LightweightCharts.createdCharts[0];
+  chart.crosshairHandlers[0](param);
+  const el = cv._tooltipEl;
+  assert.ok(el, "tooltip element created");
+  return el;
+}
+
+test("SR line hover shows support info near the line price", () => {
+  const model = makeModel();
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateTrades(5); // frame 2024-01-10, support at 100, resistance 115/125
+  const tooltip = tooltipHtmlFor(cv, { time: "2024-01-10", point: { x: 5, y: 102 } });
+  assert.notStrictEqual(tooltip.style.display, "none");
+  assert.ok(tooltip.innerHTML.includes("SUPPORT"), "support label");
+  assert.ok(tooltip.innerHTML.includes("100.00"), "price shown");
+  assert.ok(tooltip.innerHTML.includes("3 touches"), "strength shown");
+});
+
+test("SR line hover shows resistance info near the line price", () => {
+  const model = makeModel();
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateTrades(5);
+  const tooltip = tooltipHtmlFor(cv, { time: "2024-01-10", point: { x: 5, y: 116 } });
+  assert.ok(tooltip.innerHTML.includes("RESISTANCE"), "resistance label");
+  assert.ok(tooltip.innerHTML.includes("115.00"), "price shown");
+});
+
+test("SR hover hides when pointer is far from any level", () => {
+  const model = makeModel();
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateTrades(5);
+  const chart = global.LightweightCharts.createdCharts[0];
+  chart.crosshairHandlers[0]({ time: "2024-01-10", point: { x: 5, y: 200 } });
+  assert.ok(!cv._tooltipEl || cv._tooltipEl.style.display === "none", "no tooltip shown");
+});
+
+test("swing marker hover shows swing high/low details", () => {
+  const model = makeModel();
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateTrades(5); // frame 5 carries 1d swings at 2024-01-05 (high 118) / 2024-01-06 (low 109)
+  const tooltip = tooltipHtmlFor(cv, { time: "2024-01-05", point: { x: 5, y: 118 } });
+  assert.ok(tooltip.innerHTML.includes("SWING HIGH"), "high label");
+  assert.ok(tooltip.innerHTML.includes("118.00"), "swing price shown");
+  const tooltip2 = tooltipHtmlFor(cv, { time: "2024-01-06", point: { x: 5, y: 109 } });
+  assert.ok(tooltip2.innerHTML.includes("SWING LOW"), "low label");
+  assert.ok(tooltip2.innerHTML.includes("109.00"), "low price shown");
+});
+
+test("swing hover skips swings on other timeframes", () => {
+  const model = makeModel();
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateTrades(3); // frame 3 has a 1w swing at 2024-01-06 only
+  const chart = global.LightweightCharts.createdCharts[0];
+  chart.crosshairHandlers[0]({ time: "2024-01-06", point: { x: 5, y: 90 } });
+  assert.ok(!cv._tooltipEl || cv._tooltipEl.style.display === "none", "no tooltip shown");
+});
+
+test("pullback marker hover shows direction and swing pattern", () => {
+  const model = makeModel();
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateTrades(2); // frame 2 has pullback at 2024-01-03
+  const tooltip = tooltipHtmlFor(cv, { time: "2024-01-03", point: { x: 5, y: 108 } });
+  assert.ok(tooltip.innerHTML.includes("PULLBACK"), "pullback label");
+  assert.ok(tooltip.innerHTML.includes("bullish"), "direction shown");
+  assert.ok(tooltip.innerHTML.includes("108"), "swing pattern shown");
+});
+
+test("signal hover shows signal and risk-rejection details", () => {
+  const model = makeModel();
+  model.frames[3].signals = [
+    { direction: "bullish", confidence: 0.8, source: "PB" },
+  ];
+  model.frames[3].risk_evidence = [
+    { text: "Rejected: rr 0.5 below min 1.0", level: "warning", source: "risk" },
+  ];
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateTrades(3); // frame 2024-01-05 carries the signal
+  const tooltip = tooltipHtmlFor(cv, { time: "2024-01-05", point: { x: 5, y: 112 } });
+  assert.ok(tooltip.innerHTML.includes("SIGNAL BULLISH"), "signal label");
+  assert.ok(tooltip.innerHTML.includes("0.80"), "confidence shown");
+  assert.ok(tooltip.innerHTML.includes("Rejected"), "rejection text shown");
+});
+
+test("trade box takes priority over SR line tooltip", () => {
+  const model = makeModel();
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateTrades(5);
+  const tooltip = tooltipHtmlFor(cv, { time: "2024-01-05", point: { x: 60, y: 118 } });
+  // Inside trade 2 box (entry 115/stop 110/target 130) and near SR 115 line.
+  assert.ok(tooltip.innerHTML.includes("LOSS"), "trade result wins");
+  assert.ok(!tooltip.innerHTML.includes("RESISTANCE"), "SR line suppressed");
+});
+
 // --- TradeBoxPrimitive._draw: rectangle rendering via callback API ---
 test("trade box primitive draws green reward and red risk rectangles", () => {
   const model = makeModel();

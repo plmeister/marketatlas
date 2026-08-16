@@ -355,6 +355,7 @@ class ChartView {
   updateSR(idx) {
     this._clearPriceLines();
     const levels = this.model.srLevelsAt(idx);
+    this._srHits = [];
     levels.forEach((lv) => {
       if (lv.strength < this.model.minTouches) return;
       const isSupport = lv.type === "support";
@@ -369,10 +370,12 @@ class ChartView {
         title: (isSupport ? "S" : "R") + " " + lv.price.toFixed(0) + " (" + lv.strength + ")",
       });
       this.srPriceLines.push(pl);
+      this._srHits.push({ price: lv.price, strength: lv.strength, type: lv.type });
     });
   }
 
   updateTrades(idx) {
+    this._frameIdx = idx;
     this.updateSR(idx);
     const frameTime = this.model.frameTime(idx);
     if (!frameTime) {
@@ -420,18 +423,119 @@ class ChartView {
     return boxes;
   }
 
-  // --- Trade-box hover tooltip ---
+  // --- Crosshair hover tooltips ---
   _onCrosshairMove(param) {
     if (!param || !param.point) {
       this._hideTradeTooltip();
       return;
     }
     const trade = this._hitTradeBox(param.point);
-    if (!trade) {
-      this._hideTradeTooltip();
+    if (trade) {
+      this._showTradeTooltip(trade, param.point);
       return;
     }
-    this._showTradeTooltip(trade, param.point);
+    const html = this._hitAnnotationTooltip(param);
+    if (html) {
+      this._showTooltip(html, param.point);
+      return;
+    }
+    this._hideTradeTooltip();
+  }
+
+  // Priority: trade box > bar-specific markers (swing/pullback) > signal/risk
+  // decisions > S/R price lines. Returns tooltip HTML or null.
+  _hitAnnotationTooltip(param) {
+    const row = (label, value) =>
+      '<div><span style="color:#94a3b8">' + label + "</span> " + value + "</div>";
+    const facts = this.model.frameFacts(this._frameIdx || 0);
+    const pb = this.model.pullbacks[this._frameIdx || 0];
+
+    // Swing markers (drawn from current frame facts on the active TF)
+    const swingFacts = Object.values(facts).filter(
+      (f) => f && f.type === "swing" && f.timeframe === this.model.activeTF,
+    );
+    for (const sf of swingFacts) {
+      for (const sw of sf.swings) {
+        if (sw.time !== param.time) continue;
+        return (
+          '<div style="font-weight:700;color:' +
+          (sw.type === "high" ? "#f59e0b" : "#3b82f6") +
+          '">' +
+          (sw.type === "high" ? "SWING HIGH" : "SWING LOW") +
+          "</div>" +
+          row("Price", sw.price.toFixed(2)) +
+          (sw.index !== undefined ? row("Bar", sw.index) : "")
+        );
+      }
+    }
+
+    // Pullback marker
+    if (pb && pb.time === param.time) {
+      const pbf = Object.values(facts).find((f) => f && f.type === "pullback");
+      let html = '<div style="font-weight:700;color:#22c55e">PULLBACK</div>';
+      if (pbf) {
+        if (pbf.direction) html += row("Direction", pbf.direction);
+        if (pbf.strength !== undefined && pbf.strength !== null)
+          html += row("Strength", pbf.strength.toFixed(2));
+        if (pbf.swing_pattern && pbf.swing_pattern.length)
+          html += row("Pattern", pbf.swing_pattern.map((p) => p.toFixed(2)).join(" \u2192 "));
+      }
+      return html;
+    }
+
+    // Signals / risk decisions on the hovered frame
+    const frame = this._frameAtTime(param.time);
+    if (frame) {
+      const sigs = frame.signals || [];
+      const risk = frame.risk_evidence || [];
+      if (sigs.length || risk.length) {
+        let html = "";
+        sigs.forEach((s) => {
+          html +=
+            '<div style="font-weight:700;color:#a855f7">SIGNAL ' +
+            s.direction.toUpperCase() +
+            "</div>" +
+            row("Confidence", (s.confidence || 0).toFixed(2)) +
+            row("Source", s.source || "");
+        });
+        risk.forEach((r) => {
+          html += '<div style="margin-top:2px;color:#e94560">' + r.text + "</div>";
+        });
+        return html;
+      }
+    }
+
+    // S/R price line proximity
+    if (this._srHits && this._srHits.length) {
+      let best = null;
+      let bestDy = 8;
+      for (const lv of this._srHits) {
+        const y = this.candleSeries.priceToCoordinate(lv.price);
+        if (y === null) continue;
+        const dy = Math.abs(param.point.y - y);
+        if (dy < bestDy) {
+          bestDy = dy;
+          best = lv;
+        }
+      }
+      if (best) {
+        return (
+          '<div style="font-weight:700;color:' +
+          (best.type === "support" ? "#3b82f6" : "#f59e0b") +
+          '">' +
+          (best.type === "support" ? "SUPPORT" : "RESISTANCE") +
+          "</div>" +
+          row("Price", best.price.toFixed(2)) +
+          row("Strength", best.strength + " touch" + (best.strength === 1 ? "" : "es"))
+        );
+      }
+    }
+    return null;
+  }
+
+  _frameAtTime(time) {
+    if (time === undefined || time === null) return null;
+    return this.model.frames.find((f) => f.time === time) || null;
   }
 
   // Hit-test crosshair against the current trade boxes; overlapping boxes pick
@@ -479,33 +583,39 @@ class ChartView {
   }
 
   _showTradeTooltip(trade, point) {
-    const el = this._ensureTooltipEl();
     const isBull = trade.direction === "bullish";
     const resolved = trade.exit_time !== null && trade.result !== null;
     const row = (label, value) =>
       '<div><span style="color:#94a3b8">' + label + "</span> " + value + "</div>";
-    el.innerHTML =
+    this._showTooltip(
       '<div style="font-weight:700;color:#e94560;margin-bottom:4px">' +
-      (isBull ? "LONG" : "SHORT") +
-      (trade.source ? " \u00b7 " + trade.source : "") +
-      "</div>" +
-      row("Entry", trade.entry.toFixed(2)) +
-      row("Stop", trade.stop.toFixed(2)) +
-      row("Target", trade.target.toFixed(2)) +
-      row("R:R", (trade.rr_ratio || 0).toFixed(2)) +
-      row("Risk", "$" + (trade.risk_amount || 0).toFixed(2)) +
-      row("Win", "$" + ((trade.rr_ratio || 0) * (trade.risk_amount || 0)).toFixed(2)) +
-      (resolved
-        ? '<div style="margin-top:4px;color:' +
-          (trade.result === "win" ? "#22c55e" : "#ef4444") +
-          '">' +
-          trade.result.toUpperCase() +
-          " " +
-          (trade.pnl >= 0 ? "+" : "-") +
-          "$" +
-          Math.abs(trade.pnl).toFixed(2) +
-          "</div>"
-        : "");
+        (isBull ? "LONG" : "SHORT") +
+        (trade.source ? " \u00b7 " + trade.source : "") +
+        "</div>" +
+        row("Entry", trade.entry.toFixed(2)) +
+        row("Stop", trade.stop.toFixed(2)) +
+        row("Target", trade.target.toFixed(2)) +
+        row("R:R", (trade.rr_ratio || 0).toFixed(2)) +
+        row("Risk", "$" + (trade.risk_amount || 0).toFixed(2)) +
+        row("Win", "$" + ((trade.rr_ratio || 0) * (trade.risk_amount || 0)).toFixed(2)) +
+        (resolved
+          ? '<div style="margin-top:4px;color:' +
+            (trade.result === "win" ? "#22c55e" : "#ef4444") +
+            '">' +
+            trade.result.toUpperCase() +
+            " " +
+            (trade.pnl >= 0 ? "+" : "-") +
+            "$" +
+            Math.abs(trade.pnl).toFixed(2) +
+            "</div>"
+          : ""),
+      point,
+    );
+  }
+
+  _showTooltip(html, point) {
+    const el = this._ensureTooltipEl();
+    el.innerHTML = html;
     el.style.display = "block";
     const cw = this.containers.main.clientWidth;
     const ch = this.containers.main.clientHeight;
