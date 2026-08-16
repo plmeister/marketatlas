@@ -1,6 +1,6 @@
 # 082: A/B index page controls — interactive choice selector
 
-**Status:** pending
+**Status:** done
 **Epic:** portfolio
 **Priority:** low
 **Depends on:** 081
@@ -27,18 +27,30 @@ Behaviour:
 
 ## Acceptance Criteria
 
-- [ ] One control per choice dimension; selecting a value shows only the
+- [x] One control per choice dimension; selecting a value shows only the
       matching combination's grid row + detail sections
-- [ ] Default state shows the full static view (identical to 081 page)
-- [ ] With JS disabled, the page still shows every combination's tables
+- [x] Default state shows the full static view (identical to 081 page)
+- [x] With JS disabled, the page still shows every combination's tables
       (tables are server-rendered, JSON is additive)
-- [ ] Variant data embedded as a single JSON object; no duplicated per-variant
+- [x] Variant data embedded as a single JSON object; no duplicated per-variant
       HTML under each control state
-- [ ] Script is inline, dependency-free, and mirrors the existing
+- [x] Script is inline, dependency-free, and mirrors the existing
       `InteractiveRenderer` style
-- [ ] Tests: data-serialization unit test (JSON matches server-rendered
+- [x] Tests: data-serialization unit test (JSON matches server-rendered
       numbers); manual/JS smoke check documented in the backlog PR
-- [ ] `poetry run lint` green
+- [x] `poetry run lint` green
+
+## Smoke check
+
+`TestABIndexControls::test_js_filter_smoke` (tests/test_html_output_validation.py)
+extracts the page's inline script and runs it under a minimal DOM stub in node
+(`_AB_CONTROLS_SMOKE` harness): asserts the default state renders every grid row
++ detail section, drives the `min_strength` select to `0.1` to narrow the grid
+to one row and hide the non-matching section, then resets to "All" to restore
+the full view. `test_js_syntax_valid` runs `node --check` over the emitted
+script. Manual browser check: `marketatlas run --ab ... --output out.html`, open
+`out/ab.html`, pick a choice value per dimension, confirm only the matching
+combination's row + tables show.
 
 ## Related
 

@@ -1,5 +1,6 @@
 """HTML output validation tests — catches broken JS, missing data, bad structure."""
 
+import json
 import re
 import subprocess
 import tempfile
@@ -19,6 +20,13 @@ from marketatlas.frames.store import FrameStore
 from marketatlas.strategy.tradebook import TradeBook
 from marketatlas.visualization.context import RenderContext
 from marketatlas.visualization.interactive import InteractiveRenderer
+from marketatlas.visualization.portfolio import (
+    _fmt_pct,
+    _fmt_pf,
+    _fmt_pnl,
+    _fmt_rate,
+    _sign_class,
+)
 
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
 
@@ -347,8 +355,9 @@ class TestABIndex:
 
     def test_grid_full_metrics(self, tmp_path: object) -> None:
         _, content = self._render_index(tmp_path)
-        # Variant 0: A +3.00 win, B -1.00 loss -> +2.00, PF 3.0, 50% win rate.
-        assert '<td class="num-pos">+2.00</td>' in content
+        # Variant 0: A +30.00 win (re-sized to fixed risk), B -10.00 loss
+        # -> +20.00, PF 3.0, 50% win rate.
+        assert '<td class="num-pos">+20.00</td>' in content
         assert "<td>2</td>" in content
         assert "<td>1-1</td>" in content
         assert "<td>50.0%</td>" in content
@@ -364,7 +373,7 @@ class TestABIndex:
         assert "Variant: min_strength=0.99" in content
         assert content.count("<h2>By Instrument</h2>") == 2
         assert content.count("By Strategy") == 2
-        assert content.count('<section class="variant">') == 2
+        assert content.count('<section class="variant"') == 2
 
     def test_links_to_variant_charts(self, tmp_path: object) -> None:
         _, content = self._render_index(tmp_path)
@@ -375,6 +384,151 @@ class TestABIndex:
         assert '<a href="ms099/portfolio.B.html">B</a>' in content
         assert "http" not in content
         assert "lightweight-charts" not in content
+
+
+class TestABIndexControls:
+    """Backlog 082: embedded JSON, progressive control bar, JS syntax."""
+
+    def _render_index(self, tmp_path: object) -> tuple[Path, str]:
+        from marketatlas.visualization.portfolio import render_ab_index
+
+        out = Path(tmp_path) / "ab"  # type: ignore[arg-type]
+        rows = [
+            ({"generate_signal.min_strength": 0.1}, _make_ab_result(118.0, 98.0)),
+            ({"generate_signal.min_strength": 0.99}, _make_ab_result(93.0, 113.0)),
+        ]
+        path = render_ab_index(rows, out, stem="ab")
+        return path, path.read_text()
+
+    @staticmethod
+    def _extract_json(content: str, name: str) -> list[dict[str, object]]:
+        match = re.search(f"const {name} = (\\[.+?\\]);", content, re.DOTALL)
+        assert match, f"{name} JSON not found"
+        return json.loads(match.group(1))
+
+    def test_variant_json_matches_server_rendered_grid(self, tmp_path: object) -> None:
+        _, content = self._render_index(tmp_path)
+        grid = re.search(r'<tbody id="ab-grid-body">\n(.+?)\n    </tbody>', content, re.DOTALL)
+        assert grid, "grid body not found"
+        grid_html = grid.group(1)
+        variants = self._extract_json(content, "AB_VARIANTS")
+        assert len(variants) == 2
+        for variant in variants:
+            m = variant["metrics"]
+            assert isinstance(m, dict)
+            expected = [
+                f"<td>{int(m['total_trades'])}</td>",
+                f"<td>{int(m['wins'])}-{int(m['losses'])}</td>",
+                _fmt_cell(_fmt_rate(float(m["win_rate"]))),
+                _fmt_cell(
+                    _fmt_pnl(float(m["total_pnl"])),
+                    class_=_sign_class(float(m["total_pnl"])),
+                ),
+                _fmt_cell(_fmt_pct(float(m["total_return_pct"]))),
+                _fmt_cell(_fmt_pct(float(m["max_drawdown"]))),
+                _fmt_cell(_fmt_pf(float(m["profit_factor"]))),
+                _fmt_cell(
+                    _fmt_pnl(float(m["expectancy"])),
+                    class_=_sign_class(float(m["expectancy"])),
+                ),
+            ]
+            for cell in expected:
+                assert cell in grid_html, f"{cell} not in grid for {variant['slug']}"
+            # ident values render as their grid text, in the same JSON order.
+            ident_cell = "<td>0.1</td>" if variant["slug"] == "ms010" else "<td>0.99</td>"
+            assert ident_cell in grid_html
+
+    def test_grid_rows_rendered_by_json_match_static_count(self, tmp_path: object) -> None:
+        _, content = self._render_index(tmp_path)
+        variants = self._extract_json(content, "AB_VARIANTS")
+        grid = re.search(r'<tbody id="ab-grid-body">\n(.+?)\n    </tbody>', content, re.DOTALL)
+        assert grid
+        assert grid.group(1).count("<tr>") == len(variants)
+
+    def test_one_select_per_choice_dimension(self, tmp_path: object) -> None:
+        _, content = self._render_index(tmp_path)
+        dims = self._extract_json(content, "AB_DIMS")
+        assert dims == [
+            {
+                "key": "generate_signal.min_strength",
+                "header": "min_strength",
+                "values": ["0.1", "0.99"],
+            }
+        ]
+        # The script builds one select per dim; a select element is created.
+        assert 'document.createElement("select")' in content
+        assert 'id="ab-controls"' in content
+        assert 'id="ab-count"' in content
+
+    def test_sections_carry_data_slug(self, tmp_path: object) -> None:
+        _, content = self._render_index(tmp_path)
+        variants = self._extract_json(content, "AB_VARIANTS")
+        slugs = {v["slug"] for v in variants}
+        for slug in slugs:
+            assert f'<section class="variant" data-slug="{slug}">' in content
+
+    def test_static_tables_present_without_js(self, tmp_path: object) -> None:
+        _, content = self._render_index(tmp_path)
+        # Progressive enhancement: the full 081 tables are server-rendered and
+        # the JSON/controls are purely additive.
+        assert '<tbody id="ab-grid-body">' in content
+        assert "Variant: min_strength=0.1" in content
+        assert "Variant: min_strength=0.99" in content
+        assert '<a href="ms010/portfolio.A.html">A</a>' in content
+        assert '<a href="ms099/portfolio.B.html">B</a>' in content
+        assert content.count("<h2>By Instrument</h2>") == 2
+
+    def test_js_syntax_valid(self, tmp_path: object) -> None:
+        path, content = self._render_index(tmp_path)
+        scripts = re.findall(r"<script>\n(.+?)\n</script>", content, re.DOTALL)
+        assert scripts, "No inline script block found"
+        tmp_js = Path(tempfile.mktemp(suffix=".js"))
+        try:
+            tmp_js.write_text(scripts[-1], encoding="utf-8")
+            result = subprocess.run(
+                ["node", "--check", str(tmp_js)],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            assert result.returncode == 0, f"JS syntax error:\n{result.stderr}"
+        finally:
+            tmp_js.unlink(missing_ok=True)
+        # No unresolved @data placeholder survives into the emitted page.
+        assert "// @data:" not in content
+
+    def test_js_filter_smoke(self, tmp_path: object) -> None:
+        """Run the page script under a minimal DOM stub and drive the control.
+
+        The default state renders every variant's grid row and detail section;
+        selecting a value per choice dimension narrows the grid to the matching
+        combination, hides the others, and updates the variant count. Reset to
+        "All" restores the full view.
+        """
+        path, content = self._render_index(tmp_path)
+        scripts = re.findall(r"<script>\n(.+?)\n</script>", content, re.DOTALL)
+        assert scripts, "No inline script block found"
+        page_js = Path(tempfile.mktemp(suffix=".js"))
+        harness_js = Path(tempfile.mktemp(suffix=".js"))
+        try:
+            page_js.write_text(scripts[-1], encoding="utf-8")
+            harness_js.write_text(_AB_CONTROLS_SMOKE, encoding="utf-8")
+            result = subprocess.run(
+                ["node", str(harness_js), str(page_js)],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            assert result.returncode == 0, f"Smoke test failed:\n{result.stdout}\n{result.stderr}"
+        finally:
+            page_js.unlink(missing_ok=True)
+            harness_js.unlink(missing_ok=True)
+
+
+def _fmt_cell(text: str, class_: str = "") -> str:
+    if class_:
+        return f'<td class="{class_}">{text}</td>'
+    return f"<td>{text}</td>"
 
 
 def _make_ab_result(close_a: float, close_b: float) -> PortfolioBacktestResult:
@@ -444,3 +598,114 @@ def _make_portfolio_result() -> PortfolioBacktestResult:
         window_size=100,
         max_hold_days=10,
     )
+
+
+_AB_CONTROLS_SMOKE = r"""
+// Backlog 082 smoke test: run the embedded A/B index script against a minimal
+// DOM stub and drive the choice controls. Exits non-zero on any failed check.
+const fs = require("fs");
+
+function makeEl(tag) {
+  return {
+    tag: tag,
+    children: [],
+    value: "",
+    textContent: "",
+    style: { display: "" },
+    _attrs: {},
+    appendChild(child) {
+      this.children.push(child);
+      return child;
+    },
+    addEventListener(evt, fn) {
+      listeners[evt] = listeners[evt] || [];
+      listeners[evt].push({ el: this, fn: fn });
+    },
+    setAttribute(name, value) {
+      this._attrs[name] = value;
+    },
+    getAttribute(name) {
+      return this._attrs[name] !== undefined ? this._attrs[name] : null;
+    },
+  };
+}
+
+const listeners = {};
+const gridBody = makeEl("tbody");
+const controls = makeEl("div");
+const countEl = makeEl("span");
+const sections = [];
+
+function fail(msg) {
+  console.error("FAIL: " + msg);
+  process.exit(1);
+}
+
+function rowCount() {
+  const m = gridBody.innerHTML.match(/<tr>/g);
+  return m ? m.length : 0;
+}
+
+const pageSrc = fs.readFileSync(process.argv[2], "utf8");
+const variantsMatch = pageSrc.match(/const AB_VARIANTS = (\[.+?\]);/s);
+if (!variantsMatch) fail("AB_VARIANTS JSON not found in page script");
+const variantSlugs = JSON.parse(variantsMatch[1]).map((v) => v.slug);
+for (const slug of variantSlugs) {
+  sections.push({
+    style: { display: "" },
+    getAttribute(name) {
+      return name === "data-slug" ? slug : null;
+    },
+  });
+}
+
+global.document = {
+  getElementById(id) {
+    if (id === "ab-grid-body") return gridBody;
+    if (id === "ab-controls") return controls;
+    if (id === "ab-count") return countEl;
+    return null;
+  },
+  createElement(tag) {
+    return makeEl(tag);
+  },
+  querySelectorAll(sel) {
+    if (sel === "section.variant") return sections;
+    return [];
+  },
+};
+
+eval(pageSrc);
+if (rowCount() !== 2) fail("default state should render 2 grid rows");
+if (countEl.textContent !== "2 variant(s)") fail("default count wrong: " + countEl.textContent);
+for (const s of sections) {
+  if (s.style.display !== "") fail("default state should show every section");
+}
+
+let select = null;
+for (const label of controls.children) {
+  for (const child of label.children) {
+    if (child.tag === "select") select = child;
+  }
+}
+if (!select) fail("no select control found");
+if (controls.children.length !== 1) fail("expected one control per choice dimension");
+
+select.value = "0.1";
+for (const e of listeners["change"] || []) {
+  if (e.el === select) e.fn();
+}
+if (rowCount() !== 1) fail("filtered grid should keep 1 row");
+if (countEl.textContent !== "1 variant(s)") fail("filtered count wrong: " + countEl.textContent);
+const visibleSections = sections.filter((s) => s.style.display === "").length;
+if (visibleSections !== 1) fail("filtered view should show exactly 1 section");
+
+select.value = "";
+for (const e of listeners["change"] || []) {
+  if (e.el === select) e.fn();
+}
+if (rowCount() !== 2) fail("reset to All should restore 2 grid rows");
+if (countEl.textContent !== "2 variant(s)") fail("reset count wrong: " + countEl.textContent);
+
+console.log("OK: A/B index controls smoke test");
+"""
