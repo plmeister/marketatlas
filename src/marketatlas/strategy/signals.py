@@ -18,6 +18,7 @@ class TradeSignal:
     confidence: float
     source: str
     evidence: tuple[EvidenceEntry, ...]
+    rejections: tuple[EvidenceEntry, ...] = ()
 
 
 class Signal(ABC):

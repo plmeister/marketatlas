@@ -225,6 +225,14 @@ class _PortfolioBundle:
             if inst == canonical and view.index in indices
         ]
 
+    def evaluate_all_with_rejections(
+        self, view: MarketView, facts: dict[FactKey, Fact]
+    ) -> tuple[list[tuple[str, TradeSignal]], list[tuple[str, TradeSignal]]]:
+        all_emitted = self.evaluate_all(view, facts)
+        valid = [(n, s) for n, s in all_emitted if s.confidence > 0]
+        rejected = [(n, s) for n, s in all_emitted if s.confidence == 0]
+        return valid, rejected
+
     def get_risk_engine(self, strategy_name: str) -> RiskEngine:
         if strategy_name in self._engines:
             return self._engines[strategy_name]  # type: ignore[return-value]

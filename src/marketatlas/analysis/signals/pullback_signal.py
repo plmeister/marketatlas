@@ -55,7 +55,14 @@ class PullbackSignal(Signal):
             return None
 
         if pullback.direction == TrendDirection.NEUTRAL:
-            return None
+            rejections = (
+                EvidenceEntry(
+                    text="Rejected: pullback direction is neutral",
+                    level=EvidenceLevel.WARNING,
+                    source="PullbackSignal",
+                ),
+            )
+            return self._rejected_signal(rejections)
 
         strength = (
             pullback.strength
@@ -63,7 +70,17 @@ class PullbackSignal(Signal):
             else _pullback_strength(pullback.swing_pattern)
         )
         if strength < self._min_strength:
-            return None
+            rejections = (
+                EvidenceEntry(
+                    text=(
+                        f"Rejected: pullback strength {strength:.2f} "
+                        f"< min {self._min_strength:.2f}"
+                    ),
+                    level=EvidenceLevel.WARNING,
+                    source="PullbackSignal",
+                ),
+            )
+            return self._rejected_signal(rejections)
 
         current = view.current
         atr_val = atr.value if atr.value > 0 else 0.0
@@ -95,4 +112,16 @@ class PullbackSignal(Signal):
             confidence=round(confidence, 4),
             source="PullbackSignal",
             evidence=evidence,
+        )
+
+    def _rejected_signal(
+        self, rejections: tuple[EvidenceEntry, ...]
+    ) -> TradeSignal:
+        return TradeSignal(
+            direction=TrendDirection.NEUTRAL,
+            entry_zone=(0.0, 0.0),
+            confidence=0.0,
+            source="PullbackSignal",
+            evidence=(),
+            rejections=rejections,
         )

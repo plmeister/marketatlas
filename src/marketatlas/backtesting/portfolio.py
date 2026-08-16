@@ -57,6 +57,7 @@ class _CursorEvaluation:
     evidence: tuple[EvidenceEntry, ...]
     emitted: list[tuple[str, TradeSignal]]
     risk_evidence: tuple[EvidenceEntry, ...] = ()
+    signal_rejections: tuple[EvidenceEntry, ...] = ()
 
 
 class PortfolioBacktester:
@@ -136,7 +137,12 @@ class PortfolioBacktester:
                 view = MarketView(store, aligned, self._window_size)
                 facts, loose = self._bundle.graph.run_with_evidence(view)
                 evidence = self._collect_evidence(facts) + loose
-                emitted = self._bundle.evaluate_all(view, facts)
+                emitted, signal_rejections = self._bundle.evaluate_all_with_rejections(
+                    view, facts
+                )
+                rejection_entries = tuple(
+                    e for _, sig in signal_rejections for e in sig.rejections
+                )
                 evaluations.append(
                     _CursorEvaluation(
                         instrument=instrument,
@@ -144,6 +150,7 @@ class PortfolioBacktester:
                         facts=facts,
                         evidence=evidence,
                         emitted=emitted,
+                        signal_rejections=rejection_entries,
                     )
                 )
 
@@ -159,6 +166,7 @@ class PortfolioBacktester:
                         evidence=ev.evidence,
                         signals=tuple(signal for _, signal in ev.emitted),
                         risk_evidence=ev.risk_evidence,
+                        signal_rejections=ev.signal_rejections,
                     )
                 )
 

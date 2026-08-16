@@ -42,6 +42,19 @@ class StrategyBundle:
                 results.append((name, signal))
         return results
 
+    def evaluate_all_with_rejections(
+        self, view: MarketView, facts: dict[FactKey, Fact]
+    ) -> tuple[list[tuple[str, TradeSignal]], list[tuple[str, TradeSignal]]]:
+        signals: list[tuple[str, TradeSignal]] = []
+        rejections: list[tuple[str, TradeSignal]] = []
+        for name, strategy in self._strategies.items():
+            strat_signals, strat_rejections = strategy.evaluate_with_rejections(view, facts)
+            for s in strat_signals:
+                signals.append((name, s))
+            for r in strat_rejections:
+                rejections.append((name, r))
+        return signals, rejections
+
     def get_risk_engine(self, strategy_name: str) -> RiskEngine:
         strategy = self._strategies[strategy_name]
         return strategy.risk_engine

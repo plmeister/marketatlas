@@ -39,9 +39,22 @@ class Strategy:
         results: list[TradeSignal] = []
         for signal in self._signals:
             ts = signal.evaluate(view, facts)
-            if ts is not None:
+            if ts is not None and ts.confidence > 0:
                 results.append(ts)
         return results
+
+    def evaluate_with_rejections(
+        self, view: MarketView, facts: dict[FactKey, Fact]
+    ) -> tuple[list[TradeSignal], list[TradeSignal]]:
+        signals: list[TradeSignal] = []
+        rejections: list[TradeSignal] = []
+        for signal in self._signals:
+            ts = signal.evaluate(view, facts)
+            if ts is not None and ts.confidence > 0:
+                signals.append(ts)
+            elif ts is not None and ts.rejections:
+                rejections.append(ts)
+        return signals, rejections
 
     def _build_graph(self) -> AnalysisGraph:
         analyzers = build_analyzers(self._config)

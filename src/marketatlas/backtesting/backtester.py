@@ -42,6 +42,9 @@ class BundleProtocol(Protocol):
     def evaluate_all(
         self, view: MarketView, facts: dict[FactKey, Fact]
     ) -> list[tuple[str, TradeSignal]]: ...
+    def evaluate_all_with_rejections(
+        self, view: MarketView, facts: dict[FactKey, Fact]
+    ) -> tuple[list[tuple[str, TradeSignal]], list[tuple[str, TradeSignal]]]: ...
     def get_risk_engine(self, strategy_name: str) -> RiskEngine: ...
 
 
@@ -77,8 +80,13 @@ class Backtester:
             facts, loose_evidence = self._bundle.graph.run_with_evidence(view)
             evidence = self._collect_evidence(facts) + loose_evidence
 
-            emitted = self._bundle.evaluate_all(view, facts)
+            emitted, signal_rejections = self._bundle.evaluate_all_with_rejections(
+                view, facts
+            )
             signals = tuple(signal for _, signal in emitted)
+            rejection_entries = tuple(
+                e for _, sig in signal_rejections for e in sig.rejections
+            )
 
             tradebook.fill_order(view.current.open, view.current.timestamp)
             tradebook.resolve_at_cursor(view.current, self._max_hold_days)
@@ -110,6 +118,7 @@ class Backtester:
                 evidence=evidence,
                 signals=signals,
                 risk_evidence=risk_evidence,
+                signal_rejections=rejection_entries,
             )
             frame_store.append(frame)
 

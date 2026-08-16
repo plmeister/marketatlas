@@ -415,6 +415,17 @@ class _SignalBundle:
     ) -> list[tuple[str, TradeSignal]]:
         return list(self._signals)
 
+    def evaluate_all_with_rejections(
+        self, view: MarketView, facts: dict[FactKey, Fact]
+    ) -> tuple[list[tuple[str, TradeSignal]], list[tuple[str, TradeSignal]]]:
+        valid = [
+            (n, s) for n, s in self._signals if s.confidence > 0
+        ]
+        rejected = [
+            (n, s) for n, s in self._signals if s.confidence == 0
+        ]
+        return valid, rejected
+
     def get_risk_engine(self, strategy_name: str) -> RiskEngine:
         return self._risk_engine
 

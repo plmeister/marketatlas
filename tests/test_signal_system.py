@@ -218,7 +218,7 @@ class TestPullbackSignal:
         assert result is not None
         assert result.direction == TrendDirection.BEARISH
 
-    def test_neutral_direction_returns_none(self) -> None:
+    def test_neutral_direction_returns_rejection(self) -> None:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)
         signal = PullbackSignal()
@@ -230,9 +230,12 @@ class TestPullbackSignal:
                 _atr_fact(50.0),
             ),
         )
-        assert result is None
+        assert result is not None
+        assert result.confidence == 0.0
+        assert len(result.rejections) == 1
+        assert "neutral" in result.rejections[0].text.lower()
 
-    def test_empty_swing_pattern_returns_none(self) -> None:
+    def test_empty_swing_pattern_returns_rejection(self) -> None:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)
         signal = PullbackSignal()
@@ -244,7 +247,10 @@ class TestPullbackSignal:
                 _atr_fact(50.0),
             ),
         )
-        assert result is None
+        assert result is not None
+        assert result.confidence == 0.0
+        assert len(result.rejections) == 1
+        assert "strength" in result.rejections[0].text.lower()
 
     def test_missing_pullback_returns_none(self) -> None:
         store = _make_store(_flat_candles())
@@ -317,7 +323,7 @@ class TestPullbackSignal:
         assert weak is not None
         assert strong.confidence > weak.confidence
 
-    def test_min_strength_filter(self) -> None:
+    def test_min_strength_filter_returns_rejection(self) -> None:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)
         signal = PullbackSignal(min_strength=0.9)
@@ -329,7 +335,11 @@ class TestPullbackSignal:
                 _atr_fact(50.0),
             ),
         )
-        assert result is None
+        assert result is not None
+        assert result.confidence == 0.0
+        assert len(result.rejections) == 1
+        assert "strength" in result.rejections[0].text.lower()
+        assert "0.90" in result.rejections[0].text
 
     def test_fact_strength_used_when_provided(self) -> None:
         store = _make_store(_flat_candles())
@@ -350,7 +360,7 @@ class TestPullbackSignal:
         assert result is not None
         assert result.confidence == round(0.85 * 0.7, 4)
 
-    def test_fact_strength_below_min_filtered(self) -> None:
+    def test_fact_strength_below_min_returns_rejection(self) -> None:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)
         signal = PullbackSignal(min_strength=0.5)
@@ -365,7 +375,11 @@ class TestPullbackSignal:
             view,
             _keyed_facts(fact, _bullish_trend_fact(), _atr_fact(50.0)),
         )
-        assert result is None
+        assert result is not None
+        assert result.confidence == 0.0
+        assert len(result.rejections) == 1
+        assert "strength" in result.rejections[0].text.lower()
+        assert "0.20" in result.rejections[0].text
 
     def test_fact_strength_overrides_weak_pattern(self) -> None:
         """Explicit strength wins over the pattern-based fallback, so a

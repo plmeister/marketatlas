@@ -21,3 +21,4 @@ class AnalysisFrame:
     diagnostics: tuple[str, ...] = ()
     signals: tuple["TradeSignal", ...] = ()
     risk_evidence: tuple[EvidenceEntry, ...] = ()
+    signal_rejections: tuple[EvidenceEntry, ...] = ()
