@@ -95,7 +95,10 @@ class AppModel {
   }
 
   // --- Significant-event navigation ---
-  // Frames that carry evidence/signals or a trade entry/exit.
+  // Frames that carry signals, risk decisions, or a trade entry/exit.
+  // Generic per-frame analyzer evidence is excluded: it exists on every
+  // candle, which would make next/prev event navigation step one frame at a
+  // time.
   eventIndices() {
     if (!this._events) this._events = this._computeEvents();
     return this._events;
@@ -104,11 +107,7 @@ class AppModel {
   _computeEvents() {
     const set = new Set();
     this.frames.forEach((f, i) => {
-      if (
-        (f.evidence && f.evidence.length) ||
-        (f.risk_evidence && f.risk_evidence.length) ||
-        (f.signals && f.signals.length)
-      ) {
+      if ((f.risk_evidence && f.risk_evidence.length) || (f.signals && f.signals.length)) {
         set.add(i);
       }
     });

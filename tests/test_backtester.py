@@ -232,7 +232,7 @@ class TestTradeBookMetrics:
             risk_amount=2.0,
             reward_amount=4.0,
             rr_ratio=2.0,
-            slippage_pct=0.1,
+            slippage_pct=0.0,
             source="test",
             evidence=(),
         )

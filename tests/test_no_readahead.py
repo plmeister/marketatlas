@@ -286,7 +286,8 @@ class TestTradeBookResolution:
         open_trade = tb._open_trade
         assert open_trade is not None
         assert open_trade.entry_timestamp == fill_time
-        assert open_trade.candidate.entry == 100.5
+        assert open_trade.candidate.entry == 101.0 * 1.001
+        assert open_trade.candidate.size == 10.0 / (101.0 * 1.001 - 95.0)
 
         stop_candle = Candle(
             timestamp=datetime(2024, 1, 12),

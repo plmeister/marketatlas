@@ -229,6 +229,28 @@ test("trade box spans entry to entry+maxHold clamped to last candle", () => {
   });
 });
 
+test("hide mode clamps trade box end to the current frame (grows from entry)", () => {
+  const model = makeModel(); // futureVisibility defaults to "hide"
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateTrades(3); // frame time 2024-01-05
+  const t1 = cv.tradeBoxes.find((b) => b.fromTime === "2024-01-02");
+  assert.strictEqual(t1.toTime, "2024-01-05"); // clamped, not entry+maxHold
+  const t2 = cv.tradeBoxes.find((b) => b.fromTime === "2024-01-05");
+  assert.ok(t2, "trade entered on the current frame still draws a box");
+  assert.strictEqual(t2.toTime, "2024-01-08"); // widened to the next frame
+});
+
+test("show mode keeps the full trade box span from entry", () => {
+  const model = makeModel({ MAX_HOLD_DAYS: 5 });
+  model.futureVisibility = "show";
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateTrades(4); // frame time 2024-01-08
+  const t3 = cv.tradeBoxes.find((b) => b.fromTime === "2024-01-08");
+  assert.strictEqual(t3.toTime, "2024-01-10"); // full entry+maxHold span
+});
+
 test("trade box primitive attaches and detaches on rebuild", () => {
   const model = makeModel();
   const cv = new ChartView(model, makeContainers());

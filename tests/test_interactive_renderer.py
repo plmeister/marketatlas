@@ -189,7 +189,7 @@ def _make_tradebook_with_instruments() -> TradeBook:
         risk_amount=10.0,
         reward_amount=30.0,
         rr_ratio=3.0,
-        slippage_pct=0.1,
+        slippage_pct=0.0,
         source="test",
         evidence=(),
     )
@@ -801,11 +801,11 @@ class TestInteractiveRenderer:
             size=0.2,
             risk_amount=10.0,
             reward_amount=30.0,
-            rr_ratio=3.0,
-            slippage_pct=0.1,
-            source="test",
-            evidence=(),
-        )
+        rr_ratio=3.0,
+        slippage_pct=0.0,
+        source="test",
+        evidence=(),
+    )
         # Breakeven trade: entry == exit
         tb.submit_order(candidate, signal, "test", BASE + timedelta(days=1))
         tb.fill_order(103.0, BASE + timedelta(days=2))
@@ -1192,8 +1192,8 @@ class TestPortfolioChartRendering:
         summary_b = self._summary(chart_b)
         assert summary_a["wins"] == 1 and summary_a["losses"] == 0
         assert summary_b["wins"] == 0 and summary_b["losses"] == 1
-        assert summary_a["final_balance"] == pytest.approx(1003.0)
-        assert summary_b["final_balance"] == pytest.approx(999.0)
+        assert summary_a["final_balance"] == pytest.approx(1030.0)
+        assert summary_b["final_balance"] == pytest.approx(990.0)
 
     def test_chart_title_carries_canonical(self, tmp_path: object) -> None:
         _, charts = self._render(tmp_path)

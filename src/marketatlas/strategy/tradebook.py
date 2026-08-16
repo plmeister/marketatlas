@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from marketatlas.data.types import Candle
+from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.structural import TrendDirection
 from marketatlas.strategy.signals import TradeSignal
 from marketatlas.strategy.trade import TradeCandidate
@@ -156,10 +157,11 @@ class TradeBook:
         instrument = self._pending_instrument
         if candidate is None or signal is None:
             return
+        filled = self._reprice_at_fill(candidate, open_price)
         self._open_trade = TradeOutcome(
             entry_timestamp=timestamp,
             exit_timestamp=None,
-            candidate=candidate,
+            candidate=filled,
             signal=signal,
             source_strategy=source,
             instrument=instrument,
@@ -171,6 +173,43 @@ class TradeBook:
         self._pending_source = ""
         self._pending_instrument = ""
         self._pending_timestamp = None
+
+    @staticmethod
+    def _reprice_at_fill(
+        candidate: TradeCandidate, fill_price: float
+    ) -> TradeCandidate:
+        """Rebase a pending candidate onto its actual fill price.
+
+        The order fills at the next candle's open while the planned entry was
+        derived from the signal candle's open, so using the planned entry
+        would pair an entry price from one date with an entry timestamp from
+        another. Re-pricing here keeps both on the same candle and re-sizes to
+        hold the planned dollar risk fixed.
+        """
+        if candidate.direction == TrendDirection.BULLISH:
+            entry = fill_price * (1 + candidate.slippage_pct / 100)
+        else:
+            entry = fill_price * (1 - candidate.slippage_pct / 100)
+
+        stop_distance = abs(entry - candidate.stop)
+        if stop_distance <= 0:
+            return replace(candidate, entry=entry)
+
+        size = candidate.risk_amount / stop_distance
+        distance = abs(candidate.target - entry)
+        note = (
+            f"Filled at {entry:.2f} (open {fill_price:.2f}); "
+            f"re-sized {size:.4f} to hold fixed risk"
+        )
+        return replace(
+            candidate,
+            entry=entry,
+            size=size,
+            rr_ratio=distance / stop_distance,
+            reward_amount=size * distance,
+            evidence=candidate.evidence
+            + (EvidenceEntry(text=note, level=EvidenceLevel.INFO, source="TradeBook"),),
+        )
 
     def close_trade(self, exit_price: float, timestamp: datetime) -> None:
         if self._open_trade is None:
@@ -214,6 +253,10 @@ class TradeBook:
             self.close_trade(candle.close, candle.timestamp)
             return
 
+        if candle.timestamp == self._open_trade.entry_timestamp:
+            if self._resolve_fill_candle_gap(candle):
+                return
+
         if c.direction == TrendDirection.BULLISH:
             if candle.low <= c.stop:
                 self.close_trade(c.stop, candle.timestamp)
@@ -224,6 +267,27 @@ class TradeBook:
                 self.close_trade(c.stop, candle.timestamp)
             elif candle.low <= c.target:
                 self.close_trade(c.target, candle.timestamp)
+
+    def _resolve_fill_candle_gap(self, candle: Candle) -> bool:
+        """Close at the open when the fill candle gapped through stop/target.
+
+        A position filled at the candle's open cannot capture a move that
+        happened before entry; if the open already breached a level, exit at
+        that open rather than at a stop/target that sits on the wrong side of
+        the fill price. Returns True when the trade was closed.
+        """
+        if self._open_trade is None:
+            return False
+        c = self._open_trade.candidate
+        if c.direction == TrendDirection.BULLISH:
+            if candle.open >= c.target or candle.open <= c.stop:
+                self.close_trade(candle.open, candle.timestamp)
+                return True
+        else:
+            if candle.open <= c.target or candle.open >= c.stop:
+                self.close_trade(candle.open, candle.timestamp)
+                return True
+        return False
 
     def filtered_by_instrument(self, canonical: str) -> TradeBook:
         """A copy of the book holding only ``canonical``'s closed trades.

@@ -389,13 +389,26 @@ class ChartView {
   _tradeBoxesAt(frameTime) {
     const candles = this.model.activeCandles;
     const lastTime = candles.length ? candles[candles.length - 1].time : null;
+    const hideFuture = this.model.futureVisibility === "hide";
     const boxes = [];
     this.model.trades.forEach((t) => {
       if (t.entry_time > frameTime) return;
       if (t.entry === undefined || t.stop === undefined || t.target === undefined) return;
       let toTime = _addDays(t.entry_time, this.model.maxHoldDays);
       if (lastTime && _t(toTime) > _t(lastTime)) toTime = lastTime;
-      if (toTime <= t.entry_time) return;
+      // With the future hidden, candles after the frame are absent from the
+      // series, so a box extending past the frame would have no x-coordinate
+      // and be skipped entirely. Clamp the end to the current frame so the box
+      // is visible from the moment the trade is entered (it grows as playback
+      // advances) instead of waiting until the hold period expires.
+      if (hideFuture && _t(toTime) > _t(frameTime)) toTime = frameTime;
+      // A trade entered on the current frame collapses to zero width; widen it
+      // to the next frame so the zone is visible as soon as it is placed.
+      if (_t(toTime) <= _t(t.entry_time)) {
+        const nextFrame = this.model.frames.find((f) => _t(f.time) > _t(frameTime));
+        if (!nextFrame) return;
+        toTime = nextFrame.time;
+      }
       boxes.push({
         fromTime: t.entry_time,
         toTime,

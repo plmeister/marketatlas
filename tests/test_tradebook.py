@@ -37,22 +37,22 @@ def _candidate(
     target: float = 115.0,
     size: float = 0.2,
 ) -> TradeCandidate:
-    risk_amount = abs(entry - stop) * size
-    reward_amount = abs(target - entry) * size
-    rr = abs(target - entry) / abs(entry - stop) if entry != stop else 0.0
-    return TradeCandidate(
-        direction=direction,
-        entry=entry,
-        stop=stop,
-        target=target,
-        size=size,
-        risk_amount=risk_amount,
-        reward_amount=reward_amount,
-        rr_ratio=rr,
-        slippage_pct=0.1,
-        source="test",
-        evidence=(),
-    )
+        risk_amount = abs(entry - stop) * size
+        reward_amount = abs(target - entry) * size
+        rr = abs(target - entry) / abs(entry - stop) if entry != stop else 0.0
+        return TradeCandidate(
+            direction=direction,
+            entry=entry,
+            stop=stop,
+            target=target,
+            size=size,
+            risk_amount=risk_amount,
+            reward_amount=reward_amount,
+            rr_ratio=rr,
+            slippage_pct=0.0,
+            source="test",
+            evidence=(),
+        )
 
 
 class TestTradeBookBasics:
@@ -221,6 +221,119 @@ class TestBreakevenCount:
 
         assert tb.breakeven_count == 1
         assert tb.total_pnl == pytest.approx(0.0)
+
+
+class TestFillCandleResolution:
+    """The fill candle may resolve the trade the same day it is placed.
+
+    Entry is re-priced at the fill candle's open (the planned entry came from
+    the signal candle), and a gap through stop/target at that open exits at
+    the open. Later candles on the same calendar day are not treated as the
+    fill candle for gap handling.
+    """
+
+    def _fill(
+        self,
+        tb: TradeBook,
+        fill_ts: datetime,
+        fill_price: float = 100.0,
+        cand: TradeCandidate | None = None,
+    ) -> None:
+        c = cand or _candidate()
+        tb.submit_order(c, _signal(c.direction), "s", datetime(2024, 1, 1))
+        tb.fill_order(fill_price, fill_ts)
+
+    def test_slippage_applied_at_fill_price(self) -> None:
+        tb = TradeBook()
+        t0 = datetime(2024, 1, 1)
+        cand = TradeCandidate(
+            direction=TrendDirection.BULLISH,
+            entry=100.0,
+            stop=95.0,
+            target=115.0,
+            size=0.2,
+            risk_amount=1.0,
+            reward_amount=3.0,
+            rr_ratio=3.0,
+            slippage_pct=0.1,
+            source="test",
+            evidence=(),
+        )
+        self._fill(tb, t0 + timedelta(days=1), cand=cand)
+        open_trade = tb._open_trade
+        assert open_trade is not None
+        assert open_trade.candidate.entry == pytest.approx(100.1)
+        assert open_trade.candidate.size == pytest.approx(1.0 / 5.1)
+        assert open_trade.candidate.rr_ratio == pytest.approx(14.9 / 5.1)
+
+    def test_fill_candle_gap_through_target_exits_at_open(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        fill_ts = t0 + timedelta(days=1)
+        self._fill(tb, fill_ts, fill_price=120.0, cand=_candidate(target=115.0))
+        tb.resolve_at_cursor(_candle(fill_ts, o=120.0, h=130.0, lo=118.0, c=125.0))
+        assert tb.has_no_open_trade is True
+        assert tb.trades[0].result == "breakeven"
+        assert tb.trades[0].exit_timestamp == fill_ts
+
+    def test_fill_candle_gap_through_stop_exits_at_open(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        fill_ts = t0 + timedelta(days=1)
+        self._fill(tb, fill_ts, fill_price=90.0, cand=_candidate(stop=95.0))
+        tb.resolve_at_cursor(_candle(fill_ts, o=90.0, h=92.0, lo=88.0, c=91.0))
+        assert tb.has_no_open_trade is True
+        assert tb.trades[0].result == "breakeven"
+        assert tb.trades[0].exit_timestamp == fill_ts
+
+    def test_bearish_fill_candle_gap_through_target_exits_at_open(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        fill_ts = t0 + timedelta(days=1)
+        self._fill(
+            tb,
+            fill_ts,
+            fill_price=80.0,
+            cand=_candidate(direction=TrendDirection.BEARISH, stop=105.0, target=85.0),
+        )
+        tb.resolve_at_cursor(_candle(fill_ts, o=80.0, h=82.0, lo=78.0, c=81.0))
+        assert tb.has_no_open_trade is True
+        assert tb.trades[0].result == "breakeven"
+        assert tb.trades[0].exit_timestamp == fill_ts
+
+    def test_fill_candle_same_day_target_cross_is_a_win(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        fill_ts = t0 + timedelta(days=1)
+        self._fill(tb, fill_ts, cand=_candidate(target=115.0))
+        tb.resolve_at_cursor(_candle(fill_ts, o=100.0, h=116.0, lo=99.0, c=114.0))
+        assert tb.has_no_open_trade is True
+        assert tb.trades[0].result == "win"
+        assert tb.trades[0].exit_timestamp == fill_ts
+        assert tb.total_pnl == pytest.approx((115.0 - 100.0) * 0.2)
+
+    def test_fill_candle_same_day_stop_cross_is_a_loss(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        fill_ts = t0 + timedelta(days=1)
+        self._fill(tb, fill_ts, cand=_candidate(stop=95.0))
+        tb.resolve_at_cursor(_candle(fill_ts, o=100.0, h=101.0, lo=94.0, c=96.0))
+        assert tb.has_no_open_trade is True
+        assert tb.trades[0].result == "loss"
+        assert tb.trades[0].exit_timestamp == fill_ts
+        assert tb.total_pnl == pytest.approx((95.0 - 100.0) * 0.2)
+
+    def test_later_same_day_candle_does_not_trigger_fill_gap(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        fill_ts = datetime(2024, 1, 11, 10, 0)
+        self._fill(tb, fill_ts, cand=_candidate(stop=80.0, target=120.0))
+        tb.resolve_at_cursor(_candle(fill_ts, o=100.0, h=101.0, lo=99.0, c=100.0))
+        assert tb.has_no_open_trade is False
+        later = _candle(datetime(2024, 1, 11, 12, 0), o=130.0, h=131.0, lo=129.0, c=130.0)
+        tb.resolve_at_cursor(later)
+        assert tb.has_no_open_trade is True
+        assert tb.trades[0].result == "win"
+        assert tb.total_pnl == pytest.approx((120.0 - 100.0) * 0.2)
 
 
 class TestSummary:

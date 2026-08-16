@@ -283,9 +283,9 @@ class TestPortfolioIndex:
 
     def test_summary_bar_from_shared_book(self, tmp_path: object) -> None:
         content = self._render_index(tmp_path).read_text()  # type: ignore[union-attr]
-        # A +3.00 win, B -1.00 loss -> shared total +2.00 over 2 trades
+        # A +30.00 win, B -10.00 loss -> shared total +20.00 over 2 trades
         assert "Total P&amp;L" in content
-        assert ">+2.00</b>" in content
+        assert ">+20.00</b>" in content
         assert "Return" in content
         assert "Max Drawdown" in content
         assert "Trades: <b>2</b>" in content
@@ -300,13 +300,13 @@ class TestPortfolioIndex:
     def test_rows_show_pnl_trades_wl_winrate_pf(self, tmp_path: object) -> None:
         content = self._render_index(tmp_path).read_text()  # type: ignore[union-attr]
         # A: win-only -> PF shown as infinity symbol
-        assert '<td class="num-pos">+3.00</td>' in content
+        assert '<td class="num-pos">+30.00</td>' in content
         assert "<td>1</td>" in content
         assert "<td>1-0</td>" in content
         assert "<td>100.0%</td>" in content
         assert "<td>\u221e</td>" in content
         # B: loss-only -> PF 0.00
-        assert '<td class="num-neg">-1.00</td>' in content
+        assert '<td class="num-neg">-10.00</td>' in content
         assert "<td>0-1</td>" in content
         assert "<td>0.0%</td>" in content
         assert "<td>0.00</td>" in content
@@ -346,7 +346,7 @@ def _make_tradebook_with_instruments() -> TradeBook:
         risk_amount=10.0,
         reward_amount=30.0,
         rr_ratio=3.0,
-        slippage_pct=0.1,
+        slippage_pct=0.0,
         source="test",
         evidence=(),
     )

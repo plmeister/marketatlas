@@ -469,8 +469,10 @@ test("active trades excludes exited and not-yet-entered trades", () => {
 });
 
 // --- Significant-event navigation ---
-test("eventIndices covers evidence frames and trade entry/exit frames", () => {
-  assert.deepStrictEqual(model.eventIndices(), [0, 1, 2, 3, 4, 5]);
+// Generic per-frame analyzer evidence exists on every candle, so event
+// indices cover only signals, risk decisions, and trade entry/exit frames.
+test("eventIndices covers signal/risk frames and trade entry/exit frames", () => {
+  assert.deepStrictEqual(model.eventIndices(), [1, 3, 4, 5]);
 });
 
 test("nextEventIndex returns next event after frame", () => {
@@ -482,8 +484,9 @@ test("nextEventIndex returns next event after frame", () => {
 
 test("prevEventIndex returns previous event before frame", () => {
   assert.strictEqual(model.prevEventIndex(5), 4);
-  assert.strictEqual(model.prevEventIndex(3), 2);
-  assert.strictEqual(model.prevEventIndex(1), 0);
+  assert.strictEqual(model.prevEventIndex(4), 3);
+  assert.strictEqual(model.prevEventIndex(3), 1);
+  assert.strictEqual(model.prevEventIndex(1), null);
   assert.strictEqual(model.prevEventIndex(0), null);
 });
 

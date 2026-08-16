@@ -136,8 +136,8 @@ test("jumpToNextEvent advances frame by frame through events", () => {
   model.goTo(0);
   pb.jumpToNextEvent(); // frame 1 (trade 1 entry)
   assert.strictEqual(model.currentFrame, 1);
-  pb.jumpToNextEvent(); // frame 2 (evidence)
-  assert.strictEqual(model.currentFrame, 2);
+  pb.jumpToNextEvent(); // frame 3 (trade 2 entry)
+  assert.strictEqual(model.currentFrame, 3);
   model.goLast();
   pb.jumpToNextEvent(); // no further events — stays put
   assert.strictEqual(model.currentFrame, model.frames.length - 1);
@@ -270,7 +270,7 @@ test("n and p keys jump between significant events", () => {
   document.dispatch("keydown", keyEvent("n"));
   assert.strictEqual(model.currentFrame, 1);
   document.dispatch("keydown", keyEvent("n"));
-  assert.strictEqual(model.currentFrame, 2);
+  assert.strictEqual(model.currentFrame, 3);
   document.dispatch("keydown", keyEvent("p"));
   assert.strictEqual(model.currentFrame, 1);
   kb.destroy();
