@@ -1,31 +1,45 @@
+"""Thin compilation pipeline orchestrator.
+
+Composes the four canonical stages (backlog 051):
+
+  AST (template) → [1 validation + registry resolution + param validation]
+  → [2 template expansion] → [3 concrete AST validation]
+  → [4 graph compilation]
+
+Expansion logic lives in ``expansion.py``; IR lowering / fact-key
+compilation lives in ``lowering.py``.  This module owns the ``Pipeline``
+class and the ``CompilerPass`` stage abstractions.
+"""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
-from dataclasses import dataclass, field
-from typing import Any, TypeVar
 
-from marketatlas.analysis.ast.clone import clone, clone_expression
 from marketatlas.analysis.ast.diagnostics import SourceMap, with_position
+
+# --- public re-exports (unchanged import paths for all callers) -----------
+from marketatlas.analysis.ast.expansion import (  # noqa: E402
+    CompilationError,
+    _is_reference_param,
+    _merge_default_params,
+    _provider_map,
+    expand,
+)
 from marketatlas.analysis.ast.expressions import (
     ChoiceExpression,
-    Expression,
     LiteralExpression,
-    ReferenceExpression,
-    SpanningReferenceExpression,
     choice_leaves,
 )
 from marketatlas.analysis.ast.instrument import TemplateGraph
 from marketatlas.analysis.ast.lexer import SourcePosition
+from marketatlas.analysis.ast.lowering import (  # noqa: E402
+    _ast_to_config,
+)
 from marketatlas.analysis.ast.models import (
     SCOPE_GROUP,
     SCOPE_INSTRUMENT,
     Analysis,
     Definition,
-    Parameter,
     Provider,
-    derive_timeframes,
-    is_timeframe_definition,
 )
 from marketatlas.analysis.ast.param_schema import format_type, type_compatible
 from marketatlas.analysis.ast.registry import ProviderRegistry
@@ -35,16 +49,21 @@ from marketatlas.analysis.ast.validation import (
     validate,
 )
 from marketatlas.analysis.graph import AnalysisGraph
-from marketatlas.data.types import Timeframe
-from marketatlas.strategy.config import (
-    AnalyzerConfig,
-    RiskConfig,
-    SignalConfig,
-    StrategyConfig,
-)
-from marketatlas.strategy.loader import ANALYZER_TYPES, build_analyzers
+from marketatlas.strategy.loader import build_analyzers
 
-_T = TypeVar("_T")
+__all__ = [
+    "CompilationError",
+    "CompilerPass",
+    "ConcreteValidationPass",
+    "GraphGenerationPass",
+    "ParamValidationPass",
+    "Pipeline",
+    "RegistryResolutionPass",
+    "TemplateExpansionPass",
+    "ValidationPass",
+    "expand",
+    "_ast_to_config",
+]
 
 
 def _position_diagnostics(
@@ -369,16 +388,6 @@ class GraphGenerationPass(CompilerPass):
         return AnalysisGraph(analyzers)  # type: ignore[return-value]
 
 
-@dataclass(frozen=True)
-class CompilationError(Exception):
-    message: str = ""
-    errors: tuple[Diagnostic, ...] = field(default_factory=tuple)
-    warnings: tuple[Diagnostic, ...] = field(default_factory=tuple)
-
-    def __str__(self) -> str:
-        return self.message
-
-
 class Pipeline:
     """Compilation pipeline over the four canonical stages (backlog 051).
 
@@ -493,447 +502,3 @@ class Pipeline:
                 f"GraphGenerationPass returned unexpected type: {type(result).__name__}"
             )
         return result
-
-
-def _provider_map(analysis: Analysis) -> dict[str, Provider]:
-    return {p.name: p for p in analysis.providers}
-
-
-def _is_reference_param(param: Parameter) -> bool:
-    """Whether a parameter value references a definition (backlog 061)."""
-    return any(isinstance(leaf, ReferenceExpression) for leaf in choice_leaves(param.value))
-
-
-def _merge_default_params(
-    provider: Provider, params: tuple[Parameter, ...]
-) -> tuple[Parameter, ...]:
-    existing = {p.name for p in params}
-    merged = list(params)
-    for dp in provider.default_params:
-        if dp.name not in existing:
-            merged.append(dp)
-    return tuple(merged)
-
-
-def _cartesian(options: Sequence[Sequence[_T]]) -> list[tuple[_T, ...]]:
-    """Deterministic cartesian product in declaration order.
-
-    The rightmost sequence varies fastest (column-major): product of
-    ``(a, b) x (1, 2)`` yields ``(a,1), (a,2), (b,1), (b,2)``.
-    """
-    result: list[tuple[_T, ...]] = [()]
-    for opts in options:
-        result = [prev + (opt,) for prev in result for opt in opts]
-    return result
-
-
-def _expand_definition(
-    defn: Definition, source_map: SourceMap | None = None
-) -> tuple[tuple[Parameter, ...], ...]:
-    """Produce one parameter-variant tuple per cartesian combination of choices.
-
-    Each parameter with a ``ChoiceExpression`` value contributes one option per
-    flattened leaf; literal and other-expression params contribute a single
-    option. An empty choice raises ``CompilationError`` naming the definition
-    and parameter (positioned when ``source_map`` provides one). Every returned
-    parameter carries a freshly cloned value.
-    """
-    options: list[tuple[Expression, ...]] = []
-    for p in defn.parameters:
-        leaves = choice_leaves(p.value)
-        if isinstance(p.value, ChoiceExpression) and not leaves:
-            position = (
-                source_map.position_for("definition", defn.name, parameter=p.name)
-                if source_map is not None
-                else None
-            )
-            raise CompilationError(
-                f"Empty choice for parameter '{p.name}' of definition "
-                f"'{defn.name}'. A ChoiceExpression must have at least one value.",
-                errors=(
-                    Diagnostic(
-                        message=(
-                            f"Empty choice for parameter '{p.name}' of definition "
-                            f"'{defn.name}'. A ChoiceExpression must have at least "
-                            f"one value."
-                        ),
-                        severity=DiagnosticSeverity.ERROR,
-                        node_name=defn.name,
-                        node_type="definition",
-                        position=position,
-                    ),
-                ),
-            )
-        options.append(leaves)
-
-    combos = _cartesian(options)
-    return tuple(
-        tuple(
-            Parameter(name=p.name, value=clone_expression(value))
-            for p, value in zip(defn.parameters, combo)
-        )
-        for combo in combos
-    )
-
-
-def expand(analysis: Analysis, source_map: SourceMap | None = None) -> tuple[Analysis, ...]:
-    """Expand an AST template into concrete ASTs with literal-only parameters.
-
-    Every ``ChoiceExpression`` parameter (backlog 048) is replaced by its
-    leaves; choices across parameters and definitions combine by cartesian
-    product. Nested choices are flattened into the product. ``list`` literal
-    params are ordinary values and never expand. The input template is never
-    mutated — each variant is built from a deep clone (backlog 049).
-
-    Ordering is deterministic: parameter choices iterate in declaration order
-    with the rightmost choice varying fastest; definitions preserve template
-    order. Expansion count can explode (product of all choice sizes) — callers
-    should treat the result as a set of concrete templates, not rely on it
-    staying small.
-
-    Convergent choices (two combinations producing an equal AST) are *not*
-    deduplicated here; stage-3 concrete-AST validation (backlogs 051/054)
-    reports the resulting duplicate definitions.
-
-    Raises ``CompilationError`` on an empty ``ChoiceExpression`` (positioned
-    when ``source_map`` supplies one).
-    """
-    template = clone(analysis)
-    variants_per_def = [_expand_definition(d, source_map) for d in template.definitions]
-    combos = _cartesian(variants_per_def)
-    return tuple(
-        Analysis(
-            name=template.name,
-            version=template.version,
-            definitions=_variant_definitions(template.definitions, combo),
-            providers=template.providers,
-            timeframes=_variant_timeframes(template.definitions, combo),
-            id=template.id,
-            metadata=template.metadata,
-        )
-        for combo in combos
-    )
-
-
-def _variant_definitions(
-    template: Sequence[Definition], combo: tuple[tuple[Parameter, ...], ...]
-) -> tuple[Definition, ...]:
-    return tuple(
-        Definition(
-            name=d.name,
-            provider=d.provider,
-            parameters=params,
-            scope=d.scope,
-            id=d.id,
-            metadata=d.metadata,
-        )
-        for d, params in zip(template, combo)
-    )
-
-
-def _variant_timeframes(
-    template: Sequence[Definition], combo: tuple[tuple[Parameter, ...], ...]
-) -> tuple[str, ...]:
-    return derive_timeframes(_variant_definitions(template, combo))
-
-
-def _ast_to_config(analysis: Analysis, *, scopes: frozenset[str] | None = None) -> StrategyConfig:
-    """Convert a concrete AST to a ``StrategyConfig``.
-
-    By default every definition flows into the config. ``scopes`` filters to a
-    subset of node scopes (backlog 064): the per-instrument config
-    (``{instrument}``) excludes group nodes and the group config
-    (``{group}``) contains only group nodes — the runtime supplies the member
-    list, so group bindings stay member-agnostic here and the ``members``
-    parameter is injected at instantiation.
-    """
-    providers = _provider_map(analysis)
-    def_by_name = {d.name: d for d in analysis.definitions}
-    if scopes is None:
-        group_names = [d.name for d in analysis.definitions if d.scope == SCOPE_GROUP]
-        if group_names:
-            listed = ", ".join(group_names)
-            raise CompilationError(
-                f"Analysis '{analysis.name}' has group-scoped definitions ({listed}) "
-                "which cannot compile to a single graph. Use "
-                "Pipeline.compile_template + instantiate_group: group nodes need "
-                "the runtime member list (backlog 064)."
-            )
-    analyzer_configs: list[AnalyzerConfig] = []
-    signal_configs: list[SignalConfig] = []
-    risk_config: RiskConfig = RiskConfig(algorithm="none")
-    base_tf = analysis.timeframes[0] if analysis.timeframes else None
-
-    def_timeframes = {
-        d.name: _resolved_definition_timeframe(d, def_by_name) for d in analysis.definitions
-    }
-
-    for d in analysis.definitions:
-        if scopes is not None and d.scope not in scopes:
-            continue
-        provider = providers.get(d.provider)
-        if provider is None:
-            raise CompilationError(f"Unknown provider: {d.provider}")
-
-        params: dict[str, object] = {}
-        requires: list[str] = []
-        timeframe: str | None = None
-        bindings: dict[str, str] = {}
-
-        for p in d.parameters:
-            value: object = p.value
-            if isinstance(value, ReferenceExpression):
-                resolved = _resolve_reference(
-                    p.name,
-                    value,
-                    def_by_name,
-                    def_timeframes,
-                    providers,
-                    provider,
-                    d.name,
-                    base_tf,
-                )
-                if resolved.timeframe is not None:
-                    timeframe = resolved.timeframe
-                if resolved.requires is not None:
-                    requires.append(resolved.requires)
-                if resolved.binding is not None:
-                    bindings[p.name] = resolved.binding
-                continue
-            if isinstance(value, LiteralExpression):
-                params[p.name] = value.value
-            elif isinstance(value, ChoiceExpression):
-                raise CompilationError(
-                    f"Parameter '{p.name}' of definition '{d.name}' is a "
-                    f"ChoiceExpression and cannot be compiled until expanded "
-                    f"(template expansion, backlog 050)."
-                )
-            else:
-                raise CompilationError(
-                    f"Non-literal expression for parameter '{p.name}' of definition "
-                    f"'{d.name}' cannot be compiled yet: {type(value).__name__}"
-                )
-
-        if bindings:
-            params["bindings"] = bindings
-
-        if provider.category == "analyzer":
-            analyzer_configs.append(
-                AnalyzerConfig(
-                    type=provider.impl,
-                    params=params,
-                    timeframe=timeframe if timeframe is not None else base_tf,
-                )
-            )
-        elif provider.category == "signal":
-            signal_configs.append(
-                SignalConfig(type=provider.impl, requires=tuple(requires), rules=params)
-            )
-        elif provider.category == "risk":
-            risk_config = RiskConfig(algorithm=provider.impl, params=params)
-
-    config = StrategyConfig(
-        name=analysis.name,
-        version=analysis.version,
-        analyzers=tuple(analyzer_configs),
-        signals=tuple(signal_configs),
-        risk=risk_config,
-    )
-    if analysis.timeframes:
-        config = StrategyConfig(
-            name=config.name,
-            version=config.version,
-            timeframes=analysis.timeframes,
-            analyzers=config.analyzers,
-            signals=config.signals,
-            risk=config.risk,
-        )
-    return config
-
-
-@dataclass(frozen=True)
-class _ResolvedReference:
-    """Compile-time interpretation of a reference parameter (backlog 062).
-
-    A reference resolves to exactly one of three things:
-    * ``timeframe`` — value substitution: a ``TimeFrame`` definition fills the
-      consumer's ``AnalyzerConfig.timeframe`` slot (backlog 061);
-    * ``binding`` — an analyzer or risk fact dependency: the consumed fact name
-      with an explicit ``name@timeframe`` suffix when it crosses timeframes (or
-      whenever the source timeframe is known), injected into the consumer's
-      ``bindings`` so it resolves the right ``FactKey``;
-    * ``requires`` — a signal fact dependency: the consumed fact name, carrying
-      the source timeframe suffix for cross-timeframe references.
-    A reference on an opaque consumer (risk) resolves to a binding (backlog 083).
-    """
-
-    timeframe: str | None = None
-    binding: str | None = None
-    requires: str | None = None
-
-
-def _resolved_definition_timeframe(
-    definition: Definition, def_by_name: dict[str, Definition]
-) -> str | None:
-    """The compile-time timeframe a definition declares (backlog 061/062).
-
-    ``None`` means "strategy base timeframe". Only analyzer definitions may
-    reference a ``TimeFrame`` definition; the reference-slot field is always
-    ``timeframe``.
-    """
-    for p in definition.parameters:
-        if not isinstance(p.value, ReferenceExpression):
-            continue
-        target = def_by_name.get(p.value.name)
-        if target is not None and is_timeframe_definition(target):
-            return _resolution_value(target)
-    return None
-
-
-def _resolve_reference(
-    param_name: str,
-    reference: ReferenceExpression,
-    def_by_name: dict[str, Definition],
-    def_timeframes: dict[str, str | None],
-    providers: dict[str, Provider],
-    provider: Provider,
-    owner: str,
-    base_tf: str | None,
-) -> _ResolvedReference:
-    """Resolve a reference parameter to its compile-time interpretation.
-
-    A reference to a ``TimeFrame`` definition is value substitution (backlog
-    061). A reference to a fact-producing definition is a dependency edge: on
-    an analyzer it becomes a ``bindings`` override carrying the source
-    timeframe when the reference crosses timeframes; on a signal it becomes a
-    ``requires`` entry with the source timeframe suffix; on a risk node it
-    becomes a ``bindings`` override carrying the source timeframe (backlog
-    083). References are always explicit declarations in the DSL — a consumer
-    at ``1d`` referencing a producer at ``1w`` is declared by the reference
-    itself, so no separate cross-timeframe opt-in exists (the fallback, an
-    undeclared cross-timeframe dependency, fails loudly at graph construction
-    as an unsatisfied dependency).
-    """
-    target = def_by_name.get(reference.name)
-    if target is None:
-        raise CompilationError(
-            f"Unknown reference: definition '{owner}' references '{reference.name}'"
-        )
-    if is_timeframe_definition(target):
-        if isinstance(reference, SpanningReferenceExpression):
-            raise CompilationError(
-                f"Spanning reference to TimeFrame definition '{reference.name}' on "
-                f"'{owner}' is invalid: a timeframe is a compile-time value, not a "
-                f"per-member fact"
-            )
-        if provider.category != "analyzer":
-            raise CompilationError(
-                f"Reference to TimeFrame definition '{reference.name}' on '{owner}' "
-                f"is only valid on analyzer definitions, not '{provider.category}'"
-            )
-        return _ResolvedReference(timeframe=_resolution_value(target))
-
-    source_tf = def_timeframes.get(target.name) or base_tf
-    if isinstance(reference, SpanningReferenceExpression):
-        if provider.category != "analyzer":
-            raise CompilationError(
-                f"Spanning reference on '{owner}' is only valid on analyzer "
-                f"definitions, not '{provider.category}'"
-            )
-        _check_fact_declared(param_name, target, source_tf, providers, owner)
-        # The binding is member-agnostic at compile time: the group node names
-        # the consumed fact per member only at instantiation, so the binding
-        # must always carry the source timeframe to disambiguate member facts
-        # across timeframes (backlog 064). ``"1d"`` is the strategy base
-        # default when neither the member nor the analysis declares one.
-        return _ResolvedReference(binding=f"{param_name}@{source_tf or '1d'}")
-    if provider.category == "analyzer":
-        _check_fact_declared(param_name, target, source_tf, providers, owner)
-        consumer_tf = _resolved_definition_timeframe(def_by_name[owner], def_by_name) or base_tf
-        key = (
-            param_name
-            if source_tf is None or source_tf == consumer_tf
-            else f"{param_name}@{source_tf}"
-        )
-        return _ResolvedReference(binding=key)
-    if provider.category == "signal":
-        if source_tf is None or source_tf == base_tf:
-            entry = param_name
-        else:
-            entry = f"{param_name}@{source_tf}"
-        return _ResolvedReference(requires=entry)
-    if provider.category == "risk":
-        _check_fact_declared(param_name, target, source_tf, providers, owner)
-        # The reference param names the consumed fact; the binding carries the
-        # source-timeframe suffix whenever one is known so a name shared across
-        # timeframes (e.g. ``swing@1d`` vs ``swing@1w``) resolves unambiguously.
-        binding = param_name if source_tf is None else f"{param_name}@{source_tf}"
-        return _ResolvedReference(binding=binding)
-    return _ResolvedReference()
-
-
-def _check_fact_declared(
-    field: str,
-    target: Definition,
-    source_tf: str | None,
-    providers: dict[str, Provider],
-    owner: str,
-) -> None:
-    """Verify the consumed fact name is produced by the referenced definition.
-
-    Instantiates the target's analyzer with its declared (literal) parameters
-    at the source timeframe and reads ``produces()`` — precise for
-    parameterised fact names like ``ema_50`` where a static contract cannot
-    know the effective name (backlog 058 contracts are derived with default
-    args). Opaque providers (no analyzer class) are skipped rather than
-    false-positive.
-    """
-    provider = providers.get(target.provider)
-    if provider is None:
-        return
-    cls = ANALYZER_TYPES.get(provider.impl)
-    if cls is None:
-        return
-    params: dict[str, Any] = {}
-    for p in target.parameters:
-        if isinstance(p.value, LiteralExpression):
-            params[p.name] = p.value.value
-    if source_tf is not None:
-        params["timeframe"] = source_tf
-    try:
-        instance = cls(**params)
-    except Exception:
-        return
-    produced = {str(fk.name) for fk in instance.produces()}
-    if field not in produced:
-        known = ", ".join(sorted(produced)) if produced else "(none)"
-        raise CompilationError(
-            f"Reference to '{field}' from '{owner}' is not declared by provider "
-            f"'{target.provider}': definition '{target.name}' produces {known}"
-        )
-
-
-def _resolution_value(target: Definition) -> str:
-    for p in target.parameters:
-        if p.name == "resolution":
-            value = p.value.value if isinstance(p.value, LiteralExpression) else p.value
-            tf = _coerce_timeframe(value)
-            if tf is None:
-                raise CompilationError(
-                    f"TimeFrame definition '{target.name}' has invalid resolution " f"{value!r}"
-                )
-            return tf.value
-    raise CompilationError(
-        f"TimeFrame definition '{target.name}' is missing the 'resolution' parameter"
-    )
-
-
-def _coerce_timeframe(value: object) -> Timeframe | None:
-    if isinstance(value, Timeframe):
-        return value
-    if not isinstance(value, str):
-        return None
-    try:
-        return Timeframe(value)
-    except ValueError:
-        return None
