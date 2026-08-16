@@ -348,13 +348,19 @@ def _render_ab_variants(
     path (``render_per_instrument_charts`` with the variant's filtered book).
     Slugs come from ``variant_slugs`` — the same variant identity the 079
     labels use — so identical choice combinations are diffable across runs and
-    no ordinal indexes appear in the output tree. Shared by both ``--ab``
-    paths so the chart-write block is not duplicated.
+    no ordinal indexes appear in the output tree. ``out/ab.html`` (081) is the
+    comparison index: a summary grid across every variant plus per-variant
+    by-instrument/by-strategy tables, each instrument row linking to its 080
+    chart via a relative href. Shared by both ``--ab`` paths so the
+    chart-write block is not duplicated.
     """
-    from marketatlas.analysis.ast.variant import variant_slugs
+    from marketatlas.analysis.ast.variant import variant_identity, variant_slugs
     from marketatlas.visualization.context import RenderContext
     from marketatlas.visualization.interactive import InteractiveRenderer
-    from marketatlas.visualization.portfolio import render_per_instrument_charts
+    from marketatlas.visualization.portfolio import (
+        render_ab_index,
+        render_per_instrument_charts,
+    )
 
     output_path = Path(output_arg)
     root = output_path.parent / output_path.stem if output_path.suffix else output_path
@@ -378,6 +384,22 @@ def _render_ab_variants(
                 render_per_instrument_charts(result, stores, variant_dir, stem="portfolio")
             )
         print(f"HTML chart: {variant_dir}")
+
+    if single_canonical is not None:
+        chart_name = f"{output_path.stem}.html"
+        instruments = [single_canonical]
+    else:
+        chart_name = "portfolio.{canonical}.html"
+        instruments = None
+    index = render_ab_index(
+        [(variant_identity(template), result) for template, result in rows],
+        root,
+        stem="ab",
+        chart_name=chart_name,
+        instruments=instruments,
+    )
+    written.append(index)
+    print(f"A/B index: {index}")
     return written
 
 

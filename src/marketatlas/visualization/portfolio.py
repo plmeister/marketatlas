@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -84,6 +84,7 @@ def render_portfolio_index(
     )
 
     html = _INDEX_TEMPLATE.format(
+        css=_INDEX_CSS,
         title=title,
         meta=meta,
         final_balance=_fmt_money(float(summary.get("final_balance", 0.0))),
@@ -122,6 +123,136 @@ def render_portfolio(
     charts = render_per_instrument_charts(result, stores, output_dir, stem)
     index = render_portfolio_index(result, output_dir, stem)
     return index, charts
+
+
+def render_ab_index(
+    rows: Sequence[tuple[Mapping[str, object], PortfolioBacktestResult]],
+    output_dir: Path,
+    stem: str = "ab",
+    *,
+    chart_name: str = "portfolio.{canonical}.html",
+    instruments: Sequence[str] | None = None,
+) -> Path:
+    """Render the A/B comparison index page (backlog 081).
+
+    ``rows`` pairs each variant's choice identity (079) with its backtest
+    result. The page shows a summary grid — one row per variant whose columns
+    are the varying choice dimensions plus the shared-book metrics straight
+    from ``TradeBook.summary`` — then per-variant by-instrument and
+    by-strategy tables reusing the ``render_portfolio_index`` markup. Each
+    instrument row links to its 080 per-variant chart via a relative href, so
+    the page works from disk without a server.
+
+    ``chart_name`` names the chart file inside each variant directory (a
+    ``{canonical}`` format string; the single-symbol path passes a fixed
+    filename). ``instruments`` gives the canonical instrument names when the
+    results are not ``PortfolioBacktestResult``.
+    """
+    from marketatlas.analysis.ast.variant import variant_columns
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    identities = [ident for ident, _ in rows]
+    varying, headers, slugs = variant_columns(identities)
+
+    first = rows[0][1] if rows else None
+    if instruments is None:
+        instruments = [i.canonical for i in first.instruments] if first is not None else []
+
+    grid_rows: list[str] = []
+    sections: list[str] = []
+    for (ident, result), slug in zip(rows, slugs):
+        summary: Any = result.tradebook.summary
+        by_instrument = summary.get("by_instrument")
+        by_instrument = by_instrument if isinstance(by_instrument, dict) else {}
+        by_strategy = summary.get("by_strategy")
+        by_strategy = by_strategy if isinstance(by_strategy, dict) else {}
+        grid_rows.append(_ab_grid_row(ident, varying, summary))
+        sections.append(
+            _ab_variant_section(
+                ident,
+                varying,
+                headers,
+                by_instrument,
+                by_strategy,
+                instruments,
+                slug,
+                chart_name,
+            )
+        )
+
+    title = f"A/B Comparison — {len(rows)} variant(s)"
+    meta = f"{len(rows)} variant(s) | {len(instruments)} instrument(s)"
+    html = _AB_INDEX_TEMPLATE.format(
+        css=_AB_INDEX_CSS,
+        title=title,
+        meta=meta,
+        choice_headers="".join(f"<th>{h}</th>" for h in headers),
+        metric_headers=_METRIC_HEADERS,
+        grid_rows="\n".join(grid_rows),
+        detail_sections="\n".join(sections),
+    )
+
+    index_path = output_dir / f"{stem}.html"
+    index_path.write_text(html, encoding="utf-8")
+    return index_path
+
+
+def _ab_grid_row(
+    ident: Mapping[str, object],
+    varying: Sequence[str],
+    summary: Mapping[str, Any],
+) -> str:
+    choice_cells = "".join(f"<td>{ident[k]}</td>" for k in varying)
+    total_pnl = float(summary.get("total_pnl", 0.0))
+    wins = int(summary.get("wins", 0))
+    losses = int(summary.get("losses", 0))
+    expectancy = float(summary.get("expectancy", 0.0))
+    return (
+        f"<tr>{choice_cells}"
+        f"<td>{int(summary.get('total_trades', 0))}</td>"
+        f"<td>{wins}-{losses}</td>"
+        f"<td>{_fmt_rate(float(summary.get('win_rate', 0.0)))}</td>"
+        f'<td class="{_sign_class(total_pnl)}">{_fmt_pnl(total_pnl)}</td>'
+        f"<td>{_fmt_pct(float(summary.get('total_return_pct', 0.0)))}</td>"
+        f"<td>{_fmt_pct(float(summary.get('max_drawdown', 0.0)))}</td>"
+        f"<td>{_fmt_pf(float(summary.get('profit_factor', 0.0)))}</td>"
+        f'<td class="{_sign_class(expectancy)}">{_fmt_pnl(expectancy)}</td></tr>'
+    )
+
+
+def _ab_variant_section(
+    ident: Mapping[str, object],
+    varying: Sequence[str],
+    headers: Sequence[str],
+    by_instrument: Mapping[str, Any],
+    by_strategy: Mapping[str, Any],
+    instruments: Sequence[str],
+    slug: str,
+    chart_name: str,
+) -> str:
+    label = ", ".join(f"{h}={ident[k]}" for k, h in zip(varying, headers)) or "default"
+    instrument_rows = "\n".join(
+        _instrument_row(
+            canonical,
+            by_instrument.get(canonical, {}),
+            href=f"{slug}/{chart_name.format(canonical=canonical)}",
+        )
+        for canonical in instruments
+    )
+    strategy_rows = _strategy_rows_html(by_strategy)
+    return (
+        '<section class="variant">\n'
+        f"<h2>Variant: {label}</h2>\n"
+        "<h2>By Instrument</h2>\n"
+        "<table>\n<thead>\n"
+        "<tr><th>Instrument</th><th>P&amp;L</th><th>Trades</th>"
+        "<th>W-L</th><th>Win rate</th><th>Profit factor</th></tr>\n"
+        "</thead>\n<tbody>\n"
+        + instrument_rows
+        + "\n</tbody>\n</table>\n"
+        + strategy_rows
+        + "\n</section>"
+    )
 
 
 def _instrument_row(canonical: str, entry: Mapping[str, Any], href: str) -> str:
@@ -201,6 +332,44 @@ def _sign_class(value: float) -> str:
     return "num-zero"
 
 
+_INDEX_CSS = """\
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+         background: #1a1a2e; color: #e0e0e0; padding-bottom: 40px; }
+  header { padding: 16px 24px; background: #16213e; border-bottom: 1px solid #0f3460; }
+  header h1 { font-size: 18px; font-weight: 600; color: #e94560; }
+  header .meta { font-size: 12px; color: #888; margin-top: 4px; }
+  .summary-bar { display: flex; flex-wrap: wrap; gap: 24px; padding: 12px 24px;
+                 background: #0f3460; border-bottom: 1px solid #16213e; font-size: 13px; }
+  .summary-bar .stat { color: #94a3b8; }
+  .summary-bar .stat b { color: #e0e0e0; font-weight: 600; }
+  .num-pos { color: #22c55e; }
+  .num-neg { color: #ef4444; }
+  .num-zero { color: #94a3b8; }
+  main { padding: 20px 24px; }
+  h2 { font-size: 15px; color: #e94560; margin: 24px 0 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid #16213e; }
+  th { color: #64748b; font-weight: 500; font-size: 11px; text-transform: uppercase; }
+  th:first-child, td:first-child { text-align: left; }
+  td:first-child a { color: #e0e0e0; text-decoration: none; font-weight: 600; }
+  td:first-child a:hover { color: #e94560; text-decoration: underline; }
+"""
+
+_AB_INDEX_CSS = (
+    _INDEX_CSS
+    + """\
+  .variant { border: 1px solid #0f3460; border-radius: 6px;
+             padding: 4px 16px 16px; margin-top: 24px; }
+  .variant h2:first-child { margin-top: 14px; }
+"""
+)
+
+_METRIC_HEADERS = (
+    "<th>Trades</th><th>W-L</th><th>Win rate</th><th>P&amp;L</th>"
+    "<th>Return</th><th>Max Drawdown</th><th>Profit factor</th><th>Expectancy</th>"
+)
+
 _INDEX_TEMPLATE = """\
 <!DOCTYPE html>
 <html lang="en">
@@ -209,27 +378,7 @@ _INDEX_TEMPLATE = """\
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{title}</title>
 <style>
-  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-         background: #1a1a2e; color: #e0e0e0; padding-bottom: 40px; }}
-  header {{ padding: 16px 24px; background: #16213e; border-bottom: 1px solid #0f3460; }}
-  header h1 {{ font-size: 18px; font-weight: 600; color: #e94560; }}
-  header .meta {{ font-size: 12px; color: #888; margin-top: 4px; }}
-  .summary-bar {{ display: flex; flex-wrap: wrap; gap: 24px; padding: 12px 24px;
-                 background: #0f3460; border-bottom: 1px solid #16213e; font-size: 13px; }}
-  .summary-bar .stat {{ color: #94a3b8; }}
-  .summary-bar .stat b {{ color: #e0e0e0; font-weight: 600; }}
-  .num-pos {{ color: #22c55e; }}
-  .num-neg {{ color: #ef4444; }}
-  .num-zero {{ color: #94a3b8; }}
-  main {{ padding: 20px 24px; }}
-  h2 {{ font-size: 15px; color: #e94560; margin: 24px 0 10px; }}
-  table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-  th, td {{ text-align: right; padding: 8px 10px; border-bottom: 1px solid #16213e; }}
-  th {{ color: #64748b; font-weight: 500; font-size: 11px; text-transform: uppercase; }}
-  th:first-child, td:first-child {{ text-align: left; }}
-  td:first-child a {{ color: #e0e0e0; text-decoration: none; font-weight: 600; }}
-  td:first-child a:hover {{ color: #e94560; text-decoration: underline; }}
+{css}
 </style>
 </head>
 <body>
@@ -260,6 +409,38 @@ _INDEX_TEMPLATE = """\
     </tbody>
   </table>
 {strategy_rows}
+</main>
+</body>
+</html>
+"""
+
+_AB_INDEX_TEMPLATE = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title}</title>
+<style>
+{css}
+</style>
+</head>
+<body>
+<header>
+  <h1>{title}</h1>
+  <div class="meta">{meta}</div>
+</header>
+<main>
+  <h2>Comparison</h2>
+  <table>
+    <thead>
+      <tr>{choice_headers}{metric_headers}</tr>
+    </thead>
+    <tbody>
+{grid_rows}
+    </tbody>
+  </table>
+{detail_sections}
 </main>
 </body>
 </html>

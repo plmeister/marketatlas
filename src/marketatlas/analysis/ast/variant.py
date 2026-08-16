@@ -11,7 +11,7 @@ derived from this same identity so they never disagree.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from marketatlas.analysis.ast.instrument import TemplateGraph
 
@@ -117,9 +117,7 @@ def _varying(
     identities = [variant_identity(t) for t in templates]
     if not identities or len(identities) == 1:
         return identities, ()
-    varying = tuple(
-        sorted(k for k in identities[0] if len({i.get(k) for i in identities}) > 1)
-    )
+    varying = tuple(sorted(k for k in identities[0] if len({i.get(k) for i in identities}) > 1))
     return identities, varying
 
 
@@ -168,13 +166,47 @@ def variant_slugs(templates: Sequence[TemplateGraph]) -> list[str]:
 
     slugs: list[str] = []
     for ident in identities:
-        parts: list[str] = []
-        for k in varying:
-            bare = k.split(".", 1)[-1]
-            name = bare if bare_counts[bare] == 1 else k
-            parts.append(_slug_name(name) + _value_token(ident[k]))
-        slugs.append("_".join(parts))
+        slugs.append(_slug_identity(ident, varying, bare_counts))
     return slugs
+
+
+def _slug_identity(
+    identity: Mapping[str, object],
+    varying: Sequence[str],
+    bare_counts: Mapping[str, int],
+) -> str:
+    parts: list[str] = []
+    for k in varying:
+        bare = k.split(".", 1)[-1]
+        name = bare if bare_counts[bare] == 1 else k
+        parts.append(_slug_name(name) + _value_token(identity[k]))
+    return "_".join(parts)
+
+
+def variant_columns(
+    identities: Sequence[Mapping[str, object]],
+) -> tuple[tuple[str, ...], tuple[str, ...], list[str]]:
+    """Choice columns and slugs for the A/B index page (backlog 081).
+
+    Returns ``(varying_keys, headers, slugs)`` for a set of variant
+    identities. ``varying_keys`` are the ``{node}.{param}`` identity keys that
+    vary across the variants; ``headers`` their human column names (bare param
+    unless two nodes share it — the naming 079 labels use); ``slugs`` the 080
+    output-directory slugs. All three derive from the same varying-dimension
+    logic as the labels/slugs, so the index grid never disagrees with the CLI.
+    A lone identity yields ``((), (), ["default"])``.
+    """
+    if not identities:
+        return (), (), []
+    varying = tuple(sorted(k for k in identities[0] if len({i.get(k) for i in identities}) > 1))
+    if not varying:
+        return (), (), ["default"]
+    bare_counts = _bare_counts(varying)
+    headers = tuple(
+        bare if bare_counts[bare] == 1 else k for k in varying for bare in (k.split(".", 1)[-1],)
+    )
+    slugs = [_slug_identity(ident, varying, bare_counts) for ident in identities]
+    return varying, headers, slugs
 
 
 def variant_slug(template: TemplateGraph) -> str:

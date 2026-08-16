@@ -17,6 +17,7 @@ import pytest
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.ast.parser import parse_with_positions
 from marketatlas.analysis.ast.variant import (
+    variant_columns,
     variant_identity,
     variant_labels,
     variant_slug,
@@ -201,8 +202,7 @@ class TestVariantSlugs:
 
     def test_signal_choice_slug_values(self) -> None:
         templates = self._templates(
-            "ema := ema { period: 20 }\n"
-            "sig := generate_signal { min_strength: <0.3 | 0.5> }"
+            "ema := ema { period: 20 }\n" "sig := generate_signal { min_strength: <0.3 | 0.5> }"
         )
         assert variant_slugs(templates) == ["ms030", "ms050"]
 
@@ -262,9 +262,7 @@ class TestVariantSlugs:
         assert all("ms0" in s for s in slugs)
 
     def test_unknown_param_name_falls_back_to_full_name(self) -> None:
-        templates = self._templates(
-            "swings := swings { lookback: 50, left_bars: <1 | 2> }"
-        )
+        templates = self._templates("swings := swings { lookback: 50, left_bars: <1 | 2> }")
         assert variant_slugs(templates) == ["leftbars1", "leftbars2"]
 
     def test_string_timeframe_choice_slug(self) -> None:
@@ -273,6 +271,55 @@ class TestVariantSlugs:
             "ema := ema { timeframe: tf, period: 20 }"
         )
         assert variant_slugs(templates) == ["tf1h", "tf1d"]
+
+
+class TestVariantColumns:
+    """Backlog 081: index grid columns/slugs derived from bare identities."""
+
+    def _columns(
+        self, identities: list[dict[str, object]]
+    ) -> tuple[tuple[str, ...], tuple[str, ...], list[str]]:
+        return variant_columns(identities)
+
+    def test_headers_and_slugs_from_identities(self) -> None:
+        varying, headers, slugs = self._columns(
+            [
+                {"generate_signal.min_strength": 0.1},
+                {"generate_signal.min_strength": 0.99},
+            ]
+        )
+        assert varying == ("generate_signal.min_strength",)
+        assert headers == ("min_strength",)
+        assert slugs == ["ms010", "ms099"]
+
+    def test_multi_dimension_cartesian(self) -> None:
+        varying, headers, slugs = self._columns(
+            [
+                {"ema.period": 20, "generate_signal.min_strength": 0.1},
+                {"ema.period": 20, "generate_signal.min_strength": 0.99},
+                {"ema.period": 50, "generate_signal.min_strength": 0.1},
+                {"ema.period": 50, "generate_signal.min_strength": 0.99},
+            ]
+        )
+        assert varying == ("ema.period", "generate_signal.min_strength")
+        assert headers == ("period", "min_strength")
+        assert slugs == ["p20_ms010", "p20_ms099", "p50_ms010", "p50_ms099"]
+
+    def test_shared_bare_name_qualifies_header(self) -> None:
+        varying, headers, slugs = self._columns(
+            [
+                {"ema.period": 20, "atr.period": 14},
+                {"ema.period": 50, "atr.period": 21},
+            ]
+        )
+        # Two nodes both vary a bare `period` -> headers stay qualified,
+        # sorted-key order.
+        assert headers == ("atr.period", "ema.period")
+        assert slugs == ["atr_p14_ema_p20", "atr_p21_ema_p50"]
+
+    def test_lone_identity_yields_default(self) -> None:
+        varying, headers, slugs = self._columns([{"generate_signal.min_strength": 0.5}])
+        assert (varying, headers, slugs) == ((), (), ["default"])
 
 
 class TestCLIAbFlagWiring:
@@ -452,6 +499,15 @@ class TestCLIAbFlagWiring:
             tmp_path / "out" / "p50" / "out.html",
         ]
 
+        # 081: the comparison index sits at the output-tree root and links each
+        # variant's chart via a relative href (slug dir + chart filename).
+        index = tmp_path / "out" / "ab.html"
+        assert index.exists()
+        content = index.read_text()
+        assert "A/B Comparison" in content
+        assert '<a href="p20/out.html">BTC-USD</a>' in content
+        assert '<a href="p50/out.html">BTC-USD</a>' in content
+
     def test_run_ab_output_tree_portfolio(self, tmp_path: Path) -> None:
         dsl, registry_path, portfolio = _setup(tmp_path)
         provider = MagicMock()
@@ -497,6 +553,17 @@ class TestCLIAbFlagWiring:
         # Per-instrument charts share the portfolio stem under each variant dir.
         for call in render_charts.call_args_list:
             assert call.kwargs["stem"] == "portfolio"
+
+        # 081: the comparison index shows one grid row per choice combination
+        # and links each variant's per-instrument charts from disk.
+        index = tmp_path / "ab" / "ab.html"
+        assert index.exists()
+        content = index.read_text()
+        assert "A/B Comparison" in content
+        assert "<td>0.1</td>" in content
+        assert "<td>0.99</td>" in content
+        assert '<a href="ms010/portfolio.A.html">A</a>' in content
+        assert '<a href="ms099/portfolio.B.html">B</a>' in content
 
 
 def _result(mock_tradebook: MagicMock) -> MagicMock:

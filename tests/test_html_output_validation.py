@@ -323,7 +323,76 @@ class TestPortfolioIndex:
         assert "<td>test_strat</td>" in content
 
 
-def _make_tradebook_with_instruments() -> TradeBook:
+class TestABIndex:
+    """Backlog 081: A/B comparison index grid, detail tables, and hrefs."""
+
+    def _render_index(self, tmp_path: object) -> tuple[Path, str]:
+        from marketatlas.visualization.portfolio import render_ab_index
+
+        out = Path(tmp_path) / "ab"  # type: ignore[arg-type]
+        rows = [
+            ({"generate_signal.min_strength": 0.1}, _make_ab_result(118.0, 98.0)),
+            ({"generate_signal.min_strength": 0.99}, _make_ab_result(93.0, 113.0)),
+        ]
+        path = render_ab_index(rows, out, stem="ab")
+        return path, path.read_text()
+
+    def test_grid_one_row_per_combination(self, tmp_path: object) -> None:
+        _, content = self._render_index(tmp_path)
+        # Two choice values -> two grid rows, headers name the choice dimension.
+        assert "<th>min_strength</th>" in content
+        assert "<td>0.1</td>" in content
+        assert "<td>0.99</td>" in content
+        assert content.count("<tr>") >= 2
+
+    def test_grid_full_metrics(self, tmp_path: object) -> None:
+        _, content = self._render_index(tmp_path)
+        # Variant 0: A +3.00 win, B -1.00 loss -> +2.00, PF 3.0, 50% win rate.
+        assert '<td class="num-pos">+2.00</td>' in content
+        assert "<td>2</td>" in content
+        assert "<td>1-1</td>" in content
+        assert "<td>50.0%</td>" in content
+        assert "<td>3.00</td>" in content
+        # Variant 1: -2.00 / +2.00 -> breakeven expectancy class.
+        assert '<td class="num-zero">+0.00</td>' in content
+        assert "<td>1.00</td>" in content
+
+    def test_detail_tables_per_variant(self, tmp_path: object) -> None:
+        _, content = self._render_index(tmp_path)
+        assert content.count("<h2>Variant:") == 2
+        assert "Variant: min_strength=0.1" in content
+        assert "Variant: min_strength=0.99" in content
+        assert content.count("<h2>By Instrument</h2>") == 2
+        assert content.count("By Strategy") == 2
+        assert content.count('<section class="variant">') == 2
+
+    def test_links_to_variant_charts(self, tmp_path: object) -> None:
+        _, content = self._render_index(tmp_path)
+        # Slugs match the 080 output tree; hrefs are relative from ab.html.
+        assert '<a href="ms010/portfolio.A.html">A</a>' in content
+        assert '<a href="ms010/portfolio.B.html">B</a>' in content
+        assert '<a href="ms099/portfolio.A.html">A</a>' in content
+        assert '<a href="ms099/portfolio.B.html">B</a>' in content
+        assert "http" not in content
+        assert "lightweight-charts" not in content
+
+
+def _make_ab_result(close_a: float, close_b: float) -> PortfolioBacktestResult:
+    """Two-instrument result whose closes set distinct variant outcomes."""
+    tb = _make_tradebook_with_instruments(close_a=close_a, close_b=close_b)
+    return PortfolioBacktestResult(
+        instruments=(
+            Instrument(canonical="A", asset_class="crypto", description="A test asset"),
+            Instrument(canonical="B", asset_class="crypto", description="B test asset"),
+        ),
+        frames={"A": _make_frame_store(5), "B": _make_frame_store(5)},
+        tradebook=tb,
+        window_size=100,
+        max_hold_days=10,
+    )
+
+
+def _make_tradebook_with_instruments(close_a: float = 118.0, close_b: float = 98.0) -> TradeBook:
     from marketatlas.facts.structural import TrendDirection
     from marketatlas.strategy.signals import TradeSignal
     from marketatlas.strategy.trade import TradeCandidate
@@ -353,11 +422,11 @@ def _make_tradebook_with_instruments() -> TradeBook:
 
     tb.submit_order(candidate, signal, "test_strat", BASE + timedelta(days=5), instrument="A")
     tb.fill_order(103.0, BASE + timedelta(days=6))
-    tb.close_trade(118.0, BASE + timedelta(days=8))
+    tb.close_trade(close_a, BASE + timedelta(days=8))
 
     tb.submit_order(candidate, signal, "test_strat", BASE + timedelta(days=10), instrument="B")
     tb.fill_order(103.0, BASE + timedelta(days=11))
-    tb.close_trade(98.0, BASE + timedelta(days=13))
+    tb.close_trade(close_b, BASE + timedelta(days=13))
 
     return tb
 
