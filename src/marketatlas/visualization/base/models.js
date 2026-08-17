@@ -80,7 +80,14 @@ class AppModel {
       level: "signal",
       source: s.source,
     }));
-    return ev.concat(sigs, risk);
+    const rejections = (f.signal_rejections || []).map((r) => ({
+      text:
+        "Rejected: " +
+        (r.text || "no reason"),
+      level: "rejection",
+      source: r.source || "",
+    }));
+    return ev.concat(sigs, risk, rejections);
   }
 
   // --- Trade queries ---
@@ -107,7 +114,11 @@ class AppModel {
   _computeEvents() {
     const set = new Set();
     this.frames.forEach((f, i) => {
-      if ((f.risk_evidence && f.risk_evidence.length) || (f.signals && f.signals.length)) {
+      if (
+        (f.risk_evidence && f.risk_evidence.length) ||
+        (f.signals && f.signals.length) ||
+        (f.signal_rejections && f.signal_rejections.length)
+      ) {
         set.add(i);
       }
     });

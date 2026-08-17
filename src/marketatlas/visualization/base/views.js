@@ -483,12 +483,13 @@ class ChartView {
       return html;
     }
 
-    // Signals / risk decisions on the hovered frame
+    // Signals / risk decisions / rejected signals on the hovered frame
     const frame = this._frameAtTime(param.time);
     if (frame) {
       const sigs = frame.signals || [];
       const risk = frame.risk_evidence || [];
-      if (sigs.length || risk.length) {
+      const rejections = frame.signal_rejections || [];
+      if (sigs.length || risk.length || rejections.length) {
         let html = "";
         sigs.forEach((s) => {
           html +=
@@ -497,6 +498,13 @@ class ChartView {
             "</div>" +
             row("Confidence", (s.confidence || 0).toFixed(2)) +
             row("Source", s.source || "");
+        });
+        rejections.forEach((r) => {
+          html +=
+            '<div style="font-weight:700;color:#64748b;text-decoration:line-through">REJECTED</div>' +
+            '<div style="color:#94a3b8;font-size:10px">' +
+            (r.text || "no reason") +
+            "</div>";
         });
         risk.forEach((r) => {
           html += '<div style="margin-top:2px;color:#e94560">' + r.text + "</div>";

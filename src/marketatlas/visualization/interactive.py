@@ -41,12 +41,17 @@ def _extract_frames_json(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
             }
             for s in frame.signals
         ]
+        signal_rejections = [
+            {"text": e.text, "level": e.level.value, "source": e.source}
+            for e in frame.signal_rejections
+        ]
         result.append(
             {
                 "time": _ts_to_time(frame.timestamp.timestamp()),
                 "evidence": evidence,
                 "risk_evidence": risk_evidence,
                 "signals": signals,
+                "signal_rejections": signal_rejections,
             }
         )
     return result
