@@ -2,6 +2,8 @@
 
 ## Completed
 
+- **092** — Data provider plugin system: new `providers/registry.py` (register/get/names), providers self-register on import via `register("name", Class)` at module bottom, `cli._make_provider` falls back to `registry.get()` for unknown providers (known providers still use concrete imports for backward compat with test mocks). 89 tests pass (1 pre-existing env failure untouched).
+
 - **088** — Test pruning: removed `test_dsl_lexer.py` (36 tests — parser tests cover token semantics), `test_html_output_validation.py` (31 tests — fragile HTML structure checks), `test_interactive_renderer.py` (69 tests — JS test suite covers rendering). Trimmed `test_ast_golden_expansion.py` from 13→3 representative tests (single choice, nested, cartesian product). Added 5 smoke tests to `test_html_renderer.py` (title, chart div, script block, JS constants, no unresolved placeholders). 1451→1310 tests, −2461 lines. 1 pre-existing default-registry env failure untouched.
 - **085** — Split `analysis/ast/pipeline.py` (939 lines) into three modules: `expansion.py` (181 lines, choice expansion + helpers), `lowering.py` (338 lines, IR lowering + fact-key compilation), `pipeline.py` (504 lines, thin orchestrator + CompilerPass classes). Public API unchanged — all existing `from ...pipeline import ...` paths re-export. No circular imports. 1415 tests pass.
 

@@ -23,6 +23,7 @@ from marketatlas.data.provider_names import DEFAULT_PROVIDER_ORDER
 from marketatlas.data.providers.base import DataProvider
 from marketatlas.data.providers.chain import ProviderChain
 from marketatlas.data.providers.dukascopy import DukascopyProvider
+from marketatlas.data.providers.registry import get as get_provider_cls
 from marketatlas.data.providers.yahoo import YahooProvider
 from marketatlas.data.types import MarketData, Symbol, Timeframe
 
@@ -46,6 +47,9 @@ def _make_provider(name: str, registry: InstrumentRegistry | None) -> DataProvid
         return YahooProvider(registry=registry)
     if name == "dukascopy":
         return DukascopyProvider(registry=registry)
+    cls = get_provider_cls(name)
+    if cls is not None:
+        return cls(registry=registry)  # type: ignore[call-arg]
     return None
 
 

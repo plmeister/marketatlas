@@ -19,6 +19,7 @@ from marketatlas.data.providers.base import (
     RateLimitError,
     UnsupportedTimeframeError,
 )
+from marketatlas.data.providers.registry import register
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
 
@@ -272,3 +273,6 @@ class DukascopyProvider(DataProvider):
 
     def supported_symbols(self) -> list[Symbol]:
         return []
+
+
+register("dukascopy", DukascopyProvider)

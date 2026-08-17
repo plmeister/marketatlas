@@ -7,6 +7,7 @@ from marketatlas.data.providers.base import (
 )
 from marketatlas.data.providers.chain import ProviderChain
 from marketatlas.data.providers.dukascopy import DukascopyProvider
+from marketatlas.data.providers.registry import get, names, register
 from marketatlas.data.providers.yahoo import YahooProvider
 
 __all__ = [
@@ -18,4 +19,7 @@ __all__ = [
     "SymbolNotFoundError",
     "UnsupportedTimeframeError",
     "YahooProvider",
+    "get",
+    "names",
+    "register",
 ]

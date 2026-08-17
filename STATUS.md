@@ -24,6 +24,7 @@
 - [x] 032 — Dukascopy provider (classic bi5 feed)
 - [x] 071 — Dukascopy D1/W1 via bi5 (superseded by 072)
 - [x] 072 — Dukascopy moved to freeserv chart/json3 API (bi5 gone; `FeedUnavailableError` for feed-down, `ProviderChain` fallback)
+- [x] 092 — Data provider plugin system (`providers/registry.py` with register/get, providers self-register on import, `cli._make_provider` falls back to registry for unknown providers)
 
 ## Strategy Layer
 
