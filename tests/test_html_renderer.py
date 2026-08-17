@@ -269,3 +269,53 @@ class TestHTMLRenderer:
         renderer.render(path)  # type: ignore[arg-type]
         size = path.stat().st_size  # type: ignore[union-attr]
         assert size < 1_000_000  # under 1MB for 100 candles
+
+    def test_smoke_contains_title(self, tmp_path: object) -> None:
+        path = tmp_path / "smoke_title.html"  # type: ignore[operator]
+        store = _make_market_store(5)
+        frame_store = _make_frame_store(5)
+        renderer = HTMLRenderer(frame_store, store)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "<title>" in content
+        assert "</title>" in content
+        assert "<!DOCTYPE html>" in content
+
+    def test_smoke_contains_chart_div(self, tmp_path: object) -> None:
+        path = tmp_path / "smoke_chart.html"  # type: ignore[operator]
+        store = _make_market_store(5)
+        frame_store = _make_frame_store(5)
+        renderer = HTMLRenderer(frame_store, store)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "lightweight-charts" in content
+        assert "chart" in content.lower()
+
+    def test_smoke_contains_script_block(self, tmp_path: object) -> None:
+        path = tmp_path / "smoke_script.html"  # type: ignore[operator]
+        store = _make_market_store(5)
+        frame_store = _make_frame_store(5)
+        renderer = HTMLRenderer(frame_store, store)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "<script>" in content
+        assert "</script>" in content
+
+    def test_smoke_js_constants_present(self, tmp_path: object) -> None:
+        path = tmp_path / "smoke_consts.html"  # type: ignore[operator]
+        store = _make_market_store(5)
+        frame_store = _make_frame_store(5)
+        renderer = HTMLRenderer(frame_store, store)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "const DATA =" in content
+        assert "const EMA_SERIES =" in content
+
+    def test_smoke_no_unresolved_placeholders(self, tmp_path: object) -> None:
+        path = tmp_path / "smoke_placeholders.html"  # type: ignore[operator]
+        store = _make_market_store(5)
+        frame_store = _make_frame_store(5)
+        renderer = HTMLRenderer(frame_store, store)
+        renderer.render(path)  # type: ignore[arg-type]
+        content = path.read_text()  # type: ignore[union-attr]
+        assert "// @data:" not in content

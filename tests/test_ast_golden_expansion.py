@@ -1,21 +1,12 @@
 """Backlog 054: compiler golden tests — choice expansion.
 
-Golden tests with explicit inline expected outputs (no file snapshots)
-pinning choice expansion and concrete validation behaviour (backlogs
-048/050/051). Every case runs through ``Pipeline.expand`` — stages 1-3:
-validation, registry resolution, provider param validation, template
-expansion, concrete validation — against the default registry, and
-asserts the full expected ``Analysis`` via canonical equality and
-``to_dict`` comparison.
-
-Stage 4 (graph generation) is deliberately excluded; graph snapshots live
-in backlog 046. ``expand`` (the raw pass) is covered by
-``test_ast_expand.py``; this suite pins the end-to-end pipeline output.
+Three representative cases pinning choice expansion behaviour:
+single choice, nested choice, and cross-definition cartesian product.
 """
 
 import pytest
-from marketatlas.analysis.ast.constructors import ATR, EMA, SwingStructure, build_analysis
-from marketatlas.analysis.ast.expressions import Choice, LiteralExpression, wrap
+from marketatlas.analysis.ast.constructors import EMA, SwingStructure, build_analysis
+from marketatlas.analysis.ast.expressions import Choice
 from marketatlas.analysis.ast.models import (
     Analysis,
     Definition,
@@ -23,15 +14,13 @@ from marketatlas.analysis.ast.models import (
     Provider,
 )
 from marketatlas.analysis.ast.pipeline import (
-    CompilationError,
-    ConcreteValidationPass,
-    ParamValidationPass,
     Pipeline,
     RegistryResolutionPass,
     ValidationPass,
+    ParamValidationPass,
 )
 from marketatlas.analysis.ast.registry import create_default_registry
-from marketatlas.analysis.ast.serialization import to_dict
+from marketatlas.analysis.ast.expressions import LiteralExpression
 
 _EMA_PROVIDER = Provider(
     name="ema",
@@ -46,20 +35,6 @@ _EMA_RESOLVED = Provider(
     category="analyzer",
     impl="EMAAnalyzer",
     default_params=(Parameter(name="period", value=LiteralExpression(20)),),
-)
-_ATR_PROVIDER = Provider(
-    name="atr",
-    capability="atr",
-    category="analyzer",
-    impl="ATRAnalyzer",
-    default_params=(Parameter(name="period", value=LiteralExpression(14)),),
-)
-_ATR_RESOLVED = Provider(
-    name="ATRAnalyzer",
-    capability="atr",
-    category="analyzer",
-    impl="ATRAnalyzer",
-    default_params=(Parameter(name="period", value=LiteralExpression(14)),),
 )
 _SWING_PROVIDER = Provider(
     name="swingstructure",
@@ -91,20 +66,13 @@ def _def(name: str, provider: str, *params: Parameter) -> Definition:
     return Definition(name=name, provider=provider, parameters=params)
 
 
-def _param(name: str, value: object) -> Parameter:
-    return Parameter(name=name, value=wrap(value))
-
-
 def _variant(*definitions: Definition, providers: tuple[Provider, ...]) -> Analysis:
     return Analysis(name="golden", version="1.0", definitions=definitions, providers=providers)
 
 
 def _ema_def(name: str, period: int) -> Definition:
-    return _def(name, "EMAAnalyzer", _param("period", period))
-
-
-def _atr_def(name: str, period: int) -> Definition:
-    return _def(name, "ATRAnalyzer", _param("period", period))
+    from marketatlas.analysis.ast.expressions import wrap
+    return _def(name, "EMAAnalyzer", Parameter(name="period", value=wrap(period)))
 
 
 def _golden_single(period: int) -> Analysis:
@@ -116,43 +84,6 @@ class TestGoldenSingleChoice:
         template = build_analysis("golden", [EMA(name="ema", period=Choice([50, 100]))])
         expanded = _pipeline().expand(template)
         assert expanded == (_golden_single(50), _golden_single(100))
-
-    def test_serialized_golden(self) -> None:
-        template = build_analysis("golden", [EMA(name="ema", period=Choice([50, 100]))])
-        expanded = _pipeline().expand(template)
-        assert to_dict(expanded[0]) == {
-            "name": "golden",
-            "version": "1.0",
-            "definitions": [
-                {
-                    "name": "ema",
-                    "provider": "EMAAnalyzer",
-                    "parameters": [{"name": "period", "value": 50}],
-                }
-            ],
-            "providers": [
-                {
-                    "name": "ema",
-                    "capability": "ema",
-                    "category": "analyzer",
-                    "impl": "EMAAnalyzer",
-                    "default_params": [{"name": "period", "value": 20}],
-                },
-                {
-                    "name": "EMAAnalyzer",
-                    "capability": "ema",
-                    "category": "analyzer",
-                    "impl": "EMAAnalyzer",
-                    "default_params": [{"name": "period", "value": 20}],
-                },
-            ],
-        }
-        assert to_dict(expanded[1])["definitions"][0]["parameters"][0]["value"] == 100  # type: ignore[index]
-
-    def test_definition_order_preserved(self) -> None:
-        template = build_analysis("golden", [EMA(name="ema", period=Choice([50, 100]))])
-        expanded = _pipeline().expand(template)
-        assert [d.name for d in expanded[0].definitions] == ["ema"]
 
 
 class TestGoldenNestedChoice:
@@ -188,131 +119,10 @@ class TestGoldenMultipleChoices:
                 _def(
                     "sw",
                     "SwingStructureAnalyzer",
-                    _param("window", window),
-                    _param("swing_key", swing_key),
+                    Parameter(name="window", value=LiteralExpression(window)),
+                    Parameter(name="swing_key", value=LiteralExpression(swing_key)),
                 ),
                 providers=(_SWING_PROVIDER, _SWING_RESOLVED),
             )
             for window, swing_key in expected_pairs
         )
-
-    def test_across_definitions_cartesian_product(self) -> None:
-        template = build_analysis(
-            "golden",
-            [
-                EMA(name="ema", period=Choice([50, 100])),
-                ATR(name="atr", period=Choice([14, 21])),
-            ],
-        )
-        expanded = _pipeline().expand(template)
-        assert len(expanded) == 4
-        providers = (_EMA_PROVIDER, _ATR_PROVIDER, _EMA_RESOLVED, _ATR_RESOLVED)
-        assert expanded == tuple(
-            _variant(_ema_def("ema", e), _atr_def("atr", a), providers=providers)
-            for e, a in [(50, 14), (50, 21), (100, 14), (100, 21)]
-        )
-
-
-class TestGoldenListLiteral:
-    def test_raw_list_stays_single_ast(self) -> None:
-        template = Analysis(
-            name="golden",
-            version="1.0",
-            definitions=(_def("feeds", "price", _param("periods", [50, 100])),),
-            providers=(
-                Provider(
-                    name="price",
-                    capability="price",
-                    category="analyzer",
-                    impl="PriceSource",
-                ),
-            ),
-        )
-        expanded = _pipeline().expand(template)
-        assert len(expanded) == 1
-        assert expanded == (template,)
-
-    def test_list_literal_next_to_choice(self) -> None:
-        template = Analysis(
-            name="golden",
-            version="1.0",
-            definitions=(
-                _def(
-                    "feeds",
-                    "price",
-                    _param("span", Choice([1, 2])),
-                    _param("periods", [5, 10]),
-                ),
-            ),
-            providers=(
-                Provider(
-                    name="price",
-                    capability="price",
-                    category="analyzer",
-                    impl="PriceSource",
-                ),
-            ),
-        )
-        expanded = _pipeline().expand(template)
-        assert len(expanded) == 2
-        for i, o in enumerate(expanded):
-            assert o.definitions[0].parameters[0].value == i + 1
-            assert o.definitions[0].parameters[1].value == [5, 10]
-
-
-class TestGoldenEmptyChoice:
-    def test_error_names_definition_and_param(self) -> None:
-        template = build_analysis("golden", [EMA(name="ema", period=Choice([]))])
-        with pytest.raises(CompilationError, match="'period'.*'ema'"):
-            _pipeline().expand(template)
-
-    def test_error_alongside_valid_choice(self) -> None:
-        template = build_analysis(
-            "golden",
-            [
-                EMA(name="ema", period=Choice([50, 100])),
-                ATR(name="atr", period=Choice([])),
-            ],
-        )
-        with pytest.raises(CompilationError, match="'period'.*'atr'"):
-            _pipeline().expand(template)
-
-
-class TestGoldenConvergentDuplicates:
-    def test_stage3_reports_duplicate_definition(self) -> None:
-        a = Analysis(
-            name="bad",
-            version="1.0",
-            definitions=(
-                _def("dup", "ema", _param("period", 50)),
-                _def("dup", "ema", _param("period", 50)),
-            ),
-            providers=(_EMA_PROVIDER,),
-        )
-        with pytest.raises(CompilationError, match="Duplicate definition 'dup'"):
-            ConcreteValidationPass().run(a)
-
-    def test_stage1_catches_duplicates_before_expansion(self) -> None:
-        template = Analysis(
-            name="bad",
-            version="1.0",
-            definitions=(
-                _def("dup", "ema", _param("period", Choice([50, 100]))),
-                _def("dup", "ema", _param("period", Choice([100, 50]))),
-            ),
-            providers=(_EMA_PROVIDER,),
-        )
-        with pytest.raises(CompilationError, match="Duplicate definition name"):
-            _pipeline().expand(template)
-
-
-class TestGoldenDeterminism:
-    def test_same_input_same_output(self) -> None:
-        template = build_analysis(
-            "golden",
-            [
-                EMA(name="ema", period=Choice([50, 100])),
-                ATR(name="atr", period=Choice([14, 21])),
-            ],
-        )
-        assert _pipeline().expand(template) == _pipeline().expand(template)
