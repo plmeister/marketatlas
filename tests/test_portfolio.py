@@ -8,6 +8,7 @@ import pytest
 from marketatlas.data.datastore import DataStore
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
 from marketatlas.data.portfolio import (
+
     InstrumentDataError,
     PortfolioError,
     PortfolioSpec,
@@ -16,6 +17,8 @@ from marketatlas.data.portfolio import (
 )
 from marketatlas.data.providers.base import UnsupportedTimeframeError
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
+
+pytestmark = pytest.mark.tier1
 
 
 def _make_instruments() -> list[Instrument]:

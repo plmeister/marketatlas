@@ -11,6 +11,8 @@ from marketatlas.data.providers.base import SymbolNotFoundError, UnsupportedTime
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
 
+
+pytestmark = pytest.mark.tier2
 @pytest.fixture(autouse=True)
 def _isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MARKETATLAS_DATA_DIR", str(tmp_path / "marketatlas-cache"))

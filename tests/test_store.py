@@ -7,6 +7,8 @@ from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
 
+
+pytestmark = pytest.mark.tier2
 @pytest.fixture()
 def sample_market_data() -> MarketData:
     candles = tuple(

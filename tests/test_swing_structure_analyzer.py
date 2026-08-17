@@ -1,3 +1,4 @@
+import pytest
 from datetime import UTC, datetime
 
 from marketatlas.analysis.analyzers.swing_basic import BasicSwingAnalyzer
@@ -8,6 +9,8 @@ from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.facts.structural import SwingFact, SwingPoint, SwingStructureFact, SwingType
 
+
+pytestmark = pytest.mark.tier2
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
 
 

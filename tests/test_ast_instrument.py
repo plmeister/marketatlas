@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.ast.instrument import (
+
     InstrumentBacktestResult,
     InstrumentGraph,
     TemplateGraph,
@@ -23,6 +24,8 @@ from marketatlas.data.instrument import Instrument
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
+
+pytestmark = pytest.mark.tier2
 
 
 def _instrument(canonical: str) -> Instrument:

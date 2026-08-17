@@ -22,6 +22,8 @@ from marketatlas.strategy.trade import TradeCandidate
 from marketatlas.strategy.tradebook import TradeBook
 
 
+
+pytestmark = pytest.mark.tier1
 def _make_candles(n: int, start: datetime | None = None) -> tuple[Candle, ...]:
     base = start or datetime(2024, 1, 1)
     candles = []

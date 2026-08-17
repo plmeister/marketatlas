@@ -5,6 +5,7 @@ from marketatlas.analysis.ast.builder import AnalysisBuilder
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.ast.expressions import Choice, wrap
 from marketatlas.analysis.ast.models import (
+
     Analysis,
     Definition,
     Parameter,
@@ -18,6 +19,8 @@ from marketatlas.strategy.config import (
     StrategyConfig,
 )
 from marketatlas.strategy.loader import build_analyzers
+
+pytestmark = pytest.mark.tier2
 
 
 def _choice_template() -> Analysis:

@@ -11,6 +11,8 @@ from marketatlas.strategy.trade import TradeCandidate
 from marketatlas.strategy.tradebook import TradeBook
 
 
+
+pytestmark = pytest.mark.tier1
 def _candle(
     ts: datetime,
     o: float = 100.0,

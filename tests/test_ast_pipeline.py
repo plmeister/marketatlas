@@ -3,6 +3,7 @@ from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.ast.builder import AnalysisBuilder
 from marketatlas.analysis.ast.expressions import Choice, wrap
 from marketatlas.analysis.ast.models import (
+
     Analysis,
     Definition,
     Parameter,
@@ -22,6 +23,8 @@ from marketatlas.analysis.ast.pipeline import (
 from marketatlas.analysis.ast.registry import ProviderRegistry, create_default_registry
 from marketatlas.analysis.graph import AnalysisGraph
 from marketatlas.strategy.config import AnalyzerConfig, StrategyConfig
+
+pytestmark = pytest.mark.tier2
 
 
 def _p(**kw: object) -> Provider:

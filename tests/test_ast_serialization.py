@@ -3,6 +3,7 @@ from typing import Any, cast
 
 import pytest
 from marketatlas.analysis.ast.expressions import (
+
     Choice,
     LiteralExpression,
     ReferenceExpression,
@@ -15,6 +16,8 @@ from marketatlas.analysis.ast.models import (
 )
 from marketatlas.analysis.ast.serialization import from_dict, from_json, to_dict, to_json
 from marketatlas.data.types import Timeframe
+
+pytestmark = pytest.mark.tier2
 
 
 def _serialized(a: Analysis) -> dict[str, Any]:

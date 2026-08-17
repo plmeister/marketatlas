@@ -1,3 +1,4 @@
+import pytest
 from datetime import UTC, datetime, timedelta
 
 from marketatlas.analysis.factkey import FactKey
@@ -17,6 +18,8 @@ from marketatlas.facts.structural import (
 )
 from marketatlas.strategy.risk import RiskEngine
 from marketatlas.strategy.signals import TradeSignal
+
+pytestmark = pytest.mark.tier1
 
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
 

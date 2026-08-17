@@ -16,6 +16,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Auto-assign tier3 to any test not already tier-marked."""
+    for item in items:
+        if not any(m.name in ("tier1", "tier2", "tier3") for m in item.iter_markers()):
+            item.add_marker(pytest.mark.tier3)
+
+
 SNAPSHOT_DIR = Path(__file__).parent / "snapshots"
 
 

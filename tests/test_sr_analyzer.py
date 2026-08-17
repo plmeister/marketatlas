@@ -1,3 +1,4 @@
+import pytest
 from datetime import UTC, datetime, timedelta
 
 from marketatlas.analysis.analyzers.sr import SupportResistanceAnalyzer
@@ -13,6 +14,8 @@ from marketatlas.facts.structural import (
     SwingPoint,
     SwingType,
 )
+
+pytestmark = pytest.mark.tier2
 
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
 

@@ -326,13 +326,13 @@ class TestCLIAbFlagWiring:
     def test_run_ab_single_symbol_calls_ab_test(self, tmp_path: Path) -> None:
         dsl = tmp_path / "s.dsl"
         dsl.write_text(CHOICE_FREE_DSL)
-        with patch("marketatlas.cli._run_ab_test") as ab:
+        with patch("marketatlas.cli.commands._run_ab_test") as ab:
             _run_main("run", "--ab", "--strategy", str(dsl), "--symbol", "BTC-USD")
         ab.assert_called_once()
 
     def test_run_ab_instruments_calls_portfolio_ab_test(self, tmp_path: Path) -> None:
         dsl, registry_path, portfolio = _setup(tmp_path)
-        with patch("marketatlas.cli._run_portfolio_ab_test") as ab:
+        with patch("marketatlas.cli.commands._run_portfolio_ab_test") as ab:
             _run_main(
                 "run",
                 "--ab",
@@ -348,8 +348,8 @@ class TestCLIAbFlagWiring:
     def test_run_instruments_without_ab_uses_portfolio_command(self, tmp_path: Path) -> None:
         dsl, registry_path, portfolio = _setup(tmp_path)
         with (
-            patch("marketatlas.cli.run_portfolio_command") as pc,
-            patch("marketatlas.cli._run_portfolio_ab_test") as ab,
+            patch("marketatlas.cli.commands.run_portfolio_command") as pc,
+            patch("marketatlas.cli.commands._run_portfolio_ab_test") as ab,
         ):
             _run_main(
                 "run",

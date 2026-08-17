@@ -1,3 +1,4 @@
+import pytest
 from datetime import UTC, datetime
 
 from marketatlas.analysis.factkey import FactKey
@@ -9,6 +10,8 @@ from marketatlas.strategy.bundle import StrategyBundle
 from marketatlas.strategy.config import AnalyzerConfig, SignalConfig, StrategyConfig
 from marketatlas.strategy.strategy import Strategy
 
+
+pytestmark = pytest.mark.tier1
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
 
 CandleTuple = tuple[float, float, float, float, float]

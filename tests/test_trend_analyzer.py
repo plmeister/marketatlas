@@ -12,6 +12,8 @@ from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
 
+
+pytestmark = pytest.mark.tier2
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
 
 

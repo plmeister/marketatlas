@@ -1,3 +1,4 @@
+import pytest
 """Backlog 067: confirmed pullback entry.
 
 `PullbackPatternAnalyzer` emits `PullbackFact` only on the candle immediately
@@ -23,6 +24,8 @@ from marketatlas.strategy.bundle import StrategyBundle
 from marketatlas.strategy.config import AnalyzerConfig, RiskConfig, SignalConfig, StrategyConfig
 from marketatlas.strategy.strategy import Strategy
 
+
+pytestmark = pytest.mark.tier1
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
 
 STRUCTURE_KEY = FactKey("swing_structure", timeframe=Timeframe.D1)

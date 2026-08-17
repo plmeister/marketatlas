@@ -257,7 +257,16 @@ def _build_candle_evidence_map(
 
 _JS_TEMPLATE_PATH = Path(__file__).parent / "interactive.js"
 _JS_BASE_DIR = Path(__file__).parent / "base"
-_BASE_MODULE_NAMES = ["models.js", "views.js", "controllers.js"]
+_BASE_MODULE_NAMES = [
+    "models.js",
+    "views/markers.js",
+    "views/overlays.js",
+    "views/trades.js",
+    "views/crosshair.js",
+    "views/chart.js",
+    "views.js",
+    "controllers.js",
+]
 
 _JS_PLACEHOLDERS = [
     "CANDLES",

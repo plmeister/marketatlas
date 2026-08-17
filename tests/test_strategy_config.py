@@ -18,6 +18,8 @@ from marketatlas.strategy.loader import (
     validate_config,
 )
 
+pytestmark = pytest.mark.tier2
+
 VALID_YAML = """\
 strategy:
   name: test_strategy

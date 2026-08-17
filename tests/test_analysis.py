@@ -4,6 +4,7 @@ import pytest
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.graph import (
+
     AnalysisGraph,
     AnalyzerRegistry,
     CyclicDependencyError,
@@ -17,6 +18,8 @@ from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
+
+pytestmark = pytest.mark.tier1
 
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
 

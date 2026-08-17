@@ -11,6 +11,7 @@ covered in test_dsl_lexer.py / test_dsl_parser.py.
 import pytest
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.ast.diagnostics import (
+
     SourceMap,
     format_diagnostic,
     format_errors,
@@ -34,6 +35,8 @@ from marketatlas.analysis.ast.validation import (
     Diagnostic,
     DiagnosticSeverity,
 )
+
+pytestmark = pytest.mark.tier2
 
 
 def _err(message: str, node_name: str, *, position: SourcePosition | None = None) -> Diagnostic:

@@ -11,6 +11,7 @@ import pytest
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.ast.constructors import ATR, EMA, build_analysis
 from marketatlas.analysis.ast.expressions import (
+
     Choice,
     ChoiceExpression,
     LiteralExpression,
@@ -30,6 +31,8 @@ from marketatlas.analysis.ast.pipeline import (
 from marketatlas.analysis.ast.registry import create_default_registry
 from marketatlas.analysis.ast.serialization import from_json, to_json
 from marketatlas.analysis.graph import AnalysisGraph
+
+pytestmark = pytest.mark.tier2
 
 
 def _pipeline() -> Pipeline:

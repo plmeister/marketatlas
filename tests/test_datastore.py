@@ -9,6 +9,8 @@ import pytest
 from marketatlas.data.datastore import DataStore, default_store_path
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
+
+pytestmark = pytest.mark.tier2
 _START = datetime(2024, 1, 1, tzinfo=UTC)
 
 

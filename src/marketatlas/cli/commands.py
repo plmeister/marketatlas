@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from marketatlas.analysis.ast.instrument import TemplateGraph
     from marketatlas.data.store import MarketStore
 
+from marketatlas.cli.formatting import _ab_row
 from marketatlas.data.datastore import DataStore
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
 from marketatlas.data.portfolio import (
@@ -22,9 +23,7 @@ from marketatlas.data.portfolio import (
 from marketatlas.data.provider_names import DEFAULT_PROVIDER_ORDER
 from marketatlas.data.providers.base import DataProvider
 from marketatlas.data.providers.chain import ProviderChain
-from marketatlas.data.providers.dukascopy import DukascopyProvider
 from marketatlas.data.providers.registry import get as get_provider_cls
-from marketatlas.data.providers.yahoo import YahooProvider
 from marketatlas.data.types import MarketData, Symbol, Timeframe
 
 DEFAULT_REGISTRY_PATH = Path("data/instruments.yaml")
@@ -43,6 +42,8 @@ def _load_registry(args: argparse.Namespace) -> InstrumentRegistry | None:
 
 
 def _make_provider(name: str, registry: InstrumentRegistry | None) -> DataProvider | None:
+    from marketatlas.cli import DukascopyProvider, YahooProvider
+
     if name == "yahoo":
         return YahooProvider(registry=registry)
     if name == "dukascopy":
@@ -99,8 +100,8 @@ def fetch_command(args: argparse.Namespace) -> None:
         print(f"Error fetching data: {e}", file=sys.stderr)
         sys.exit(1)
 
-    import pyarrow as pa  # type: ignore[import-untyped]
-    import pyarrow.parquet as pq  # type: ignore[import-untyped]
+    import pyarrow as pa
+    import pyarrow.parquet as pq
 
     table = pa.table(
         {
@@ -272,14 +273,7 @@ def _load_ab_stores(
     *,
     fail_fast: bool,
 ) -> tuple[list[tuple[Instrument, MarketStore]], datetime, datetime]:
-    """Fetch/store setup shared by the single-symbol and portfolio ``--ab`` paths.
-
-    Computes the required timeframes from the first template, builds the
-    provider chain and persistent datastore, and fetches one ``MarketStore``
-    per instrument over the same range. A failed fetch aborts the run when
-    ``fail_fast`` (single-symbol) or is skipped (portfolio, matching
-    ``run_portfolio_command``).
-    """
+    """Fetch/store setup shared by the single-symbol and portfolio ``--ab`` paths."""
     from marketatlas.data.resample import tf_minutes
     from marketatlas.data.store import MarketStore
 
@@ -323,20 +317,6 @@ def _load_ab_stores(
     return pairs, start, end
 
 
-def _ab_row(label: str, summary: dict[str, object]) -> str:
-    """One comparison line: trades, W/L, P&L, return, drawdown, PF, expectancy."""
-    return (
-        f"{label:<40s}"
-        f"{summary['total_trades']:3d} trades "
-        f"{summary['wins']}W/{summary['losses']}L "
-        f"P&L=${summary['total_pnl']:+.2f} "
-        f"({summary['total_return_pct']:+.1f}%) "
-        f"DD={summary['max_drawdown']:.1%} "
-        f"PF={summary['profit_factor']:.2f} "
-        f"EXP=${summary['expectancy']:.2f}"
-    )
-
-
 def _render_ab_variants(
     output_arg: str,
     templates: tuple[TemplateGraph, ...],
@@ -344,20 +324,7 @@ def _render_ab_variants(
     stores: Mapping[str, MarketStore],
     single_canonical: str | None,
 ) -> list[Path]:
-    """Write the A/B output tree: one directory per variant slug (backlog 080).
-
-    ``--output out.html`` becomes ``out/<slug>/<stem>.html`` for the
-    single-symbol path (``single_canonical`` set) and
-    ``out/<slug>/portfolio.<canonical>.html`` per instrument for the portfolio
-    path (``render_per_instrument_charts`` with the variant's filtered book).
-    Slugs come from ``variant_slugs`` — the same variant identity the 079
-    labels use — so identical choice combinations are diffable across runs and
-    no ordinal indexes appear in the output tree. ``out/ab.html`` (081) is the
-    comparison index: a summary grid across every variant plus per-variant
-    by-instrument/by-strategy tables, each instrument row linking to its 080
-    chart via a relative href. Shared by both ``--ab`` paths so the
-    chart-write block is not duplicated.
-    """
+    """Write the A/B output tree: one directory per variant slug (backlog 080)."""
     from marketatlas.analysis.ast.variant import variant_identity, variant_slugs
     from marketatlas.visualization.context import RenderContext
     from marketatlas.visualization.interactive import InteractiveRenderer
@@ -408,14 +375,7 @@ def _render_ab_variants(
 
 
 def _run_ab_test(args: argparse.Namespace, strategy_path: Path) -> None:
-    """A/B test every concrete variant of a choice template (backlog 048).
-
-    Expands the DSL's ``<a | b | c>`` template choices into one backtest per
-    variant and prints a comparison. The variant's chosen values across all
-    definitions (analyzer params, signal rules, risk params) identify it, so
-    template substitution is a single-source A/B workflow. ``--output`` writes
-    one HTML chart per variant.
-    """
+    """A/B test every concrete variant of a choice template (backlog 048)."""
     from marketatlas.analysis.ast.variant import variant_labels
     from marketatlas.backtesting.backtester import Backtester
     from marketatlas.strategy.bundle import StrategyBundle
@@ -458,14 +418,7 @@ def _run_ab_test(args: argparse.Namespace, strategy_path: Path) -> None:
 
 
 def _run_portfolio_ab_test(args: argparse.Namespace, strategy_path: Path) -> None:
-    """Portfolio A/B: one portfolio backtest per concrete variant (backlog 079).
-
-    When ``--ab`` and ``--instruments`` are both set, the choice template is
-    expanded once per concrete variant; each variant runs on its own
-    ``StrategyBundle``/``TradeBook`` (fresh analyzers, no cross-variant state)
-    over the same fetched instrument data, and the comparison line per variant
-    is printed with choice-value labels.
-    """
+    """Portfolio A/B: one portfolio backtest per concrete variant (backlog 079)."""
     from marketatlas.analysis.ast.variant import variant_labels
     from marketatlas.backtesting.portfolio import PortfolioBacktester
     from marketatlas.strategy.bundle import StrategyBundle
@@ -525,11 +478,7 @@ def _run_portfolio_ab_test(args: argparse.Namespace, strategy_path: Path) -> Non
 def _compile_ab_templates(
     args: argparse.Namespace, strategy_path: Path
 ) -> tuple[TemplateGraph, ...]:
-    """Parse and expand a DSL strategy into concrete template variants.
-
-    ``--ab`` requires a DSL file: choice templates are a DSL construct, so a
-    YAML strategy errors cleanly (the same file is fine without ``--ab``).
-    """
+    """Parse and expand a DSL strategy into concrete template variants."""
     from marketatlas.analysis.ast.compiler import ASTCompiler
     from marketatlas.analysis.ast.parser import parse_with_positions
 
@@ -758,117 +707,3 @@ def instruments_add_command(args: argparse.Namespace) -> None:
     registry.add(instr)
     registry.save(path)
     print(f"Added instrument: {instr.canonical} ({instr.asset_class})")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="MarketAtlas CLI")
-    subparsers = parser.add_subparsers(dest="command", help="Command to run")
-
-    fetch_parser = subparsers.add_parser("fetch", help="Fetch market data")
-    fetch_parser.add_argument("--symbol", required=True, help="Symbol to fetch (e.g., BTCUSDT)")
-    fetch_parser.add_argument("--timeframe", required=True, help="Timeframe (e.g., 1h, 1d)")
-    fetch_parser.add_argument("--start", required=True, help="Start date (ISO format)")
-    fetch_parser.add_argument("--end", required=True, help="End date (ISO format)")
-    fetch_parser.add_argument("--output", default="data/", help="Output directory (default: data/)")
-    fetch_parser.add_argument(
-        "--registry",
-        default="",
-        help="Path to instruments registry YAML (default: data/instruments.yaml)",
-    )
-
-    run_parser = subparsers.add_parser("run", help="Run a strategy backtest")
-    run_parser.add_argument("--strategy", "-s", required=True, help="Strategy file (DSL or YAML)")
-    run_parser.add_argument(
-        "--ab",
-        action="store_true",
-        help="A/B test: expand DSL template choices (<a | b | c>) into one backtest per variant",
-    )
-    run_parser.add_argument("--symbol", default="BTC-USD", help="Market symbol (default: BTC-USD)")
-    run_parser.add_argument(
-        "--instruments",
-        default="",
-        help="Portfolio YAML file listing canonical instrument names; "
-        "loads data for all over the same range (ignores --symbol)",
-    )
-    run_parser.add_argument("--start", default="", help="Start date ISO (default: 2 years ago)")
-    run_parser.add_argument("--end", default="", help="End date ISO (default: today)")
-    run_parser.add_argument("--interval", default="1d", help="Candle interval (default: 1d)")
-    run_parser.add_argument(
-        "--output",
-        "-o",
-        default="/tmp/backtest_result.html",
-        help="HTML output path",
-    )
-    run_parser.add_argument(
-        "--pickle",
-        default="",
-        help="Also dump full backtest result (store, frames, tradebook) to this .pkl path",
-    )
-    run_parser.add_argument(
-        "--balance",
-        type=float,
-        default=1000.0,
-        help="Starting balance (default: 1000)",
-    )
-    run_parser.add_argument(
-        "--max-hold-days",
-        type=int,
-        default=10,
-        help="Max hold days (default: 10)",
-    )
-    run_parser.add_argument(
-        "--data-dir",
-        default="",
-        help="Persistent data store directory "
-        "(default: $MARKETATLAS_DATA_DIR or ~/.cache/marketatlas/data)",
-    )
-    run_parser.add_argument(
-        "--registry",
-        default="",
-        help="Path to instruments registry YAML (default: data/instruments.yaml)",
-    )
-
-    instr_parser = subparsers.add_parser("instruments", help="Manage instrument registry")
-    instr_sub = instr_parser.add_subparsers(dest="instr_command", help="Instrument command")
-
-    list_parser = instr_sub.add_parser("list", help="List registered instruments")
-    list_parser.add_argument("--registry", default="", help="Path to instruments YAML file")
-
-    add_parser = instr_sub.add_parser("add", help="Add an instrument")
-    add_parser.add_argument("canonical", help="Canonical name (e.g. EURUSD)")
-    add_parser.add_argument(
-        "--class",
-        dest="asset_class",
-        required=True,
-        help="Asset class (forex, crypto, equity, commodity)",
-    )
-    add_parser.add_argument("--description", required=True, help="Human-readable description")
-    add_parser.add_argument("--yahoo-symbol", help="Yahoo Finance symbol")
-    add_parser.add_argument("--dukascopy-symbol", help="Dukascopy symbol")
-    add_parser.add_argument("--oanda-symbol", help="OANDA symbol")
-    add_parser.add_argument(
-        "--provider-priority",
-        default="",
-        help="Comma-separated provider priority order (e.g. dukascopy,yahoo)",
-    )
-    add_parser.add_argument("--registry", default="", help="Path to instruments YAML file")
-
-    args = parser.parse_args()
-
-    if args.command == "fetch":
-        fetch_command(args)
-    elif args.command == "run":
-        run_command(args)
-    elif args.command == "instruments":
-        if args.instr_command == "list":
-            instruments_list_command(args)
-        elif args.instr_command == "add":
-            instruments_add_command(args)
-        else:
-            instr_parser.print_help()
-    else:
-        parser.print_help()
-
-
-if __name__ == "__main__":
-    main()

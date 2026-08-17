@@ -9,6 +9,8 @@ from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.facts.primitive import ATRFact, ATRSeriesFact
 
+
+pytestmark = pytest.mark.tier2
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
 
 

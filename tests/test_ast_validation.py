@@ -4,6 +4,8 @@ from marketatlas.analysis.ast.models import Analysis, Definition, Parameter, Pro
 from marketatlas.analysis.ast.validation import DiagnosticSeverity, ValidationResult, validate
 
 
+
+pytestmark = pytest.mark.tier2
 def _p(name: str) -> Provider:
     """Quick provider factory for tests."""
     return Provider(name=name, capability="", category="analyzer", impl=name)

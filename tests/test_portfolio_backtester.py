@@ -27,6 +27,8 @@ from marketatlas.strategy.signals import TradeSignal
 from marketatlas.strategy.trade import TradeCandidate
 from marketatlas.strategy.tradebook import TradeBook
 
+
+pytestmark = pytest.mark.tier1
 HOUR = timedelta(hours=1)
 
 

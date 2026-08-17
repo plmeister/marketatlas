@@ -1,3 +1,4 @@
+import pytest
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -16,6 +17,8 @@ from marketatlas.strategy.loader import load_strategy, validate_config
 from marketatlas.strategy.signals import TradeSignal
 from marketatlas.strategy.strategy import Strategy
 
+
+pytestmark = pytest.mark.tier1
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
 
 CandleTuple = tuple[float, float, float, float, float]

@@ -53,4 +53,7 @@ testpaths = ["tests"]
 addopts = "-v --tb=short"
 markers = [
     "snapshot: tests that compare output against stored JSON snapshots",
+    "tier1: critical path tests — run after every edit (~2s)",
+    "tier2: integration tests — run before commit (~6s)",
+    "tier3: regression tests — run before release",
 ]

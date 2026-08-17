@@ -23,6 +23,7 @@ import pytest
 from marketatlas.analysis.ast.compiler import ASTCompiler
 from marketatlas.analysis.ast.constructors import build_analysis
 from marketatlas.analysis.ast.expressions import (
+
     Choice,
     ChoiceExpression,
     ReferenceExpression,
@@ -39,6 +40,8 @@ from marketatlas.analysis.graph import (
     UnsatisfiedDependencyError,
 )
 from marketatlas.strategy.config import RiskConfig
+
+pytestmark = pytest.mark.tier2
 
 # -- spec fixtures (docs/dsl.md §7) --------------------------------------
 
