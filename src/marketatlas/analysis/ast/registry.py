@@ -209,7 +209,7 @@ def create_default_registry() -> ProviderRegistry:
     from marketatlas.analysis.analyzers.swing_structure import SwingStructureAnalyzer
     from marketatlas.analysis.analyzers.trend import TrendAnalyzer
     from marketatlas.analysis.patterns import PullbackPatternAnalyzer
-    from marketatlas.analysis.signals.pullback_signal import PullbackSignal
+    from marketatlas.analysis.signals.registry import SIGNAL_TYPES
     from marketatlas.strategy.risk import RiskEngine
 
     registry = ProviderRegistry()
@@ -222,6 +222,8 @@ def create_default_registry() -> ProviderRegistry:
     registry.register("swings", BasicSwingAnalyzer, default_params={"lookback": 50})
     registry.register("sr", SupportResistanceAnalyzer)
     registry.register("pullbackpattern", PullbackPatternAnalyzer)
-    registry.register("generate_signal", PullbackSignal, category="signal")
+    _pullback_signal = SIGNAL_TYPES.get("PullbackSignal")
+    if _pullback_signal is not None:
+        registry.register("generate_signal", _pullback_signal, category="signal")
     registry.register("manage_risk", RiskEngine, category="risk")
     return registry

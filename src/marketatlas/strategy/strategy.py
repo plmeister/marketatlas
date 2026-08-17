@@ -61,14 +61,11 @@ class Strategy:
         return AnalysisGraph(analyzers)
 
     def _build_signals(self) -> list[Signal]:
-        from marketatlas.analysis.signals.pullback_signal import PullbackSignal
+        from marketatlas.analysis.signals.registry import SIGNAL_TYPES
 
-        signal_types: dict[str, type[Signal]] = {
-            "PullbackSignal": PullbackSignal,
-        }
         signals: list[Signal] = []
         for sc in self._config.signals:
-            cls = signal_types.get(sc.type)
+            cls = SIGNAL_TYPES.get(sc.type)
             if cls is None:
                 raise ValueError(f"Unknown signal type '{sc.type}'")
             signals.append(cls(**sc.rules))
