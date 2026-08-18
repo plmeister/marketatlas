@@ -84,4 +84,5 @@
 - [x] 063 — Instrument runtime expansion (TemplateGraph recipe, per-instrument instantiation, isolated multi-instrument backtests)
 - [x] 064 — Market groups: cross-instrument nodes (group-scoped definitions, spanning `*` references, GroupGraph instantiation)
 - [x] 065 — Data requirements inference (required_timeframes/required_data, DataRequirement, gap-only fetching via DataStore)
+- [x] 084a — Signal/Risk requires(): Signal ABC declares abstract requires(), PullbackSignal implements (pullback_pattern, trend, atr_14), RiskEngine implements (atr_14, sr, swing)
 - [x] 085 — Split pipeline.py → expansion.py + lowering.py + pipeline.py (thin orchestrator)
