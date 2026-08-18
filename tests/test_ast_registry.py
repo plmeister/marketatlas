@@ -192,6 +192,18 @@ class TestDefaultRegistry:
         risk = r.resolve("manage_risk")
         assert risk.category == "risk"
 
+    def test_signal_contract_inputs(self) -> None:
+        r = create_default_registry()
+        contract = r.contract("generate_signal")
+        assert contract is not None
+        assert contract.inputs == ("pullback_pattern", "trend", "atr_14")
+
+    def test_risk_contract_inputs(self) -> None:
+        r = create_default_registry()
+        contract = r.contract("manage_risk")
+        assert contract is not None
+        assert contract.inputs == ("atr_14", "sr", "swing")
+
 
 class TestDecoratorSyntax:
     def test_decorator_registers_class(self) -> None:
