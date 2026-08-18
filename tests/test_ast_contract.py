@@ -59,10 +59,19 @@ class TestContractDerivation:
             assert contract is not None
             assert contract.outputs == outputs, f"capability {capability}"
 
-    def test_signal_and_risk_have_empty_contracts(self) -> None:
+    def test_signal_contract_has_inputs(self) -> None:
         registry = create_default_registry()
-        for capability in ("generate_signal", "manage_risk"):
-            assert registry.contract(capability) == ProviderContract()
+        contract = registry.contract("generate_signal")
+        assert contract is not None
+        assert contract.inputs == ("pullback_pattern", "trend", "atr_14")
+        assert contract.outputs == ()
+
+    def test_risk_contract_has_inputs(self) -> None:
+        registry = create_default_registry()
+        contract = registry.contract("manage_risk")
+        assert contract is not None
+        assert contract.inputs == ("atr_14", "sr", "swing")
+        assert contract.outputs == ()
 
     def test_contract_keyed_by_provider_name_too(self) -> None:
         registry = create_default_registry()
