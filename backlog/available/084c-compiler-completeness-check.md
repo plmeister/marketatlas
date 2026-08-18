@@ -24,6 +24,12 @@ After 084b, every provider has a contract declaring its required inputs. But the
 - `analysis/ast/pipeline.py` — add `CompletenessPass` or extend `RegistryResolutionPass`
 - `analysis/ast/pipeline.py` — register the pass in the pipeline
 
+## Testing
+
+**IMPORTANT:** Run `poetry run pytest` (full suite, NO `-x`). Collect ALL failures
+in one pass, fix them all, then run again to verify. Do NOT use `pytest -x` —
+it wastes time fixing one failure at a time and risks timeout.
+
 ## Acceptance Criteria
 
 - [ ] `trend { ema_20: ema20, ema_50: ema50 }` (omitting `atr_14`) fails to compile with error naming `atr_14`
@@ -32,7 +38,7 @@ After 084b, every provider has a contract declaring its required inputs. But the
 - [ ] `generate_signal { pullback_pattern: pp, trend: t }` (omitting `atr_14`) fails
 - [ ] Error message includes definition name and missing fact name
 - [ ] Existing tests pass (all current DSL configs are complete)
-- [ ] `poetry run pytest -m tier1` green
+- [ ] `poetry run pytest` — full suite green (1316+ tests)
 
 ## Related
 

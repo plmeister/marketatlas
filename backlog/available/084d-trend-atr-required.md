@@ -24,13 +24,19 @@ After 084c, the compiler validates completeness. `TrendAnalyzer.requires()` must
 - `strategy/swing.dsl` — trend node: add `atr_14: atr_14`
 - `tests/test_dsl_integration.py` — update DSL strings if needed
 
+## Testing
+
+**IMPORTANT:** Run `poetry run pytest` (full suite, NO `-x`). Collect ALL failures
+in one pass, fix them all, then run again to verify. Do NOT use `pytest -x` —
+it wastes time fixing one failure at a time and risks timeout.
+
 ## Acceptance Criteria
 
 - [ ] `TrendAnalyzer.requires()` includes `FactKey("atr_14")`
 - [ ] `strategy/swing.dsl` trend node has `atr_14: atr_14`
 - [ ] Trend analysis without ATR raises (no silent fallback)
 - [ ] All tests pass
-- [ ] `poetry run pytest -m tier1` green
+- [ ] `poetry run pytest` — full suite green (1316+ tests)
 
 ## Related
 

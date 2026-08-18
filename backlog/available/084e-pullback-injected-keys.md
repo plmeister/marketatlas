@@ -23,13 +23,19 @@
 - `analysis/signals/pullback_signal.py` — constructor + `evaluate()` key resolution
 - `tests/test_signal_system.py` — add test for injected keys path
 
+## Testing
+
+**IMPORTANT:** Run `poetry run pytest` (full suite, NO `-x`). Collect ALL failures
+in one pass, fix them all, then run again to verify. Do NOT use `pytest -x` —
+it wastes time fixing one failure at a time and risks timeout.
+
 ## Acceptance Criteria
 
 - [ ] DSL-compiled `PullbackSignal` uses injected keys from `SignalConfig.rules["bindings"]`
 - [ ] Programmatic construction still works with defaults
 - [ ] `strategy/swing.dsl` compiles and the signal uses the correct fact keys
 - [ ] All tests pass
-- [ ] `poetry run pytest -m tier1` green
+- [ ] `poetry run pytest` — full suite green (1316+ tests)
 
 ## Related
 
