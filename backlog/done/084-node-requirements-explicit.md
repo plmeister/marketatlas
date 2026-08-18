@@ -1,9 +1,19 @@
 # 084: Node requirements declared in DSL — no auto-located fact keys
 
-**Status:** pending
+**Status:** done (split into 084a-084e)
 **Epic:** ast
 **Priority:** high
 **Depends on:** 058, 062, 083
+
+## Split into
+
+| Item | Scope | Depends |
+|------|-------|---------|
+| 084a | Add `requires()` to Signal + RiskEngine | 087 |
+| 084b | Extend ProviderContract to signals/risk | 084a |
+| 084c | Compiler completeness check | 084b |
+| 084d | TrendAnalyzer requires atr_14 | 084c |
+| 084e | PullbackSignal injected keys | 084c |
 
 ## Description
 
