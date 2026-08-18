@@ -38,6 +38,9 @@ class PullbackSignal(Signal):
         self._trend_key = trend_key
         self._atr_key = atr_key
 
+    def requires(self) -> tuple[FactKey, ...]:
+        return (FactKey("pullback_pattern"), FactKey("trend"), FactKey("atr_14"))
+
     def evaluate(self, view: MarketView, facts: dict[FactKey, Fact]) -> TradeSignal | None:
         pullback_key = resolve_fact_key(facts, self._pullback_key)
         trend_key = resolve_fact_key(facts, self._trend_key)

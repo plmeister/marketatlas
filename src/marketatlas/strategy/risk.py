@@ -51,6 +51,12 @@ class RiskEngine:
     def max_hold_days(self) -> int:
         return self._max_hold_days
 
+    def requires(self) -> tuple[FactKey, ...]:
+        return (FactKey("atr_14"), FactKey("sr"), FactKey("swing"))
+
+    def produces(self) -> tuple[FactKey, ...]:
+        return ()
+
     def evaluate(
         self,
         signal: TradeSignal,

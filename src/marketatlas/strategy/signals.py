@@ -23,6 +23,12 @@ class TradeSignal:
 
 class Signal(ABC):
     @abstractmethod
+    def requires(self) -> tuple[FactKey, ...]: ...
+
+    def produces(self) -> tuple[FactKey, ...]:
+        return ()
+
+    @abstractmethod
     def evaluate(
         self, view: MarketView, facts: dict[FactKey, Fact]
     ) -> TradeSignal | None: ...
