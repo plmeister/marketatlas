@@ -343,8 +343,9 @@ class TestPipelineIntegration:
         source = """
         ema := ema { period: <20 | 50> }
         atr_14_series := atr_series { period: 14 }
+        atr_14 := atr { period: 14 }
         swing := swings { lookback: 50 }
-        trend := trend { ema_20: ema, ema_50: ema50 }
+        trend := trend { ema_20: ema, ema_50: ema50, atr_14: atr_14 }
         ema50 := ema { period: 50 }
         sr := sr { swing, atr_14_series }
         alternate := swingstructure { swing }
@@ -365,8 +366,9 @@ class TestPipelineIntegration:
         ema20 := ema { period: 20 }
         ema50 := ema { period: 50 }
         atr_14_series := atr_series { period: 14 }
+        atr_14 := atr { period: 14 }
         swing := swings { lookback: 50 }
-        trend := trend { ema_20: ema20, ema_50: ema50 }
+        trend := trend { ema_20: ema20, ema_50: ema50, atr_14: atr_14 }
         sr := sr { swing, atr_14_series }
         alternate := swingstructure { swing }
         pullback := pullbackpattern { swing_structure: alternate }
@@ -375,6 +377,7 @@ class TestPipelineIntegration:
         assert isinstance(graph, AnalysisGraph)
         names = sorted(type(a).__name__ for a in graph._analyzers)
         assert names == [
+            "ATRAnalyzer",
             "ATRSeriesAnalyzer",
             "BasicSwingAnalyzer",
             "EMAAnalyzer",

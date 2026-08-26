@@ -1,6 +1,6 @@
 # 084e: PullbackSignal consumes DSL-injected keys
 
-**Status:** pending
+**Status:** done
 **Epic:** ast
 **Priority:** high
 **Depends on:** 084c

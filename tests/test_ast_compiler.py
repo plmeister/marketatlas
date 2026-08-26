@@ -190,7 +190,12 @@ class TestCompile:
             .with_param("period", 20)
             .define("ema50", "analyzer", "EMAAnalyzer")
             .with_param("period", 50)
+            .define("atr14", "analyzer", "ATRAnalyzer")
+            .with_param("period", 14)
             .define("trend", "analyzer", "TrendAnalyzer")
+            .with_reference("ema_20", "ema20")
+            .with_reference("ema_50", "ema50")
+            .with_reference("atr_14", "atr14")
             .build()
         )
         graph = ASTCompiler.compile(a)
@@ -207,6 +212,7 @@ class TestCompile:
             analyzers=(
                 AnalyzerConfig(type="EMAAnalyzer", params={"period": 20}),
                 AnalyzerConfig(type="EMAAnalyzer", params={"period": 50}),
+                AnalyzerConfig(type="ATRAnalyzer", params={"period": 14}),
                 AnalyzerConfig(type="TrendAnalyzer", params={}),
             ),
         )
@@ -218,7 +224,12 @@ class TestCompile:
             .with_param("period", 20)
             .define("ema50", "analyzer", "EMAAnalyzer")
             .with_param("period", 50)
+            .define("atr14", "analyzer", "ATRAnalyzer")
+            .with_param("period", 14)
             .define("trend", "analyzer", "TrendAnalyzer")
+            .with_reference("ema_20", "ema20")
+            .with_reference("ema_50", "ema50")
+            .with_reference("atr_14", "atr14")
             .build()
         )
         graph_from_ast = ASTCompiler.compile(analysis)
@@ -260,6 +271,9 @@ class TestCompile:
             .define("atr14", "analyzer", "ATRAnalyzer")
             .with_param("period", 14)
             .define("trend", "analyzer", "TrendAnalyzer")
+            .with_reference("ema_20", "ema20")
+            .with_reference("ema_50", "ema50")
+            .with_reference("atr_14", "atr14")
             .define("swings", "analyzer", "BasicSwingAnalyzer")
             .with_param("lookback", 100)
             .define("swingstructure", "analyzer", "SwingStructureAnalyzer")

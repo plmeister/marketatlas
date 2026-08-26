@@ -282,7 +282,8 @@ class TestCompileDsl:
         spec = """
         ema20 := ema { period: 20 }
         ema50 := ema { period: 50 }
-        trend := trend { ema_20: ema20, ema_50: ema50 }
+        atr_14 := atr { period: 14 }
+        trend := trend { ema_20: ema20, ema_50: ema50, atr_14: atr_14 }
         """
         graphs = ASTCompiler.compile_dsl(spec, name="s")
         assert len(graphs) == 1

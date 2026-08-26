@@ -36,7 +36,8 @@ def _cross_tf_source() -> str:
         "ema20 := ema { timeframe: tf1w, period: 20 }\n"
         "ema50 := ema { timeframe: tf1w, period: 50 }\n"
         "swing := swings { timeframe: tf1w, lookback: 50 }\n"
-        "trend := trend { timeframe: tf1d, ema_20: ema20, ema_50: ema50 }\n"
+        "atr_14 := atr { timeframe: tf1d, period: 14 }\n"
+        "trend := trend { timeframe: tf1d, ema_20: ema20, ema_50: ema50, atr_14: atr_14 }\n"
         "alternate := swingstructure { timeframe: tf1d, swing: swing }\n"
         "pullback := pullbackpattern { timeframe: tf1d, swing_structure: alternate }\n"
     )
@@ -81,6 +82,7 @@ class TestCompile:
         assert trend.requires() == (
             FactKey("ema_20", timeframe=Timeframe("1w")),
             FactKey("ema_50", timeframe=Timeframe("1w")),
+            FactKey("atr_14", timeframe=Timeframe("1d")),
         )
         alternate = by_name["SwingStructureAnalyzer"]
         assert FactKey("swing", timeframe=Timeframe("1w")) in alternate.requires()
@@ -103,6 +105,7 @@ class TestCompile:
         assert by_type["TrendAnalyzer"].params["bindings"] == {
             "ema_20": "ema_20@1w",
             "ema_50": "ema_50@1w",
+            "atr_14": "atr_14",
         }
         assert by_type["SwingStructureAnalyzer"].params["bindings"] == {
             "swing": "swing@1w",
@@ -236,7 +239,8 @@ class TestGraphRun:
         source = (
             "ema20 := ema { period: 20 }\n"
             "ema50 := ema { period: 50 }\n"
-            "trend := trend { ema_20: ema20, ema_50: ema50 }\n"
+            "atr_14 := atr { period: 14 }\n"
+            "trend := trend { ema_20: ema20, ema_50: ema50, atr_14: atr_14 }\n"
         )
         graph = ASTCompiler.compile(parse(source, name="demo"))
         by_name = {type(a).__name__: a for a in graph.execution_order()}
@@ -244,6 +248,7 @@ class TestGraphRun:
         assert by_name["TrendAnalyzer"].requires() == (
             FactKey("ema_20", timeframe=tf),
             FactKey("ema_50", timeframe=tf),
+            FactKey("atr_14", timeframe=tf),
         )
 
 

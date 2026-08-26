@@ -34,7 +34,30 @@
     },
     {
       "name": "trend",
-      "provider": "TrendAnalyzer"
+      "provider": "TrendAnalyzer",
+      "parameters": [
+        {
+          "name": "ema_20",
+          "value": {
+            "expr": "reference",
+            "name": "ema20"
+          }
+        },
+        {
+          "name": "ema_50",
+          "value": {
+            "expr": "reference",
+            "name": "ema50"
+          }
+        },
+        {
+          "name": "atr_14",
+          "value": {
+            "expr": "reference",
+            "name": "atr14"
+          }
+        }
+      ]
     },
     {
       "name": "swings",

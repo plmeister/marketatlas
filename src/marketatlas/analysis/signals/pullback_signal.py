@@ -32,19 +32,21 @@ class PullbackSignal(Signal):
         pullback_key: str = "pullback_pattern",
         trend_key: str = "trend",
         atr_key: str = "atr_14",
+        bindings: dict[str, str] | None = None,
     ) -> None:
         self._min_strength = min_strength
         self._pullback_key = pullback_key
         self._trend_key = trend_key
         self._atr_key = atr_key
+        self._bindings = dict(bindings) if bindings else {}
 
     def requires(self) -> tuple[FactKey, ...]:
         return (FactKey("pullback_pattern"), FactKey("trend"), FactKey("atr_14"))
 
     def evaluate(self, view: MarketView, facts: dict[FactKey, Fact]) -> TradeSignal | None:
-        pullback_key = resolve_fact_key(facts, self._pullback_key)
-        trend_key = resolve_fact_key(facts, self._trend_key)
-        atr_key = resolve_fact_key(facts, self._atr_key)
+        pullback_key = resolve_fact_key(facts, self._bindings.get("pullback_pattern", self._pullback_key))
+        trend_key = resolve_fact_key(facts, self._bindings.get("trend", self._trend_key))
+        atr_key = resolve_fact_key(facts, self._bindings.get("atr_14", self._atr_key))
 
         pullback = facts.get(pullback_key) if pullback_key is not None else None
         trend = facts.get(trend_key) if trend_key is not None else None

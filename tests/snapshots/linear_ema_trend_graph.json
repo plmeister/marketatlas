@@ -15,8 +15,16 @@
       ]
     },
     {
+      "type": "ATRAnalyzer",
+      "requires": [],
+      "produces": [
+        "atr_14_tf_1d"
+      ]
+    },
+    {
       "type": "TrendAnalyzer",
       "requires": [
+        "atr_14_tf_1d",
         "ema_20_tf_1d",
         "ema_50_tf_1d"
       ],

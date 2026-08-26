@@ -1,6 +1,6 @@
 # 084d: Make TrendAnalyzer require atr_14
 
-**Status:** pending
+**Status:** done
 **Epic:** ast
 **Priority:** high
 **Depends on:** 084c
@@ -32,11 +32,11 @@ it wastes time fixing one failure at a time and risks timeout.
 
 ## Acceptance Criteria
 
-- [ ] `TrendAnalyzer.requires()` includes `FactKey("atr_14")`
-- [ ] `strategy/swing.dsl` trend node has `atr_14: atr_14`
-- [ ] Trend analysis without ATR raises (no silent fallback)
-- [ ] All tests pass
-- [ ] `poetry run pytest` — full suite green (1316+ tests)
+- [x] `TrendAnalyzer.requires()` includes `FactKey("atr_14")`
+- [x] `strategy/swing.dsl` trend node has `atr_14: atr_14`
+- [x] Trend analysis without ATR raises (no silent fallback)
+- [x] All tests pass
+- [x] `poetry run pytest` — full suite green (1316+ tests)
 
 ## Related
 

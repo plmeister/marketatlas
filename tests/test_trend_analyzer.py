@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 import pytest
+from marketatlas.analysis.analyzers.atr import ATRAnalyzer
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.analyzers.trend import TrendAnalyzer
 from marketatlas.analysis.factkey import FactKey
@@ -50,9 +51,12 @@ def _make_ema_facts(view: MarketView, fast_period: int, slow_period: int) -> dic
     slow = EMAAnalyzer(slow_period)
     fast_result = fast.analyze(view, {})
     slow_result = slow.analyze(view, {})
+    atr = ATRAnalyzer(14)
+    atr_result = atr.analyze(view, {})
     return {
         FactKey(fast.instance_key): fast_result.facts[0],
         FactKey(slow.instance_key): slow_result.facts[0],
+        FactKey("atr_14"): atr_result.facts[0],
     }
 
 
@@ -67,6 +71,7 @@ class TestTrendAnalyzer:
         assert TrendAnalyzer().requires() == (
             FactKey("ema_20"),
             FactKey("ema_50"),
+            FactKey("atr_14"),
         )
 
     def test_produces_trend_fact(self) -> None:
@@ -103,7 +108,7 @@ class TestTrendAnalyzer:
 
     def test_strength_scales_with_spread(self) -> None:
         steep_rise = [100.0 + i * 5.0 for i in range(60)]
-        gentle_rise = [100.0 + i * 0.5 for i in range(60)]
+        gentle_rise = [100.0 + i * 0.1 for i in range(60)]
 
         store_steep = _make_store(steep_rise)
         view_steep = MarketView(store_steep, cursor=59, window_size=59)
@@ -115,35 +120,25 @@ class TestTrendAnalyzer:
         facts_gentle = _make_ema_facts(view_gentle, 20, 50)
         result_gentle = TrendAnalyzer().analyze(view_gentle, facts_gentle)
 
-        assert _trend(result_steep).strength > _trend(result_gentle).strength
+        s_steep = _trend(result_steep).strength
+        s_gentle = _trend(result_gentle).strength
+        assert s_steep > s_gentle
+        assert 0.0 < s_gentle <= s_steep <= 1.0
 
-    def test_strength_uses_atr_when_available(self) -> None:
+    def test_strength_uses_atr_for_normalization(self) -> None:
         closes = _rising_closes(60)
         store = _make_store(closes)
         view = MarketView(store, cursor=59, window_size=59)
         facts = _make_ema_facts(view, 20, 50)
 
-        analyzer = TrendAnalyzer()
-        result_no_atr = analyzer.analyze(view, facts)
+        result = TrendAnalyzer().analyze(view, facts)
 
-        facts_with_atr: dict = {
-            **facts,
-            FactKey("atr_14"): ATRFact(
-                timestamp=BASE,
-                evidence=(
-                    EvidenceEntry(
-                        text="ATR14 = 2.0",
-                        level=EvidenceLevel.INFO,
-                        source="ATRAnalyzer",
-                    ),
-                ),
-                value=2.0,
-                period=14,
-            ),
-        }
-        result_with_atr = analyzer.analyze(view, facts_with_atr)
-
-        assert _trend(result_with_atr).strength != _trend(result_no_atr).strength
+        spread = abs(
+            facts[FactKey("ema_20")].value - facts[FactKey("ema_50")].value
+        )
+        atr_val = facts[FactKey("atr_14")].value
+        expected = min(1.0, spread / atr_val) if atr_val > 0 else 0.0
+        assert _trend(result).strength == pytest.approx(expected, abs=1e-4)
 
     def test_evidence_contains_trend_direction(self) -> None:
         closes = _rising_closes(60)

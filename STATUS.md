@@ -87,4 +87,6 @@
 - [x] 084a — Signal/Risk requires(): Signal ABC declares abstract requires(), PullbackSignal implements (pullback_pattern, trend, atr_14), RiskEngine implements (atr_14, sr, swing)
 - [x] 084b — Signal/risk contracts: `_derive_contract` already handles requires()/produces() from signals and risk; acceptance criteria tests added
 - [x] 084c — Compiler completeness check: CompletenessPass verifies every contract-declared analyzer input supplied as ReferenceExpression param; CompilationError frozen dataclass fix; tests updated for complete DSL bindings
+- [x] 084d — TrendAnalyzer requires atr_14: `requires()` includes `FactKey("atr_14")`, removed optional ATR fallback (hard error if missing), updated `swing.dsl` trend node with `atr_14: atr_14`, all test DSL strings and builder API tests updated
+- [x] 084e — PullbackSignal DSL-injected keys: constructor gains `bindings: dict[str, str] | None = None` param (follows RiskEngine pattern); `evaluate()` resolves keys via `self._bindings.get("pullback_pattern", self._pullback_key)` etc.; compiler-injected keys from `SignalConfig.rules["bindings"]` now consumed instead of ignored; programmatic construction defaults unchanged
 - [x] 085 — Split pipeline.py → expansion.py + lowering.py + pipeline.py (thin orchestrator)

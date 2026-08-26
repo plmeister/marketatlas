@@ -31,6 +31,7 @@ class TrendAnalyzer(Analyzer):
         return (
             self._make_key(self._fast_key),
             self._make_key(self._slow_key),
+            self._make_key(self._atr_key),
         )
 
     def produces(self) -> tuple[FactKey, ...]:
@@ -51,17 +52,12 @@ class TrendAnalyzer(Analyzer):
         else:
             direction = TrendDirection.NEUTRAL
 
-        atr_value = 0.0
-        atr_fact = facts.get(self._make_key(self._atr_key))
-        if atr_fact is not None and isinstance(atr_fact, ATRFact):
-            atr_value = atr_fact.value
+        atr_fact = facts[self._make_key(self._atr_key)]
+        assert isinstance(atr_fact, ATRFact)
+        atr_value = atr_fact.value
 
         spread = abs(fast_ema - slow_ema)
-        if atr_value > 0:
-            strength = min(1.0, spread / atr_value)
-        else:
-            price = view.current.close
-            strength = min(1.0, spread / price) if price > 0 else 0.0
+        strength = min(1.0, spread / atr_value) if atr_value > 0 else 0.0
 
         price = view.current.close
         above_both = price > fast_ema and price > slow_ema

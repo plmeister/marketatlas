@@ -138,7 +138,7 @@ class TestLoadStrategy:
         path.write_text(
             "ema := ema { period: 20 }\n"
             "atr_14 := atr { period: 14 }\n"
-            "trend := trend { ema_20: ema, ema_50: ema50 }\n"
+            "trend := trend { ema_20: ema, ema_50: ema50, atr_14: atr_14 }\n"
             "ema50 := ema { period: 50 }\n"
         )
         config = load_strategy(path)

@@ -41,7 +41,7 @@ class TestContractDerivation:
     def test_derives_inputs_and_outputs(self) -> None:
         registry = create_default_registry()
         contract = registry.contract("trend")
-        assert contract == ProviderContract(inputs=("ema_20", "ema_50"), outputs=("trend",))
+        assert contract == ProviderContract(inputs=("ema_20", "ema_50", "atr_14"), outputs=("trend",))
 
     def test_builtin_analyzer_contracts(self) -> None:
         registry = create_default_registry()

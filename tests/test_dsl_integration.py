@@ -50,7 +50,7 @@ SINGLE = "ema := ema { period: 20 }"
 LINEAR = """
 ema := ema { period: 20 }
 atr_14 := atr { period: 14 }
-trend := trend { ema_20: ema, ema_50: ema50 }
+trend := trend { ema_20: ema, ema_50: ema50, atr_14: atr_14 }
 ema50 := ema { period: 50 }
 """
 
@@ -71,8 +71,9 @@ pullback := pullbackpattern { swing_structure: alternate }
 FULL_TEMPLATE = """
 ema := ema { period: <20 | 50> }
 atr_14_series := atr_series { period: 14 }
+atr_14 := atr { period: 14 }
 swing := swings { lookback: 50 }
-trend := trend { ema_20: ema, ema_50: ema50 }
+trend := trend { ema_20: ema, ema_50: ema50, atr_14: atr_14 }
 ema50 := ema { period: 50 }
 sr := sr { swing, atr_14_series }
 alternate := swingstructure { swing }
@@ -82,8 +83,9 @@ pullback := pullbackpattern { swing_structure: alternate }
 FULL_LITERAL = """
 ema := ema { period: 20 }
 atr_14_series := atr_series { period: 14 }
+atr_14 := atr { period: 14 }
 swing := swings { lookback: 50 }
-trend := trend { ema_20: ema, ema_50: ema50 }
+trend := trend { ema_20: ema, ema_50: ema50, atr_14: atr_14 }
 ema50 := ema { period: 50 }
 sr := sr { swing, atr_14_series }
 alternate := swingstructure { swing }
@@ -117,8 +119,9 @@ def _builder_full_strategy(registry=None) -> Analysis:
         [
             _def("ema", "ema", _param("period", 20)),
             _def("atr_14_series", "atr_series", _param("period", 14)),
+            _def("atr_14", "atr", _param("period", 14)),
             _def("swing", "swings", _param("lookback", 50)),
-            _def("trend", "trend", _ref("ema_20", "ema"), _ref("ema_50", "ema50")),
+            _def("trend", "trend", _ref("ema_20", "ema"), _ref("ema_50", "ema50"), _ref("atr_14", "atr_14")),
             _def("ema50", "ema", _param("period", 50)),
             _def("sr", "sr", _ref("swing", "swing"), _ref("atr_14_series", "atr_14_series")),
             _def("alternate", "swingstructure", _ref("swing", "swing")),
@@ -163,6 +166,7 @@ class TestStage0Parse:
         assert trend.parameters == (
             _ref("ema_20", "ema"),
             _ref("ema_50", "ema50"),
+            _ref("atr_14", "atr_14"),
         )
 
     def test_branching_shorthand_becomes_reference(self) -> None:
@@ -175,9 +179,9 @@ class TestStage0Parse:
 
     def test_full_template_keeps_choices_intact(self) -> None:
         analysis = parse(FULL_TEMPLATE, name="strategy")
-        assert len(analysis.definitions) == 8
+        assert len(analysis.definitions) == 9
         assert analysis.definitions[0].parameters[0].value == Choice([20, 50])
-        pullback = analysis.definitions[7]
+        pullback = analysis.definitions[8]
         assert pullback.parameters == (
             _ref("swing_structure", "alternate"),
         )
@@ -251,7 +255,7 @@ class TestStage1Validate:
         graphs = ASTCompiler.compile_dsl(LINEAR, name="strategy")
         assert len(graphs) == 1
         nodes = _graph_nodes(graphs[0])
-        assert nodes["TrendAnalyzer"][0] == ("ema_20", "ema_50")
+        assert nodes["TrendAnalyzer"][0] == ("atr_14", "ema_20", "ema_50")
 
 
 # -- stage 2: template expansion ------------------------------------------
@@ -352,7 +356,7 @@ class TestStage4Graph:
     def test_linear_chain_edges(self) -> None:
         graph = ASTCompiler.compile(parse(LINEAR, name="strategy"))
         nodes = _graph_nodes(graph)
-        assert nodes["TrendAnalyzer"] == (("ema_20", "ema_50"), ("trend",))
+        assert nodes["TrendAnalyzer"] == (("atr_14", "ema_20", "ema_50"), ("trend",))
         order = [type(a).__name__ for a in graph.execution_order()]
         assert order.index("EMAAnalyzer") < order.index("TrendAnalyzer")
 
@@ -377,6 +381,7 @@ class TestStage4Graph:
         graph = ASTCompiler.compile(parse(FULL_LITERAL, name="strategy"))
         types = sorted(type(a).__name__ for a in graph._analyzers)
         assert types == [
+            "ATRAnalyzer",
             "ATRSeriesAnalyzer",
             "BasicSwingAnalyzer",
             "EMAAnalyzer",
@@ -410,7 +415,7 @@ class TestStage4Graph:
         assert len(variants) == 2
         # period-20 variant: ema produces ema_20, matching trend's reference.
         graph = ASTCompiler.compile(variants[0])
-        assert len(graph._analyzers) == 8
+        assert len(graph._analyzers) == 9
         # period-50 variant: ema now produces ema_50, so the ema_20 reference
         # is inconsistent and fails before graph construction.
         with pytest.raises(CompilationError) as exc:
@@ -421,7 +426,8 @@ class TestStage4Graph:
         source = """
         ema20 := ema { period: 20 }
         ema := ema { period: 50 }
-        trend := trend { ema_20: ema20, ema_50: <ema | ema> }
+        atr_14 := atr { period: 14 }
+        trend := trend { ema_20: ema20, ema_50: <ema | ema>, atr_14: atr_14 }
         """
         graphs = ASTCompiler.compile_dsl(source, name="strategy")
         assert len(graphs) == 2
@@ -433,7 +439,7 @@ class TestStage4Graph:
                 for fk in a.produces()
             )
             assert ema_producers == ["ema_20", "ema_50"]
-            assert _graph_nodes(graph)["TrendAnalyzer"] == (("ema_20", "ema_50"), ("trend",))
+            assert _graph_nodes(graph)["TrendAnalyzer"] == (("atr_14", "ema_20", "ema_50"), ("trend",))
 
 
 # -- stage 4: config generation --------------------------------------------
@@ -444,7 +450,7 @@ class TestStage4Config:
         config = ASTCompiler.to_config(parse(FULL_LITERAL, name="strategy"))
         assert config.name == "strategy"
         assert config.version == "1.0"
-        assert len(config.analyzers) == 8
+        assert len(config.analyzers) == 9
         assert config.signals == ()
         assert config.risk == RiskConfig(algorithm="none")
 
