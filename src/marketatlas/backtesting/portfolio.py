@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -17,6 +19,7 @@ from marketatlas.strategy.tradebook import TradeBook
 
 if TYPE_CHECKING:
     from marketatlas.analysis.factkey import FactKey
+    from marketatlas.analysis.graph import AnalysisGraph
     from marketatlas.backtesting.backtester import BundleProtocol
     from marketatlas.facts.base import Fact
     from marketatlas.strategy.signals import TradeSignal
@@ -60,6 +63,32 @@ class _CursorEvaluation:
     signal_rejections: tuple[EvidenceEntry, ...] = ()
 
 
+def _analyze_instrument(
+    instrument: Instrument,
+    store: MarketStore,
+    graph: AnalysisGraph,
+    bundle: BundleProtocol,
+    cursor_ts: datetime,
+    window_size: int,
+    aligned: int,
+) -> tuple[
+    int,
+    dict[FactKey, Fact],
+    tuple[EvidenceEntry, ...],
+    list[tuple[str, TradeSignal]],
+    tuple[EvidenceEntry, ...],
+] | None:
+    """Analyze one instrument at a given cursor. Module-level for pickling."""
+    view = MarketView(store, aligned, window_size)
+    facts, loose = graph.run_with_evidence(view)
+    evidence = PortfolioBacktester._collect_evidence(facts) + loose
+    emitted, signal_rejections = bundle.evaluate_all_with_rejections(view, facts)
+    rejection_entries = tuple(
+        e for _, sig in signal_rejections for e in sig.rejections
+    )
+    return aligned, facts, evidence, emitted, rejection_entries
+
+
 class PortfolioBacktester:
     """Run a strategy bundle across a portfolio with one shared tradebook (075).
 
@@ -86,6 +115,7 @@ class PortfolioBacktester:
         instruments: Sequence[tuple[Instrument, MarketStore]],
         window_size: int = 100,
         max_hold_days: int = 10,
+        pool_size: int | None = None,
     ) -> None:
         self._bundle = bundle
         self._pairs = tuple(instruments)
@@ -97,6 +127,9 @@ class PortfolioBacktester:
         self._merged = self._merge_calendars()
         self._position: Instrument | None = None
         self._pending_ts: datetime | None = None
+        if pool_size is None:
+            pool_size = min(len(self._pairs), os.cpu_count() or 1)
+        self._pool_size = pool_size
 
     def _merge_calendars(self) -> tuple[datetime, ...]:
         """Union of primary-timeframe timestamps, sorted ascending."""
@@ -127,26 +160,44 @@ class PortfolioBacktester:
 
             free = tradebook.has_no_open_trade and not tradebook.has_pending_order
             evaluations: list[_CursorEvaluation] = []
+            tasks: list[tuple[Instrument, MarketStore, int]] = []
             for instrument, store in self._pairs:
                 aligned = store.timestamp_index(cursor_ts)
                 if aligned < 0:
                     continue
                 if aligned == aligned_at.get(instrument.canonical):
                     continue
-                aligned_at[instrument.canonical] = aligned
-                view = MarketView(store, aligned, self._window_size)
-                facts, loose = self._bundle.graph.run_with_evidence(view)
-                evidence = self._collect_evidence(facts) + loose
-                emitted, signal_rejections = self._bundle.evaluate_all_with_rejections(
-                    view, facts
-                )
-                rejection_entries = tuple(
-                    e for _, sig in signal_rejections for e in sig.rejections
-                )
+                tasks.append((instrument, store, aligned))
+
+            if self._pool_size > 1 and len(tasks) > 1:
+                with ThreadPoolExecutor(max_workers=self._pool_size) as pool:
+                    results = list(
+                        pool.map(
+                            lambda t: _analyze_instrument(
+                                t[0], t[1], self._bundle.graph, self._bundle,
+                                cursor_ts, self._window_size, t[2],
+                            ),
+                            tasks,
+                        )
+                    )
+            else:
+                results = [
+                    _analyze_instrument(
+                        inst, store, self._bundle.graph, self._bundle,
+                        cursor_ts, self._window_size, aligned,
+                    )
+                    for inst, store, aligned in tasks
+                ]
+
+            for (instrument, _store, aligned), result in zip(tasks, results):
+                if result is None:
+                    continue
+                aligned_idx, facts, evidence, emitted, rejection_entries = result
+                aligned_at[instrument.canonical] = aligned_idx
                 evaluations.append(
                     _CursorEvaluation(
                         instrument=instrument,
-                        view=view,
+                        view=MarketView(_store, aligned_idx, self._window_size),
                         facts=facts,
                         evidence=evidence,
                         emitted=emitted,
