@@ -2,6 +2,7 @@
 
 ## Completed
 
+- **094** — Parallel instrument analysis: `PortfolioBacktester` uses `ThreadPoolExecutor` for per-instrument `graph.run_with_evidence` + `evaluate_all_with_rejections` in inner loop. Module-level `_analyze_instrument` function (pickle-safe). Pool size configurable via `pool_size` param, defaults to `min(instruments, cpu_count)`. Single-instrument path unchanged. Output identical to serial execution. 1315 tests pass, lint clean.
 - **093** — MarketView computed property cache: `history`, `prices`, `highs`, `lows`, `volumes`, `timestamps` now lazy-cache via `object.__setattr__` on frozen dataclass slots. Each property computes once per `MarketView` instance. Eliminates thousands of throwaway tuples per backtest (9554 frames × 9 analyzers). 1315 tests pass, lint clean.
 - **084a** — Signal/Risk requires(): `Signal` ABC gains abstract `requires() -> tuple[FactKey, ...]` and default `produces()` (empty). `PullbackSignal.requires()` returns `("pullback_pattern", "trend", "atr_14")`. `RiskEngine` gains `requires()` returning `("atr_14", "sr", "swing")` and `produces()` (empty). Enables 084b contract derivation. 236 tier1 tests pass, lint clean.
 - **084b** — Signal/risk contracts: contracts already derived correctly by `_derive_contract` via `_register_metadata` (no code change needed). Added 2 acceptance criteria tests verifying `registry.contract("generate_signal")` → `("pullback_pattern", "trend", "atr_14")` and `registry.contract("manage_risk")` → `("atr_14", "sr", "swing")`. 238 tier1 tests pass.
