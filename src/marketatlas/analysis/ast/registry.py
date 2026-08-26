@@ -216,7 +216,7 @@ def create_default_registry() -> ProviderRegistry:
     _register_timeframe(registry)
     registry.register("ema", EMAAnalyzer, default_params={"period": 20})
     registry.register("atr", ATRAnalyzer, default_params={"period": 14})
-    registry.register("atr_series", ATRSeriesAnalyzer, default_params={"period": 14})
+    registry.register("atr_series", ATRSeriesAnalyzer, default_params={"period": 14, "lookback": 50})
     registry.register("trend", TrendAnalyzer)
     registry.register("swingstructure", SwingStructureAnalyzer, default_params={"window": 50})
     registry.register("swings", BasicSwingAnalyzer, default_params={"lookback": 50})

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
@@ -88,7 +88,14 @@ class DataStore:
         if cover is None:
             return False
         first, last = cover
-        return _as_naive(start) >= first and _as_naive(end) <= last
+        if _as_naive(start) < first:
+            return False
+        # Allow trailing slack: stored data ending within 2 days of the
+        # requested end is treated as covered.  This avoids re-fetching
+        # when the end date is today and the last stored candle is
+        # yesterday (common for non-24h markets or partial days).
+        end_naive = _as_naive(end)
+        return end_naive <= last + timedelta(days=2)
 
     def missing_ranges(
         self,

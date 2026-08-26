@@ -165,7 +165,21 @@ def fetch_instrument_data(
                 print(f"{prefix}{tf.value}: served from store ({len(md.candles)} candles)")
                 continue
 
-        # Try native fetch first
+        # Try resample from already-loaded higher-res data first (no network).
+        source_tf = _find_resample_source(tf, fetched)
+        if source_tf is not None:
+            try:
+                candles = resample(fetched[source_tf].candles, source_tf, tf)
+                md = MarketData(symbol=symbol, timeframe=tf, candles=candles)
+                datastore.put(md)
+                fetched[tf] = md
+                resampled.append((tf, source_tf))
+                print(f"{prefix}{tf.value}: resampled from {source_tf.value} ({len(candles)} candles)")
+                continue
+            except CannotResampleError:
+                pass  # fall through to native fetch
+
+        # Native fetch
         try:
             md = provider.fetch(symbol, tf, start, end)
             datastore.put(md)
@@ -179,23 +193,6 @@ def fetch_instrument_data(
             )
         except Exception as e:
             print(f"{prefix}{tf.value}: fetch error — {e}", file=sys.stderr)
-            continue
-
-        # Native not supported — try resample from nearest higher-res
-        source_tf = _find_resample_source(tf, fetched)
-        if source_tf is None:
-            print(f"{prefix}{tf.value}: cannot fetch or resample (no source data)")
-            continue
-
-        try:
-            candles = resample(fetched[source_tf].candles, source_tf, tf)
-            md = MarketData(symbol=symbol, timeframe=tf, candles=candles)
-            datastore.put(md)
-            fetched[tf] = md
-            resampled.append((tf, source_tf))
-            print(f"{prefix}{tf.value}: resampled from {source_tf.value} ({len(candles)} candles)")
-        except CannotResampleError as e:
-            print(f"{prefix}{tf.value}: cannot resample — {e}")
 
     if base_tf not in fetched:
         raise InstrumentDataError(

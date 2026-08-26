@@ -12,21 +12,16 @@ from marketatlas.facts.primitive import ATRPoint, ATRSeriesFact
 class ATRSeriesAnalyzer(Analyzer):
     """Per-candle ATR history using Wilder smoothing (backlog 062).
 
-    Produces an ``ATRSeriesFact`` with one value per candle up to the cursor.
-    The value at each candle depends only on data up to that candle, so it is
-    stable as new candles arrive — unlike the trailing scalar ``ATRFact``,
-    which shifts as the cursor moves. Consumers that cluster historical data
-    (e.g. S/R level clustering over old swings) anchor to the per-candle value
-    instead of the moving scalar.
-
-    Matches ``ATRAnalyzer`` semantics at every candle: the first ``period``
-    values are simple means of true ranges, then Wilder smoothing. Hence the
-    series' final value equals the scalar ATR at the same cursor.
+    ``lookback`` limits how many recent candles feed the computation.
+    Wilder smoothing decays exponentially — after ~3×period candles old
+    data contributes <3 % to the current value, so a bounded window
+    gives accurate results at O(lookback) cost per call.
     """
 
-    def __init__(self, period: int = 14, **kwargs: Any) -> None:
+    def __init__(self, period: int = 14, lookback: int = 0, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._period = period
+        self._lookback = lookback
 
     @property
     def instance_key(self) -> str:
@@ -39,12 +34,16 @@ class ATRSeriesAnalyzer(Analyzer):
         return (self._make_key(self.instance_key),)
 
     def analyze(self, view: MarketView, facts: dict[FactKey, Fact]) -> AnalysisResult:
-        candles = view.series_through_cursor() + (view.current,)
+        all_candles = view.series_through_cursor() + (view.current,)
+        if self._lookback > 0:
+            candles = all_candles[-self._lookback - 1 :]
+        else:
+            candles = all_candles
 
         points: list[ATRPoint] = []
+        smoothed = 0.0
+        running_sum = 0.0
         if len(candles) >= 2:
-            running_sum = 0.0
-            smoothed = 0.0
             for i in range(1, len(candles)):
                 high_low = candles[i].high - candles[i].low
                 high_prev_close = abs(candles[i].high - candles[i - 1].close)
