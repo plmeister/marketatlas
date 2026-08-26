@@ -1,7 +1,7 @@
 # 094: Parallel instrument analysis in PortfolioBacktester
 
 **Status:** pending
-**Epic:** performance
+**Epic:** data
 **Priority:** high
 
 ## Description

@@ -1,7 +1,7 @@
 # 093: Cache MarketView computed properties
 
 **Status:** pending
-**Epic:** performance
+**Epic:** data
 **Priority:** high
 
 ## Description
