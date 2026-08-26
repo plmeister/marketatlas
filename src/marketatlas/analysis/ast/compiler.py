@@ -4,6 +4,7 @@ from marketatlas.analysis.ast.diagnostics import SourceMap
 from marketatlas.analysis.ast.instrument import TemplateGraph
 from marketatlas.analysis.ast.models import Analysis
 from marketatlas.analysis.ast.pipeline import (
+    CompletenessPass,
     ParamValidationPass,
     Pipeline,
     RegistryResolutionPass,
@@ -21,6 +22,7 @@ class ASTCompiler:
             Pipeline(source_map)
             .add_pass(ValidationPass(source_map))
             .add_pass(RegistryResolutionPass(registry))
+            .add_pass(CompletenessPass(registry))
             .add_pass(ParamValidationPass(registry, source_map))
         )
 

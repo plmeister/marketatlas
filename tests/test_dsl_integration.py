@@ -399,9 +399,9 @@ class TestStage4Graph:
 
     def test_undeclared_dependency_rejected(self) -> None:
         # trend declares only its fast binding; the default slow key ema_50
-        # has no producer at graph construction (spec §7.2).
+        # has no producer — CompletenessPass catches this first (spec §7.2).
         source = "ema := ema { period: 20 }\ntrend := trend { ema_20: ema }"
-        with pytest.raises(UnsatisfiedDependencyError):
+        with pytest.raises(CompilationError, match="missing required input 'ema_50'"):
             ASTCompiler.compile(parse(source, name="strategy"))
 
     def test_full_template_only_consistent_variant_compiles(self) -> None:

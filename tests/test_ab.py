@@ -177,7 +177,8 @@ class TestVariantIdentity:
     def test_identity_excludes_derived_wiring(self) -> None:
         templates = self._templates(
             "ema := ema { period: 20 }\n"
-            "trend := trend { ema_20: ema, ema_50: ema50 }\n"
+            "atr := atr { period: 14 }\n"
+            "trend := trend { ema_20: ema, ema_50: ema50, atr_14: atr }\n"
             "ema50 := ema { period: 50 }"
         )
         identity = variant_identity(templates[0])

@@ -200,7 +200,7 @@ class TestErrors:
             "alternate := swingstructure { timeframe: tf1w }\n"
             "swing := swings { timeframe: tf1d, lookback: 50 }\n"
         )
-        with pytest.raises(UnsatisfiedDependencyError, match="swing"):
+        with pytest.raises(CompilationError, match="missing required input 'swing'"):
             ASTCompiler.compile(parse(source, name="demo"))
 
 

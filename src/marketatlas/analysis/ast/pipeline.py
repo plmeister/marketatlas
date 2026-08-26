@@ -27,6 +27,7 @@ from marketatlas.analysis.ast.expansion import (  # noqa: E402
 from marketatlas.analysis.ast.expressions import (
     ChoiceExpression,
     LiteralExpression,
+    ReferenceExpression,
     choice_leaves,
 )
 from marketatlas.analysis.ast.instrument import TemplateGraph
@@ -53,6 +54,7 @@ from marketatlas.strategy.loader import build_analyzers
 
 __all__ = [
     "CompilationError",
+    "CompletenessPass",
     "CompilerPass",
     "ConcreteValidationPass",
     "GraphGenerationPass",
@@ -263,6 +265,46 @@ class ConcreteValidationPass(CompilerPass):
                 f"Concrete AST validation failed ({len(errors)} errors):\n" + "\n".join(msgs),
                 errors=tuple(errors),
                 warnings=result.warnings,
+            )
+        return analysis
+
+
+class CompletenessPass(CompilerPass):
+    """Stage 1: verify every contract-declared input is supplied (backlog 084c).
+
+    After registry resolution each definition's provider has a ``ProviderContract``
+    listing the fact key names it consumes (``inputs``).  For every such input
+    the definition must supply a ``ReferenceExpression`` parameter — a literal
+    value is configuration, not a fact dependency.  Missing inputs surface as
+    ``CompilationError`` naming the definition and the missing fact.
+    """
+
+    def __init__(self, registry: ProviderRegistry) -> None:
+        self._registry = registry
+
+    def run(self, analysis: Analysis) -> Analysis:
+        errors: list[str] = []
+        provider_categories = {p.name: p.category for p in analysis.providers}
+        for d in analysis.definitions:
+            category = provider_categories.get(d.provider)
+            if category != "analyzer":
+                continue
+            contract = self._registry.contract(d.provider)
+            if contract is None or not contract.inputs:
+                continue
+            ref_params = {
+                p.name for p in d.parameters if _is_reference_param(p)
+            }
+            if not ref_params:
+                continue
+            for required_input in contract.inputs:
+                if required_input not in ref_params:
+                    errors.append(
+                        f"definition '{d.name}' is missing required input '{required_input}'"
+                    )
+        if errors:
+            raise CompilationError(
+                "Completeness check failed:\n" + "\n".join(errors)
             )
         return analysis
 

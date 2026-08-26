@@ -39,6 +39,23 @@ class CompilationError(Exception):
         return self.message
 
 
+CompilationError.__init_subclass__ = None  # type: ignore[assignment]
+
+
+# Allow exception machinery to set traceback/context fields on frozen dataclass
+_orig_setattr = CompilationError.__setattr__
+
+
+def _compilation_error_setattr(self: CompilationError, name: str, value: object) -> None:
+    if name in ("__traceback__", "__context__", "__cause__", "__suppress_context__"):
+        object.__setattr__(self, name, value)
+    else:
+        _orig_setattr(self, name, value)
+
+
+CompilationError.__setattr__ = _compilation_error_setattr  # type: ignore[assignment]
+
+
 def _provider_map(analysis: Analysis) -> dict[str, Provider]:
     return {p.name: p for p in analysis.providers}
 

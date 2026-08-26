@@ -236,7 +236,7 @@ class TestCompile:
             'tf1w := timeframe { resolution: "1w" }\n'
             "ema := ema { timeframe: tf1d, period: 5 }\n"
             "swings := swings { timeframe: tf1w }\n"
-            "structure := swingstructure { timeframe: tf1w, window: 5 }",
+            "structure := swingstructure { timeframe: tf1w, window: 5, swing: swings }",
             name="demo",
         )
         graph = ASTCompiler.compile(a)
@@ -251,7 +251,7 @@ class TestCompile:
             'tf1w := timeframe { resolution: "1w" }\n'
             "ema := ema { timeframe: tf1d, period: 5 }\n"
             "swings := swings { timeframe: tf1w }\n"
-            "structure := swingstructure { timeframe: tf1w, window: 3 }",
+            "structure := swingstructure { timeframe: tf1w, window: 3, swing: swings }",
             name="demo",
         )
         graph = ASTCompiler.compile(a)

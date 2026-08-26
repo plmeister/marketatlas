@@ -38,7 +38,7 @@ tf1d := timeframe { resolution: "1d" }
 tf1w := timeframe { resolution: "1w" }
 ema := ema { timeframe: tf1d, period: 20 }
 swings := swings { timeframe: tf1w }
-structure := swingstructure { timeframe: tf1w, window: 5 }
+structure := swingstructure { timeframe: tf1w, window: 5, swing: swings }
 """
 
 
