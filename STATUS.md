@@ -86,4 +86,5 @@
 - [x] 065 — Data requirements inference (required_timeframes/required_data, DataRequirement, gap-only fetching via DataStore)
 - [x] 084a — Signal/Risk requires(): Signal ABC declares abstract requires(), PullbackSignal implements (pullback_pattern, trend, atr_14), RiskEngine implements (atr_14, sr, swing)
 - [x] 084b — Signal/risk contracts: `_derive_contract` already handles requires()/produces() from signals and risk; acceptance criteria tests added
+- [x] 084c — Compiler completeness check: CompletenessPass verifies every contract-declared analyzer input supplied as ReferenceExpression param; CompilationError frozen dataclass fix; tests updated for complete DSL bindings
 - [x] 085 — Split pipeline.py → expansion.py + lowering.py + pipeline.py (thin orchestrator)
