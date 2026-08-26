@@ -13,6 +13,20 @@ class MarketView:
     cursor: int
     window_size: int = 100
     view_timeframe: Timeframe | None = None
+    _history_cache: tuple[Candle, ...] | None = None
+    _prices_cache: tuple[float, ...] | None = None
+    _volumes_cache: tuple[float, ...] | None = None
+    _highs_cache: tuple[float, ...] | None = None
+    _lows_cache: tuple[float, ...] | None = None
+    _timestamps_cache: tuple[datetime, ...] | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "_history_cache", None)
+        object.__setattr__(self, "_prices_cache", None)
+        object.__setattr__(self, "_volumes_cache", None)
+        object.__setattr__(self, "_highs_cache", None)
+        object.__setattr__(self, "_lows_cache", None)
+        object.__setattr__(self, "_timestamps_cache", None)
 
     def _series(self) -> tuple[Candle, ...]:
         if self.view_timeframe is None:
@@ -32,12 +46,18 @@ class MarketView:
 
     @property
     def history(self) -> tuple[Candle, ...]:
+        cached = object.__getattribute__(self, "_history_cache")
+        if cached is not None:
+            return cached
         if self.view_timeframe is None:
             start = max(0, self.cursor - self.window_size)
-            return self.store.slice(start, self.cursor)
-        candles = self._series()
-        start = max(0, self.cursor - self.window_size)
-        return candles[start : self.cursor]
+            result = self.store.slice(start, self.cursor)
+        else:
+            candles = self._series()
+            start = max(0, self.cursor - self.window_size)
+            result = candles[start : self.cursor]
+        object.__setattr__(self, "_history_cache", result)
+        return result
 
     def series_through_cursor(self) -> tuple[Candle, ...]:
         if self.view_timeframe is None:
@@ -46,23 +66,48 @@ class MarketView:
 
     @property
     def prices(self) -> tuple[float, ...]:
-        return tuple(c.close for c in self.history) + (self.current.close,)
+        cached = object.__getattribute__(self, "_prices_cache")
+        if cached is not None:
+            return cached
+        result = tuple(c.close for c in self.history) + (self.current.close,)
+        object.__setattr__(self, "_prices_cache", result)
+        return result
 
     @property
     def volumes(self) -> tuple[float, ...]:
-        return tuple(c.volume for c in self.history) + (self.current.volume,)
+        cached = object.__getattribute__(self, "_volumes_cache")
+        if cached is not None:
+            return cached
+        result = tuple(c.volume for c in self.history) + (self.current.volume,)
+        object.__setattr__(self, "_volumes_cache", result)
+        return result
 
     @property
     def highs(self) -> tuple[float, ...]:
-        return tuple(c.high for c in self.history) + (self.current.high,)
+        cached = object.__getattribute__(self, "_highs_cache")
+        if cached is not None:
+            return cached
+        result = tuple(c.high for c in self.history) + (self.current.high,)
+        object.__setattr__(self, "_highs_cache", result)
+        return result
 
     @property
     def lows(self) -> tuple[float, ...]:
-        return tuple(c.low for c in self.history) + (self.current.low,)
+        cached = object.__getattribute__(self, "_lows_cache")
+        if cached is not None:
+            return cached
+        result = tuple(c.low for c in self.history) + (self.current.low,)
+        object.__setattr__(self, "_lows_cache", result)
+        return result
 
     @property
     def timestamps(self) -> tuple[datetime, ...]:
-        return tuple(c.timestamp for c in self.history) + (self.current.timestamp,)
+        cached = object.__getattribute__(self, "_timestamps_cache")
+        if cached is not None:
+            return cached
+        result = tuple(c.timestamp for c in self.history) + (self.current.timestamp,)
+        object.__setattr__(self, "_timestamps_cache", result)
+        return result
 
     @property
     def index(self) -> int:
