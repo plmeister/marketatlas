@@ -207,8 +207,6 @@ const FACTS_DATA = [
   {},
 ];
 
-const EVIDENCE_MAP = {};
-
 // --- Tests ---
 let passed = 0;
 let failed = 0;
@@ -250,7 +248,6 @@ test("constructs with all data", () => {
     TRADES,
     PULLBACKS,
     FACTS_DATA,
-    EVIDENCE_MAP,
     INITIAL_BALANCE: 10000,
     MIN_TOUCHES: 2,
   });
@@ -378,6 +375,46 @@ test("frameFacts returns facts at frame", () => {
   const f2 = model.frameFacts(2);
   assert.strictEqual(f2.PB.type, "pullback");
   assert.strictEqual(f2.PB.status, "detected");
+});
+
+test("frameFacts hydrates deduped swing facts from SWING_POINTS", () => {
+  const m = new AppModel({
+    AVAILABLE_TFS: ["1d"],
+    FACTS_DATA: [{ swing_1d: { type: "swing", swings: ["2024-01-05"], timeframe: "1d" } }],
+    SWING_POINTS: {
+      "1d": {
+        "2024-01-05": { price: 120, index: 4, type: "high", time: "2024-01-05" },
+      },
+    },
+  });
+  const facts = m.frameFacts(0);
+  const sw = facts.swing_1d;
+  assert.strictEqual(sw.type, "swing");
+  assert.strictEqual(sw.swings.length, 1);
+  assert.deepStrictEqual(sw.swings[0], {
+    price: 120,
+    index: 4,
+    type: "high",
+    time: "2024-01-05",
+  });
+});
+
+test("frameFacts passes through full-form swing facts untouched", () => {
+  const m = new AppModel({
+    AVAILABLE_TFS: ["1d"],
+    FACTS_DATA: [
+      {
+        swing_1d: {
+          type: "swing",
+          swings: [{ price: 120, index: 4, type: "high", time: "2024-01-05" }],
+          timeframe: "1d",
+        },
+      },
+    ],
+    SWING_POINTS: {},
+  });
+  const facts = m.frameFacts(0);
+  assert.strictEqual(facts.swing_1d.swings[0].price, 120);
 });
 
 test("srLevelsAt returns levels", () => {

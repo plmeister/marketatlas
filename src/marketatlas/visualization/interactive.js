@@ -2,7 +2,6 @@
 // Python renderer.
 /* global AppModel, ChartView, InfoPanelView, EvidencePanelView, SummaryBarView, TimelineBarView, PlaybackController, KeyboardController, TFController */
 // @data declarations (replaced by Python generator)
-const CANDLES = null; // @data:CANDLES
 const CANDLES_BY_TF = null; // @data:CANDLES_BY_TF
 const AVAILABLE_TFS = null; // @data:AVAILABLE_TFS
 const FRAMES = null; // @data:FRAMES
@@ -12,7 +11,7 @@ const SR_DATA = null; // @data:SR_DATA
 const TRADES = null; // @data:TRADES
 const PULLBACKS = null; // @data:PULLBACKS
 const FACTS_DATA = null; // @data:FACTS_DATA
-const EVIDENCE_MAP = null; // @data:EVIDENCE_MAP
+const SWING_POINTS = null; // @data:SWING_POINTS
 // eslint-disable-next-line no-unused-vars
 const SUMMARY = null; // @data:SUMMARY
 const INITIAL_BALANCE = null; // @data:INITIAL_BALANCE
@@ -22,7 +21,6 @@ const MAX_HOLD_DAYS = null; // @data:MAX_HOLD_DAYS
 // --- Init ---
 (function () {
   const model = new AppModel({
-    CANDLES,
     CANDLES_BY_TF,
     AVAILABLE_TFS,
     FRAMES,
@@ -32,7 +30,7 @@ const MAX_HOLD_DAYS = null; // @data:MAX_HOLD_DAYS
     TRADES,
     PULLBACKS,
     FACTS_DATA,
-    EVIDENCE_MAP,
+    SWING_POINTS,
     INITIAL_BALANCE,
     MIN_TOUCHES,
     MAX_HOLD_DAYS,

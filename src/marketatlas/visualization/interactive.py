@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from marketatlas.backtesting.backtester import BacktestResult
-from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.facts.pattern import PullbackFact
 from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import (
@@ -139,8 +138,20 @@ def _extract_pullbacks_per_frame(
     return result
 
 
-def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]]:
+def _extract_facts_per_frame(
+    frames: list[AnalysisFrame],
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """Serialize per-frame facts with swing data deduplicated.
+
+    Swing facts (``SwingFact``) carry the full accumulated pivot list on every
+    frame, which is largely static between adjacent frames. To avoid emitting
+    the same pivot dict hundreds of times, each unique pivot is stored once in
+    a returned global ``swing_points`` map keyed by timeframe, and the per-frame
+    swing fact stores only the list of pivot *times*. The JS hydrates the facts
+    back to full pivot objects via :data:`SWING_POINTS`.
+    """
     result: list[dict[str, Any]] = []
+    swing_points: dict[str, dict[str, Any]] = {}
     for frame in frames:
         facts: dict[str, Any] = {}
         for fact_type_key, fact in frame.facts.items():
@@ -189,26 +200,25 @@ def _extract_facts_per_frame(frames: list[AnalysisFrame]) -> list[dict[str, Any]
                 ]
                 facts[label] = {"type": "sr", "levels": levels}
             elif isinstance(fact, SwingFact):
-                swings = [
-                    {
+                tf = (
+                    fact_type_key.timeframe.value
+                    if fact_type_key.timeframe is not None
+                    else None
+                )
+                store = swing_points.setdefault(tf if tf is not None else "", {})
+                times: list[str] = []
+                for s in fact.swings:
+                    key = s.timestamp.strftime("%Y-%m-%d")
+                    store[key] = {
                         "price": s.price,
                         "index": s.index,
                         "type": s.type.value,
-                        "time": s.timestamp.strftime("%Y-%m-%d"),
+                        "time": key,
                     }
-                    for s in fact.swings
-                ]
-                facts[label] = {
-                    "type": "swing",
-                    "swings": swings,
-                    "timeframe": (
-                        fact_type_key.timeframe.value
-                        if fact_type_key.timeframe is not None
-                        else None
-                    ),
-                }
+                    times.append(key)
+                facts[label] = {"type": "swing", "swings": times, "timeframe": tf}
         result.append(facts)
-    return result
+    return result, swing_points
 
 
 def _extract_trades_json(tradebook: TradeBook) -> list[dict[str, Any]]:
@@ -239,22 +249,6 @@ def _extract_trades_json(tradebook: TradeBook) -> list[dict[str, Any]]:
     return result
 
 
-def _evidence_to_json(entries: tuple[EvidenceEntry, ...]) -> list[dict[str, str]]:
-    return [{"text": e.text, "level": e.level.value, "source": e.source} for e in entries]
-
-
-def _build_candle_evidence_map(
-    frames: list[AnalysisFrame],
-) -> dict[str, list[dict[str, str]]]:
-    result: dict[str, list[dict[str, str]]] = {}
-    for frame in frames:
-        key = _ts_to_time(frame.timestamp.timestamp())
-        ev = _evidence_to_json(frame.evidence)
-        if ev:
-            result[key] = ev
-    return result
-
-
 _JS_TEMPLATE_PATH = Path(__file__).parent / "interactive.js"
 _JS_BASE_DIR = Path(__file__).parent / "base"
 _BASE_MODULE_NAMES = [
@@ -269,7 +263,6 @@ _BASE_MODULE_NAMES = [
 ]
 
 _JS_PLACEHOLDERS = [
-    "CANDLES",
     "CANDLES_BY_TF",
     "AVAILABLE_TFS",
     "FRAMES",
@@ -279,7 +272,7 @@ _JS_PLACEHOLDERS = [
     "TRADES",
     "PULLBACKS",
     "FACTS_DATA",
-    "EVIDENCE_MAP",
+    "SWING_POINTS",
     "SUMMARY",
     "INITIAL_BALANCE",
     "MIN_TOUCHES",
@@ -439,15 +432,13 @@ class InteractiveRenderer:
     def render(self, output_path: Path) -> None:
         ctx = self._context
         frames = list(ctx.frames)
-        candles = [_candle_to_dict(ctx.store[i]) for i in range(len(ctx.store))]
 
         frames_json = _extract_frames_json(frames)
         ema_json = _extract_ema_per_frame(frames)
         atr_json = _extract_atr_per_frame(frames)
         sr_json = _extract_sr_per_frame(frames)
         pullbacks_json = _extract_pullbacks_per_frame(frames)
-        facts_json = _extract_facts_per_frame(frames)
-        evidence_map = _build_candle_evidence_map(frames)
+        facts_json, swing_points = _extract_facts_per_frame(frames)
         trades_json = _extract_trades_json(ctx.tradebook)
 
         candles_by_tf: dict[str, list[dict[str, Any]]] = {}
@@ -457,6 +448,7 @@ class InteractiveRenderer:
                 candles_by_tf[tf.value] = [_candle_to_dict(c) for c in tf_candles]
 
         available_tfs = [tf.value for tf in ctx.store.available_timeframes]
+        primary_candle_count = len(candles_by_tf.get(available_tfs[0], [])) if available_tfs else 0
 
         summary = ctx.tradebook.summary
         summary_json = {
@@ -472,7 +464,10 @@ class InteractiveRenderer:
         }
 
         title = ctx.title or f"{ctx.store.symbol.name} — {ctx.store.timeframe.value}"
-        meta = f"{len(candles)} candles | {len(frames)} frames | {len(ctx.tradebook.trades)} trades"
+        meta = (
+            f"{primary_candle_count} candles | {len(frames)} frames | "
+            f"{len(ctx.tradebook.trades)} trades"
+        )
 
         js_modules = "".join(
             (_JS_BASE_DIR / m).read_text(encoding="utf-8") + "\n" for m in _BASE_MODULE_NAMES
@@ -485,7 +480,6 @@ class InteractiveRenderer:
             for tf in available_tfs
         )
         data_map = {
-            "CANDLES": json.dumps(candles),
             "CANDLES_BY_TF": json.dumps(candles_by_tf),
             "AVAILABLE_TFS": json.dumps(available_tfs),
             "FRAMES": json.dumps(frames_json),
@@ -495,7 +489,7 @@ class InteractiveRenderer:
             "TRADES": json.dumps(trades_json),
             "PULLBACKS": json.dumps(pullbacks_json),
             "FACTS_DATA": json.dumps(facts_json),
-            "EVIDENCE_MAP": json.dumps(evidence_map),
+            "SWING_POINTS": json.dumps(swing_points),
             "SUMMARY": json.dumps(summary_json),
             "INITIAL_BALANCE": json.dumps(ctx.tradebook.initial_balance),
             "MIN_TOUCHES": json.dumps(ctx.min_touches),

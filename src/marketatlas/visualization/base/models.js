@@ -9,7 +9,6 @@ function _t(t) {
 class AppModel {
   constructor(data) {
     // Immutable data
-    this.candles = data.CANDLES || [];
     this.candlesByTF = data.CANDLES_BY_TF || {};
     this.availableTFs = data.AVAILABLE_TFS || [];
     this.frames = data.FRAMES || [];
@@ -19,13 +18,17 @@ class AppModel {
     this.trades = data.TRADES || [];
     this.pullbacks = data.PULLBACKS || [];
     this.factsData = data.FACTS_DATA || [];
-    this.evidenceMap = data.EVIDENCE_MAP || {};
+    this.swingPoints = data.SWING_POINTS || {};
     this.initialBalance = data.INITIAL_BALANCE || 0;
     this.minTouches = data.MIN_TOUCHES || 2;
     this.maxHoldDays = data.MAX_HOLD_DAYS || 10;
 
     // Primary timeframe (carries overlay data)
     this.tfCandleKey = this.availableTFs.length > 0 ? this.availableTFs[0] : "1d";
+
+    // Backward-compat alias: primary-tf candles (single source of truth).
+    // No separate CANDLES blob is emitted; the chart reads activeCandles.
+    this.candles = this.candlesByTF[this.tfCandleKey] || data.CANDLES || [];
 
     // Mutable state
     this.currentFrame = 0;
@@ -55,7 +58,28 @@ class AppModel {
 
   frameFacts(idx) {
     if (idx < 0 || idx >= this.factsData.length) return {};
-    return this.factsData[idx] || {};
+    const facts = this.factsData[idx] || {};
+    // Swing facts store pivot *times*; hydrate to full pivot objects once via
+    // the shared SWING_POINTS store (deduped serialization).
+    const hydrated = {};
+    for (const key in facts) {
+      if (!Object.prototype.hasOwnProperty.call(facts, key)) continue;
+      const fact = facts[key];
+      if (fact && fact.type === "swing" && Array.isArray(fact.swings) && this._canHydrate(fact)) {
+        const store = this.swingPoints[fact.timeframe || ""] || {};
+        hydrated[key] = Object.assign({}, fact, {
+          swings: fact.swings.map((t) => store[t]).filter(Boolean),
+        });
+      } else {
+        hydrated[key] = fact;
+      }
+    }
+    return hydrated;
+  }
+
+  _canHydrate(fact) {
+    // Only hydrate when swing entries are plain time strings (deduped form).
+    return fact.swings.length === 0 || typeof fact.swings[0] === "string";
   }
 
   srLevelsAt(idx) {
@@ -81,9 +105,7 @@ class AppModel {
       source: s.source,
     }));
     const rejections = (f.signal_rejections || []).map((r) => ({
-      text:
-        "Rejected: " +
-        (r.text || "no reason"),
+      text: "Rejected: " + (r.text || "no reason"),
       level: "rejection",
       source: r.source || "",
     }));
