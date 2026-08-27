@@ -1,6 +1,38 @@
-# AGENTS.md — MarketAtlas Architecture Guide
+# AGENTS.md
 
-## Module Map
+## How to run the project
+
+ALWAYS use Poetry for this project — never `uv`.
+
+```sh
+poetry run marketatlas ...     # run the CLI
+poetry run pytest ...          # run tests
+poetry run python ...          # run a script
+```
+
+Why:
+- Project is Poetry-managed (`[tool.poetry]` in `pyproject.toml`, `poetry.lock`).
+- `uv run` emits a spurious `requires-python` warning and can drop a stray
+  `uv.lock` into the repo. It is not the project's dependency manager.
+
+Do not add `uv.lock` to the repo. If a stray `uv.lock` appears, remove it.
+
+## Tests & lint
+
+```sh
+poetry run pytest -m tier1                     # critical path (~2s) — after every edit
+poetry run pytest -m "tier1 or tier2"          # integration (~6s) — before commit
+poetry run pytest                              # full Python suite (~16s) — before release
+npm test                                       # JS visualization suite
+npm run lint                                   # JS lint (pre-existing no-undef in crosshair.js)
+poetry run ruff check src/                     # Python lint
+poetry run mypy src/marketatlas/               # Python type check
+```
+
+Tiers (from `pyproject.toml`): `tier1` critical path, `tier2` integration,
+`tier3` regression.
+
+## Module map
 
 ```
 analysis/analyzers/    — compute facts from candle data (EMA, ATR, trend, S/R, swings)
@@ -16,7 +48,7 @@ strategy/              — risk engine, trade lifecycle, signal/strategy config
 visualization/         — HTML chart builder, interactive renderer, portfolio output
 ```
 
-## Data Flow
+## Data flow
 
 ```
 MarketStore → MarketView → AnalysisGraph.run(view) → {FactKey: Fact}
@@ -36,7 +68,7 @@ MarketStore → MarketView → AnalysisGraph.run(view) → {FactKey: Fact}
      └────────────────────────────────────────→ Visualization (HTML chart)
 ```
 
-## Key Abstractions
+## Key abstractions
 
 | Type | Location | Purpose |
 |------|----------|---------|
@@ -49,7 +81,7 @@ MarketStore → MarketView → AnalysisGraph.run(view) → {FactKey: Fact}
 | `TradeBook` | `strategy/tradebook.py` | Trade lifecycle: submit → fill → resolve |
 | `RiskEngine` | `strategy/risk.py` | Signal → candidate sizing + validation |
 
-## Task Recipes
+## Task recipes
 
 ### Add a new analyzer
 
@@ -77,12 +109,3 @@ MarketStore → MarketView → AnalysisGraph.run(view) → {FactKey: Fact}
 1. Edit `visualization/base/views.js` → `_hitAnnotationTooltip()`
 2. Data comes from `AnalysisFrame.evidence` / `.signal_rejections`
 3. Test: `npm test` (JS tests in `tests/js/`)
-
-### Run tests
-
-- `pytest -m tier1` — critical path (~2s), run after every edit
-- `pytest -m "tier1 or tier2"` — integration (~6s), run before commit
-- `pytest` — full suite (~16s), run before release
-- `npm test` — JS visualization tests
-- `ruff check src/` — lint
-- `mypy src/marketatlas/` — type check
