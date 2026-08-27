@@ -118,7 +118,7 @@ class RiskEngine:
         if stop_distance <= 0:
             rejection.append(
                 EvidenceEntry(
-                    text="Rejected: stop distance is zero",
+                    text=f"Rejected: stop distance is zero (entry {entry:.2f}, stop {stop:.2f})",
                     level=EvidenceLevel.WARNING,
                     source="RiskEngine",
                 )
@@ -130,7 +130,8 @@ class RiskEngine:
                 EvidenceEntry(
                     text=(
                         f"Rejected: stop distance {stop_distance / atr_val:.1f} ATR "
-                        f"exceeds max {self._max_stop_atr:.1f} ATR"
+                        f"exceeds max {self._max_stop_atr:.1f} ATR "
+                        f"(entry {entry:.2f}, stop {stop:.2f})"
                     ),
                     level=EvidenceLevel.WARNING,
                     source="RiskEngine",
@@ -138,13 +139,22 @@ class RiskEngine:
             )
             return None, tuple(rejection)
 
-        rr_ratio = self._find_valid_rr(signal.direction, entry, stop_distance, sr_fact, atr_val)
-        if rr_ratio is None:
+        found = self._find_valid_rr(signal.direction, entry, stop_distance, sr_fact, atr_val)
+        if found is None:
+            blockers = self._blocking_sr(signal.direction, entry, stop_distance, sr_fact, atr_val)
+            blocks = (
+                ", ".join(f"{lv.type}@{lv.price:.2f}(x{lv.strength})" for lv in blockers)
+                if blockers
+                else "none"
+            )
             rejection.append(
                 EvidenceEntry(
                     text=(
                         f"Rejected: no valid RR in [{self._min_rr}, {self._max_rr}] "
-                        f"without crossing S/R"
+                        f"without crossing S/R "
+                        f"(entry {entry:.2f}, stop {stop:.2f}, "
+                        f"stop {stop_distance / atr_val:.1f} ATR; "
+                        f"blocking S/R: {blocks})"
                     ),
                     level=EvidenceLevel.WARNING,
                     source="RiskEngine",
@@ -152,6 +162,7 @@ class RiskEngine:
             )
             return None, tuple(rejection)
 
+        rr_ratio, _ = found
         target = (
             entry + rr_ratio * stop_distance
             if signal.direction == TrendDirection.BULLISH
@@ -265,7 +276,7 @@ class RiskEngine:
         stop_distance: float,
         sr_fact: SRFact,
         atr: float,
-    ) -> float | None:
+    ) -> tuple[float, tuple[SRLevel, ...]] | None:
         for rr in _frange(self._min_rr, self._max_rr + 0.001, 0.1):
             if rr <= 0:
                 continue
@@ -275,12 +286,38 @@ class RiskEngine:
                 target = entry - rr * stop_distance
 
             if not self._avoid_srxing:
-                return rr
+                return rr, tuple()
 
-            if self._target_clear(direction, entry, target, sr_fact.levels, atr):
-                return rr
+            bad, _ = self._target_clear(direction, entry, target, sr_fact.levels, atr)
+            if not bad:
+                return rr, tuple()
 
         return None
+
+    def _blocking_sr(
+        self,
+        direction: TrendDirection,
+        entry: float,
+        stop_distance: float,
+        sr_fact: SRFact,
+        atr: float,
+    ) -> tuple[SRLevel, ...]:
+        """S/R levels that block every target across the RR range."""
+        if not self._avoid_srxing:
+            return ()
+        ordered: dict[float, SRLevel] = {}
+        for rr in _frange(self._min_rr, self._max_rr + 0.001, 0.1):
+            if rr <= 0:
+                continue
+            target = (
+                entry + rr * stop_distance
+                if direction == TrendDirection.BULLISH
+                else entry - rr * stop_distance
+            )
+            _, hits = self._target_clear(direction, entry, target, sr_fact.levels, atr)
+            for lv in hits:
+                ordered[lv.price] = lv
+        return tuple(sorted(ordered.values(), key=lambda lv: lv.price))
 
     def _target_clear(
         self,
@@ -289,15 +326,17 @@ class RiskEngine:
         target: float,
         levels: tuple[SRLevel, ...],
         atr: float,
-    ) -> bool:
+    ) -> tuple[bool, tuple[SRLevel, ...]]:
         buffer = self._sr_buffer_atr * atr
         lo, hi = min(entry, target), max(entry, target)
+        hits: list[SRLevel] = []
         for level in levels:
             if lo < level.price < hi:
-                return False
+                hits.append(level)
+                continue
             if abs(level.price - target) < buffer:
-                return False
-        return True
+                hits.append(level)
+        return bool(hits), tuple(hits)
 
     def _crosses_sr(
         self,

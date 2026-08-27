@@ -345,7 +345,14 @@ class TestRiskEngine:
             _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
         )
         assert candidate is None
-        assert any("RR" in e.text for e in evidence)
+        rr_text = next(e.text for e in evidence if "RR" in e.text)
+        # Must carry entry/stop so the rejection can be manually verified.
+        assert "entry " in rr_text
+        assert "stop " in rr_text
+        assert "ATR" in rr_text
+        # Must list the S/R level(s) that block a valid target.
+        assert "blocking S/R:" in rr_text
+        assert "resistance@" in rr_text
 
     def test_max_hold_days_property(self) -> None:
         engine = RiskEngine(max_hold_days=10)
