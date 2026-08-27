@@ -567,10 +567,12 @@ class TestBacktesterFrameRecording:
             risk_engine=RiskEngine(atr_key="atr_missing", sr_key="sr_missing"),
         )
         frames = Backtester(store, bundle, window_size=50).run().frames
-        assert any(f.risk_evidence for f in frames)
-        rejected = [f for f in frames if f.risk_evidence]
+        # Risk-engine rejections are surfaced in signal_rejections so the UI
+        # shows why the signal did not become a trade.
+        assert any(f.signal_rejections for f in frames)
+        rejected = [f for f in frames if f.signal_rejections]
         assert all(
-            any(e.level == EvidenceLevel.WARNING for e in f.risk_evidence)
+            any(e.level == EvidenceLevel.WARNING for e in f.signal_rejections)
             for f in rejected
         )
 
@@ -582,6 +584,34 @@ class TestBacktesterFrameRecording:
             e.level == EvidenceLevel.WARNING for e in f.risk_evidence
         )]
         assert placed
+
+    def test_all_risk_rejections_surface_not_just_last(self) -> None:
+        """Every signal filtered by the risk engine records its reason.
+
+        Previously only the final failing signal's rejection survived (earlier
+        ones were overwritten in the loop). Now each unplaced signal's
+        rejection is merged into signal_rejections.
+        """
+        store = _make_store(100)
+        bundle = _make_signal_bundle(
+            signals=[
+                ("strat_a", self._signal()),
+                ("strat_b", self._signal()),
+            ],
+            risk_engine=RiskEngine(atr_key="atr_missing", sr_key="sr_missing"),
+        )
+        frames = Backtester(store, bundle, window_size=50).run().frames
+        rejected = [f for f in frames if f.signal_rejections]
+        assert rejected
+        # Risk-engine rejection reason surfaces on the frame.
+        reasons = [e.text for f in rejected for e in f.signal_rejections]
+        assert any("ATR" in t for t in reasons)
+        # Both unplaced signals record their rejection, not just the last.
+        assert sum(1 for t in reasons if "ATR" in t) >= 2
+        assert all(
+            any(e.level == EvidenceLevel.WARNING for e in f.signal_rejections)
+            for f in rejected
+        )
 
 
 class TestBacktestResultPickle:

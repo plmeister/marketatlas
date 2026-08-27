@@ -84,7 +84,7 @@ class Backtester:
                 view, facts
             )
             signals = tuple(signal for _, signal in emitted)
-            rejection_entries = tuple(
+            rejection_entries = list(
                 e for _, sig in signal_rejections for e in sig.rejections
             )
 
@@ -95,13 +95,14 @@ class Backtester:
             if tradebook.has_no_open_trade and not tradebook.has_pending_order:
                 for name, signal in emitted:
                     risk_engine = self._bundle.get_risk_engine(name)
-                    candidate, risk_evidence = risk_engine.evaluate(
+                    candidate, evidence = risk_engine.evaluate(
                         signal,
                         facts,
                         view,
                         tradebook.balance,
                     )
                     if candidate is not None:
+                        risk_evidence = evidence
                         tradebook.submit_order(
                             candidate,
                             signal,
@@ -110,6 +111,11 @@ class Backtester:
                             instrument=str(self._store.symbol),
                         )
                         break
+                    # Signal passed the signal layer but the risk engine
+                    # filtered it out (no valid RR, S/R crossing, stop too
+                    # wide, missing ATR/SR, ...). Surface the reason so users
+                    # can see why the signal did not become a trade.
+                    rejection_entries.extend(evidence)
 
             frame = AnalysisFrame(
                 timestamp=view.current.timestamp,
@@ -118,7 +124,7 @@ class Backtester:
                 evidence=evidence,
                 signals=signals,
                 risk_evidence=risk_evidence,
-                signal_rejections=rejection_entries,
+                signal_rejections=tuple(rejection_entries),
             )
             frame_store.append(frame)
 
