@@ -194,8 +194,9 @@ class TestFetchInstrumentData:
         )
 
         assert set(data.timeframes) == {Timeframe.D1, Timeframe.W1}
-        assert data.resampled == ()
-        assert provider.fetch.call_count == 2
+        # W1 resampled from D1 (no network call needed)
+        assert data.resampled == ((Timeframe.W1, Timeframe.D1),)
+        assert provider.fetch.call_count == 1
         assert (tmp_path / "store" / "GBPUSD.1d.parquet").exists()
         assert (tmp_path / "store" / "GBPUSD.1w.parquet").exists()
         for call in provider.fetch.call_args_list:
@@ -253,7 +254,8 @@ class TestFetchInstrumentData:
         fetch_instrument_data(
             provider, datastore, spec.instruments[0], timeframes, start, end, Timeframe.D1
         )
-        assert provider.fetch.call_count == 2
+        # W1 resampled from D1, so only D1 fetched natively
+        assert provider.fetch.call_count == 1
 
         provider.fetch.reset_mock()
         data = fetch_instrument_data(
@@ -308,7 +310,9 @@ class TestFetchInstrumentData:
             datetime(2024, 6, 1, tzinfo=UTC),
             Timeframe.D1,
         )
-        assert set(data.timeframes) == {Timeframe.D1}
+        # W1 resampled from D1 (native fetch failure is irrelevant)
+        assert set(data.timeframes) == {Timeframe.D1, Timeframe.W1}
+        assert data.resampled == ((Timeframe.W1, Timeframe.D1),)
 
     def test_chain_unsupported_timeframe_falls_back_to_next(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -348,7 +352,7 @@ class TestFetchInstrumentData:
     def test_unsupported_timeframe_log_names_provider_tf_reason(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Bare provider rejecting a TF logs provider + timeframe + reason, then resamples."""
+        """Bare provider rejecting a TF resamples from higher-res; no error logged."""
         registry = InstrumentRegistry()
         registry.add(_make_instruments()[0])
         _write_registry(tmp_path, _make_instruments())
@@ -375,7 +379,5 @@ class TestFetchInstrumentData:
 
         assert set(data.timeframes) == {Timeframe.D1, Timeframe.W1}
         assert data.resampled == ((Timeframe.W1, Timeframe.D1),)
-        err = capsys.readouterr().err
-        assert "1w" in err
-        assert "unsupported by MagicMock" in err
-        assert "Unsupported timeframe" in err
+        # resample from D1 succeeds, so no unsupported error in stderr
+        assert capsys.readouterr().err == ""

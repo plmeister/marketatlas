@@ -557,7 +557,7 @@ class TestRunCommand:
             str(output_html),
         )
 
-        assert mock_provider.fetch.call_count == 2
+        assert mock_provider.fetch.call_count == 1  # D1 only; W1 resampled from D1
 
     @patch("marketatlas.visualization.interactive.InteractiveRenderer")
     @patch("marketatlas.backtesting.backtester.Backtester")
@@ -633,7 +633,8 @@ class TestRunCommand:
             str(output_html),
         )
 
-        assert mock_provider.fetch.call_count == 2
+        # W1 resampled from D1 before native fetch attempted
+        assert mock_provider.fetch.call_count == 1
 
     @patch("marketatlas.visualization.interactive.InteractiveRenderer")
     @patch("marketatlas.backtesting.backtester.Backtester")
@@ -1289,7 +1290,7 @@ class TestRunPortfolio:
             "",
         )
 
-        assert provider.fetch.call_count == 4  # D1 native + W1 attempt per instrument
+        assert provider.fetch.call_count == 2  # D1 per instrument; W1 resampled from D1
         captured = capsys.readouterr()
         assert "resampled from 1d" in captured.out
         assert (data_dir / "GBPUSD.1w.parquet").exists()
