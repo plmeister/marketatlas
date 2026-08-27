@@ -16,7 +16,7 @@ from marketatlas.facts.structural import (
     SwingType,
     TrendDirection,
 )
-from marketatlas.strategy.risk import RiskEngine
+from marketatlas.strategy.risk import _fmt_p, RiskEngine
 from marketatlas.strategy.signals import TradeSignal
 
 pytestmark = pytest.mark.tier1
@@ -353,6 +353,27 @@ class TestRiskEngine:
         # Must list the S/R level(s) that block a valid target.
         assert "blocking S/R:" in rr_text
         assert "resistance@" in rr_text
+
+    def test_no_valid_rr_rejects_with_sub_price_precision(self) -> None:
+        """Rejections carry >2dp for low-priced instruments (forex-like)."""
+        candles = [(1.10450, 1.10460, 1.10440, 1.10455, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(min_rr=2.0, max_rr=4.0, slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=1.1090, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(0.001), sr=sr), view
+        )
+        assert candidate is None
+        rr_text = next(e.text for e in evidence if "RR" in e.text)
+        assert "1.1045" in rr_text, rr_text
+
+    def test_fmt_p_precision(self) -> None:
+        assert _fmt_p(60234.567) == "60234.57"
+        assert _fmt_p(1.10456) == "1.1046"
+        assert _fmt_p(0.01234567) == "0.012346"
+        assert _fmt_p(1.1) == "1.1000"
+        assert _fmt_p(100.0) == "100.00"
 
     def test_max_hold_days_property(self) -> None:
         engine = RiskEngine(max_hold_days=10)

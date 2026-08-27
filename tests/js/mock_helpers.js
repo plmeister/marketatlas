@@ -203,6 +203,7 @@ function installBrowserMocks() {
     if (idx === -1) return raw;
     let trimmed = raw.replace(/0+$/, "");
     if (trimmed.charAt(trimmed.length - 1) === ".") trimmed = trimmed.slice(0, -1);
+    if (trimmed.indexOf(".") === -1) return x.toFixed(dp);
     if (trimmed.slice(idx + 1).length < 2) return x.toFixed(dp);
     return trimmed;
   };

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
@@ -14,6 +16,26 @@ from marketatlas.facts.structural import (
 )
 from marketatlas.strategy.signals import TradeSignal, resolve_fact_key
 from marketatlas.strategy.trade import TradeCandidate
+
+
+def _fmt_p(value: float) -> str:
+    """Magnitude-aware price formatting (mirrors JS _fmtP in models.js)."""
+    if value is None or value != value or not math.isfinite(value):
+        return ""
+    ax = abs(value)
+    dp = 2 if ax >= 100 else 4 if ax >= 1 else 6
+    raw = f"{value:.{dp}f}"
+    if "." not in raw:
+        return raw
+    trimmed = raw.rstrip("0")
+    if trimmed.endswith("."):
+        trimmed = trimmed[:-1]
+    if "." not in trimmed:
+        return f"{value:.{dp}f}"
+    frac = trimmed.split(".", 1)[1]
+    if len(frac) < 2:
+        return f"{value:.{dp}f}"
+    return trimmed
 
 
 class RiskEngine:
@@ -118,7 +140,10 @@ class RiskEngine:
         if stop_distance <= 0:
             rejection.append(
                 EvidenceEntry(
-                    text=f"Rejected: stop distance is zero (entry {entry:.2f}, stop {stop:.2f})",
+                    text=(
+                        "Rejected: stop distance is zero "
+                        f"(entry {_fmt_p(entry)}, stop {_fmt_p(stop)})"
+                    ),
                     level=EvidenceLevel.WARNING,
                     source="RiskEngine",
                 )
@@ -131,7 +156,7 @@ class RiskEngine:
                     text=(
                         f"Rejected: stop distance {stop_distance / atr_val:.1f} ATR "
                         f"exceeds max {self._max_stop_atr:.1f} ATR "
-                        f"(entry {entry:.2f}, stop {stop:.2f})"
+                        f"(entry {_fmt_p(entry)}, stop {_fmt_p(stop)})"
                     ),
                     level=EvidenceLevel.WARNING,
                     source="RiskEngine",
@@ -143,7 +168,7 @@ class RiskEngine:
         if found is None:
             blockers = self._blocking_sr(signal.direction, entry, stop_distance, sr_fact, atr_val)
             blocks = (
-                ", ".join(f"{lv.type}@{lv.price:.2f}(x{lv.strength})" for lv in blockers)
+                ", ".join(f"{lv.type}@{_fmt_p(lv.price)}(x{lv.strength})" for lv in blockers)
                 if blockers
                 else "none"
             )
@@ -152,7 +177,7 @@ class RiskEngine:
                     text=(
                         f"Rejected: no valid RR in [{self._min_rr}, {self._max_rr}] "
                         f"without crossing S/R "
-                        f"(entry {entry:.2f}, stop {stop:.2f}, "
+                        f"(entry {_fmt_p(entry)}, stop {_fmt_p(stop)}, "
                         f"stop {stop_distance / atr_val:.1f} ATR; "
                         f"blocking S/R: {blocks})"
                     ),
@@ -173,12 +198,12 @@ class RiskEngine:
             crossing = [
                 lv for lv in sr_fact.levels if min(entry, target) < lv.price < max(entry, target)
             ]
-            crossing_desc = ", ".join(f"{lv.type} at {lv.price:.2f}" for lv in crossing)
+            crossing_desc = ", ".join(f"{lv.type} at {_fmt_p(lv.price)}" for lv in crossing)
             rejection.append(
                 EvidenceEntry(
                     text=(
                         f"Rejected: S/R crossing ({crossing_desc}) "
-                        f"between entry {entry:.2f} and target {target:.2f}"
+                        f"between entry {_fmt_p(entry)} and target {_fmt_p(target)}"
                     ),
                     level=EvidenceLevel.WARNING,
                     source="RiskEngine",
@@ -193,15 +218,15 @@ class RiskEngine:
         evidence: list[EvidenceEntry] = [
             EvidenceEntry(
                 text=(
-                    f"Stop: {stop:.2f} "
+                    f"Stop: {_fmt_p(stop)} "
                     f"({stop_distance / atr_val:.1f} ATR below entry, "
-                    f"beyond last swing at {stop_anchor:.2f})"
+                    f"beyond last swing at {_fmt_p(stop_anchor)})"
                 ),
                 level=EvidenceLevel.INFO,
                 source="RiskEngine",
             ),
             EvidenceEntry(
-                text=f"Target: {target:.2f} (RR {rr_ratio:.1f})",
+                text=f"Target: {_fmt_p(target)} (RR {rr_ratio:.1f})",
                 level=EvidenceLevel.INFO,
                 source="RiskEngine",
             ),

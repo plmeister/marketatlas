@@ -5,6 +5,20 @@ function _updateAutoBtn(active) {
   if (btn) btn.classList.toggle("active", active);
 }
 
+function _pricePrecision(m) {
+  let has = false,
+    maxAx = 0;
+  Object.values(m.candlesByTF || {}).forEach((cs) => {
+    cs.forEach((c) => {
+      const ax = Math.max(Math.abs(c.low), Math.abs(c.high));
+      if (ax > maxAx) maxAx = ax;
+      has = true;
+    });
+  });
+  if (!has) return 2;
+  return maxAx >= 100 ? 2 : maxAx >= 1 ? 4 : 6;
+}
+
 function chartOpts(cv, container, height) {
   return {
     width: container.clientWidth,
@@ -35,6 +49,11 @@ function buildChart(cv, tf) {
     borderDownColor: "#ef4444",
     wickUpColor: "#22c55e",
     wickDownColor: "#ef4444",
+    priceFormat: {
+      type: "price",
+      precision: _pricePrecision(m),
+      minMove: 1 / Math.pow(10, _pricePrecision(m)),
+    },
   });
   cv.candleSeries.setData(candles);
 
@@ -242,6 +261,7 @@ function setVisibleTimeRange(cv, range) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     chartOpts,
+    _pricePrecision,
     buildChart,
     destroyCharts,
     updateCandles,

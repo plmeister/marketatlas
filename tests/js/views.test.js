@@ -672,5 +672,18 @@ test("timeline cursor moves to frame time", () => {
   assert.ok(parseFloat(cursor.style.left) > 0);
 });
 
+// --- _pricePrecision ---
+test("_pricePrecision uses 6dp for sub-1 instruments", () => {
+  const { _pricePrecision } = require("../../src/marketatlas/visualization/base/views/chart.js");
+  const m = { candlesByTF: { "1d": [{ low: 0.64698, high: 0.65003 }] } };
+  assert.strictEqual(_pricePrecision(m), 6);
+});
+
+test("_pricePrecision uses 2dp for large instruments", () => {
+  const { _pricePrecision } = require("../../src/marketatlas/visualization/base/views/chart.js");
+  const m = { candlesByTF: { "1d": [{ low: 60000, high: 61000 }] } };
+  assert.strictEqual(_pricePrecision(m), 2);
+});
+
 console.log(`\n${passed} passed, ${failed} failed, ${passed + failed} total\n`);
 process.exit(failed > 0 ? 1 : 0);

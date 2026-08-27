@@ -18,6 +18,7 @@ function _fmtP(x) {
   if (idx === -1) return raw;
   var trimmed = raw.replace(/0+$/, "");
   if (trimmed.charAt(trimmed.length - 1) === ".") trimmed = trimmed.slice(0, -1);
+  if (trimmed.indexOf(".") === -1) return x.toFixed(dp);
   var frac = trimmed.slice(idx + 1);
   if (frac.length < 2) return x.toFixed(dp);
   return trimmed;
