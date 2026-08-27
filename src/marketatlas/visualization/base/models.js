@@ -6,6 +6,23 @@ function _t(t) {
   return Date.parse(t);
 }
 
+// Format a price with magnitude-aware precision (sigfig-like), trimming
+// trailing zeros while keeping a sensible floor. 2dp for large prices
+// (stocks/crypto), 4dp for mid (forex), 6dp for sub-1 instruments.
+function _fmtP(x) {
+  if (x === null || x === undefined || !isFinite(x)) return "";
+  var ax = Math.abs(x);
+  var dp = ax >= 100 ? 2 : ax >= 1 ? 4 : 6;
+  var raw = x.toFixed(dp);
+  var idx = raw.indexOf(".");
+  if (idx === -1) return raw;
+  var trimmed = raw.replace(/0+$/, "");
+  if (trimmed.charAt(trimmed.length - 1) === ".") trimmed = trimmed.slice(0, -1);
+  var frac = trimmed.slice(idx + 1);
+  if (frac.length < 2) return x.toFixed(dp);
+  return trimmed;
+}
+
 class AppModel {
   constructor(data) {
     // Immutable data
@@ -310,8 +327,9 @@ class AppModel {
 
 // Export for Node tests, attach to window for browser
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { AppModel, _t };
+  module.exports = { AppModel, _t, _fmtP };
 } else {
   window.AppModel = AppModel;
   window._t = _t;
+  window._fmtP = _fmtP;
 }

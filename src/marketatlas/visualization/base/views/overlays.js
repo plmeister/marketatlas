@@ -32,7 +32,7 @@ function updateSR(cv, idx) {
       lineWidth,
       lineStyle: LightweightCharts.LineStyle.Dashed,
       axisLabelVisible: true,
-      title: (isSupport ? "S" : "R") + " " + lv.price.toFixed(0) + " (" + lv.strength + ")",
+      title: (isSupport ? "S" : "R") + " " + _fmtP(lv.price) + " (" + lv.strength + ")",
     });
     cv.srPriceLines.push(pl);
     cv._srHits.push({ price: lv.price, strength: lv.strength, type: lv.type });

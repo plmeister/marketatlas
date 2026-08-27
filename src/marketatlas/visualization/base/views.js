@@ -76,23 +76,49 @@ class ChartView {
   }
 
   // --- Frame-level updates ---
-  updateCandles(idx) { _chart.updateCandles(this, idx); }
-  highlightCandle(idx) { _chart.highlightCandle(this, idx); }
-  updateVolume(idx) { _chart.updateVolume(this, idx); }
-  updateATR(idx) { _chart.updateATR(this, idx); }
-  setCrosshair(idx) { _chart.setCrosshair(this, idx); }
-  scrollToFrame(idx) { _chart.scrollToFrame(this, idx); }
-  resize() { _chart.resize(this); }
-  getVisibleTimeRange() { return _chart.getVisibleTimeRange(this); }
-  setVisibleTimeRange(range) { _chart.setVisibleTimeRange(this, range); }
+  updateCandles(idx) {
+    _chart.updateCandles(this, idx);
+  }
+  highlightCandle(idx) {
+    _chart.highlightCandle(this, idx);
+  }
+  updateVolume(idx) {
+    _chart.updateVolume(this, idx);
+  }
+  updateATR(idx) {
+    _chart.updateATR(this, idx);
+  }
+  setCrosshair(idx) {
+    _chart.setCrosshair(this, idx);
+  }
+  scrollToFrame(idx) {
+    _chart.scrollToFrame(this, idx);
+  }
+  resize() {
+    _chart.resize(this);
+  }
+  getVisibleTimeRange() {
+    return _chart.getVisibleTimeRange(this);
+  }
+  setVisibleTimeRange(range) {
+    _chart.setVisibleTimeRange(this, range);
+  }
 
   // --- Overlays ---
-  updateEMAs(idx) { _overlays.updateEMAs(this, idx); }
-  updateSR(idx) { _overlays.updateSR(this, idx); }
-  updateZigzag(idx) { _overlays.updateZigzag(this, idx); }
+  updateEMAs(idx) {
+    _overlays.updateEMAs(this, idx);
+  }
+  updateSR(idx) {
+    _overlays.updateSR(this, idx);
+  }
+  updateZigzag(idx) {
+    _overlays.updateZigzag(this, idx);
+  }
 
   // --- Markers ---
-  updateMarkers(idx) { _markers.updateMarkers(this, idx); }
+  updateMarkers(idx) {
+    _markers.updateMarkers(this, idx);
+  }
 
   // --- Trades ---
   updateTrades(idx) {
@@ -144,7 +170,7 @@ class InfoPanelView {
           '<div class="row"><span class="label">' +
           label +
           '</span><span class="value">' +
-          candle[key].toFixed(2) +
+          _fmtP(candle[key]) +
           "</span></div>";
       });
       html +=
@@ -152,8 +178,6 @@ class InfoPanelView {
         candle.volume.toFixed(0) +
         "</span></div>";
     }
-
-    // Balance
     let bal = model.initialBalance;
     model.trades.forEach((t) => {
       if (t.exit_time !== null && t.exit_time <= frameTime && t.pnl !== null) bal += t.pnl;
@@ -171,14 +195,14 @@ class InfoPanelView {
           '<div class="row"><span class="label">' +
           key +
           '</span><span class="value">' +
-          val.value.toFixed(2) +
+          _fmtP(val.value) +
           "</span></div>";
       } else if (val.type === "atr") {
         html +=
           '<div class="row"><span class="label">' +
           key +
           '</span><span class="value">' +
-          val.value.toFixed(2) +
+          _fmtP(val.value) +
           "</span></div>";
       } else if (val.type === "trend") {
         const cls =
@@ -206,7 +230,7 @@ class InfoPanelView {
           '">' +
           (lv.type === "support" ? "S" : "R") +
           '</span><span class="value">' +
-          lv.price.toFixed(0) +
+          _fmtP(lv.price) +
           " (" +
           lv.strength +
           ")</span></div>";
@@ -224,15 +248,15 @@ class InfoPanelView {
           "</span></div>";
         html +=
           '<div class="row"><span class="label">Entry</span><span class="value">' +
-          t.entry.toFixed(2) +
+          _fmtP(t.entry) +
           "</span></div>";
         html +=
           '<div class="row"><span class="label">Stop</span><span class="value">' +
-          t.stop.toFixed(2) +
+          _fmtP(t.stop) +
           "</span></div>";
         html +=
           '<div class="row"><span class="label">Target</span><span class="value">' +
-          t.target.toFixed(2) +
+          _fmtP(t.target) +
           "</span></div>";
         html +=
           '<div class="row"><span class="label">Size</span><span class="value">' +

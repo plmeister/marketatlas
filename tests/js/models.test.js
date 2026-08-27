@@ -1,5 +1,5 @@
 const assert = require("assert");
-const { AppModel, _t } = require("../../src/marketatlas/visualization/base/models.js");
+const { AppModel, _t, _fmtP } = require("../../src/marketatlas/visualization/base/models.js");
 
 // --- Sample data ---
 const CANDLES = [
@@ -615,6 +615,30 @@ test("_t parses ISO date string to ms timestamp", () => {
 test("_t handles ISO datetime string", () => {
   const ts = _t("2024-01-01T00:00:00");
   assert.strictEqual(ts, Date.parse("2024-01-01"));
+});
+
+// --- _fmtP price precision ---
+test("_fmtP keeps 2dp for large prices", () => {
+  assert.strictEqual(_fmtP(60234.567), "60234.57");
+});
+
+test("_fmtP uses 4dp for mid-range prices", () => {
+  assert.strictEqual(_fmtP(1.10456), "1.1046");
+});
+
+test("_fmtP uses 6dp for sub-1 prices", () => {
+  assert.strictEqual(_fmtP(0.01234567), "0.012346");
+});
+
+test("_fmtP trims trailing zeros but keeps >=2dp", () => {
+  assert.strictEqual(_fmtP(1.1), "1.1000");
+  assert.strictEqual(_fmtP(0.05), "0.05");
+  assert.strictEqual(_fmtP(100.0), "100.00");
+});
+
+test("_fmtP handles null/undefined", () => {
+  assert.strictEqual(_fmtP(null), "");
+  assert.strictEqual(_fmtP(undefined), "");
 });
 
 console.log(`\n${passed} passed, ${failed} failed, ${passed + failed} total\n`);

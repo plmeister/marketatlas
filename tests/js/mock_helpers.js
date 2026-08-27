@@ -194,6 +194,18 @@ function createDocumentMock() {
 
 function installBrowserMocks() {
   global._t = (t) => Date.parse(t);
+  global._fmtP = (x) => {
+    if (x === null || x === undefined || !isFinite(x)) return "";
+    const ax = Math.abs(x);
+    const dp = ax >= 100 ? 2 : ax >= 1 ? 4 : 6;
+    const raw = x.toFixed(dp);
+    const idx = raw.indexOf(".");
+    if (idx === -1) return raw;
+    let trimmed = raw.replace(/0+$/, "");
+    if (trimmed.charAt(trimmed.length - 1) === ".") trimmed = trimmed.slice(0, -1);
+    if (trimmed.slice(idx + 1).length < 2) return x.toFixed(dp);
+    return trimmed;
+  };
   global.window = global.window || {};
   global.LightweightCharts = {
     CrosshairMode: { Normal: 0 },

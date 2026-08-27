@@ -74,7 +74,7 @@ function hitAnnotationTooltip(cv, param) {
         '">' +
         (sw.type === "high" ? "SWING HIGH" : "SWING LOW") +
         "</div>" +
-        row("Price", sw.price.toFixed(2)) +
+        row("Price", _fmtP(sw.price)) +
         (sw.index !== undefined ? row("Bar", sw.index) : "") +
         (info ? '<div style="margin-top:4px;border-top:1px solid #1e293b">' + info + "</div>" : "")
       );
@@ -89,7 +89,7 @@ function hitAnnotationTooltip(cv, param) {
       if (pbf.strength !== undefined && pbf.strength !== null)
         html += row("Strength", pbf.strength.toFixed(2));
       if (pbf.swing_pattern && pbf.swing_pattern.length)
-        html += row("Pattern", pbf.swing_pattern.map((p) => p.toFixed(2)).join(" \u2192 "));
+        html += row("Pattern", pbf.swing_pattern.map((p) => _fmtP(p)).join(" \u2192 "));
     }
     const info = _frameInfoBlock(cv, param.time);
     if (info) html += '<div style="margin-top:4px;border-top:1px solid #1e293b">' + info + "</div>";
@@ -121,7 +121,7 @@ function hitAnnotationTooltip(cv, param) {
         '">' +
         (best.type === "support" ? "SUPPORT" : "RESISTANCE") +
         "</div>" +
-        row("Price", best.price.toFixed(2)) +
+        row("Price", _fmtP(best.price)) +
         row("Strength", best.strength + " touch" + (best.strength === 1 ? "" : "es"))
       );
     }
@@ -148,7 +148,8 @@ function ensureTooltipEl(cv) {
     borderRadius: "4px",
     padding: "6px 8px",
     font: "11px/1.5 ui-monospace, Menlo, monospace",
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
+    maxWidth: "320px",
   });
   cv.containers.main.appendChild(el);
   cv._tooltipEl = el;
@@ -184,9 +185,9 @@ function showTradeTooltip(cv, trade, point) {
       (isBull ? "LONG" : "SHORT") +
       (trade.source ? " \u00b7 " + trade.source : "") +
       "</div>" +
-      row("Entry", trade.entry.toFixed(2)) +
-      row("Stop", trade.stop.toFixed(2)) +
-      row("Target", trade.target.toFixed(2)) +
+      row("Entry", _fmtP(trade.entry)) +
+      row("Stop", _fmtP(trade.stop)) +
+      row("Target", _fmtP(trade.target)) +
       row("R:R", (trade.rr_ratio || 0).toFixed(2)) +
       row("Risk", "$" + (trade.risk_amount || 0).toFixed(2)) +
       row("Win", "$" + ((trade.rr_ratio || 0) * (trade.risk_amount || 0)).toFixed(2)) +
