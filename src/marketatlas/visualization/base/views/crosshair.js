@@ -24,6 +24,37 @@ function onCrosshairMove(cv, param) {
   hideTradeTooltip(cv);
 }
 
+function _frameInfoBlock(cv, time) {
+  const frame = frameAtTime(cv, time);
+  if (!frame) return "";
+  const sigs = frame.signals || [];
+  const risk = frame.risk_evidence || [];
+  const rejections = frame.signal_rejections || [];
+  if (!sigs.length && !risk.length && !rejections.length) return "";
+  const row = (label, value) =>
+    '<div><span style="color:#94a3b8">' + label + "</span> " + value + "</div>";
+  let html = "";
+  sigs.forEach((s) => {
+    html +=
+      '<div style="font-weight:700;color:#a855f7">SIGNAL ' +
+      s.direction.toUpperCase() +
+      "</div>" +
+      row("Confidence", (s.confidence || 0).toFixed(2)) +
+      row("Source", s.source || "");
+  });
+  rejections.forEach((r) => {
+    html +=
+      '<div style="font-weight:700;color:#64748b;text-decoration:line-through">REJECTED</div>' +
+      '<div style="color:#94a3b8;font-size:10px">' +
+      (r.text || "no reason") +
+      "</div>";
+  });
+  risk.forEach((r) => {
+    html += '<div style="margin-top:2px;color:#e94560">' + r.text + "</div>";
+  });
+  return html;
+}
+
 function hitAnnotationTooltip(cv, param) {
   const row = (label, value) =>
     '<div><span style="color:#94a3b8">' + label + "</span> " + value + "</div>";
@@ -36,6 +67,7 @@ function hitAnnotationTooltip(cv, param) {
   for (const sf of swingFacts) {
     for (const sw of sf.swings) {
       if (sw.time !== param.time) continue;
+      const info = _frameInfoBlock(cv, param.time);
       return (
         '<div style="font-weight:700;color:' +
         (sw.type === "high" ? "#f59e0b" : "#3b82f6") +
@@ -43,7 +75,8 @@ function hitAnnotationTooltip(cv, param) {
         (sw.type === "high" ? "SWING HIGH" : "SWING LOW") +
         "</div>" +
         row("Price", sw.price.toFixed(2)) +
-        (sw.index !== undefined ? row("Bar", sw.index) : "")
+        (sw.index !== undefined ? row("Bar", sw.index) : "") +
+        (info ? '<div style="margin-top:4px;border-top:1px solid #1e293b">' + info + "</div>" : "")
       );
     }
   }
@@ -58,36 +91,15 @@ function hitAnnotationTooltip(cv, param) {
       if (pbf.swing_pattern && pbf.swing_pattern.length)
         html += row("Pattern", pbf.swing_pattern.map((p) => p.toFixed(2)).join(" \u2192 "));
     }
+    const info = _frameInfoBlock(cv, param.time);
+    if (info) html += '<div style="margin-top:4px;border-top:1px solid #1e293b">' + info + "</div>";
     return html;
   }
 
   const frame = frameAtTime(cv, param.time);
   if (frame) {
-    const sigs = frame.signals || [];
-    const risk = frame.risk_evidence || [];
-    const rejections = frame.signal_rejections || [];
-    if (sigs.length || risk.length || rejections.length) {
-      let html = "";
-      sigs.forEach((s) => {
-        html +=
-          '<div style="font-weight:700;color:#a855f7">SIGNAL ' +
-          s.direction.toUpperCase() +
-          "</div>" +
-          row("Confidence", (s.confidence || 0).toFixed(2)) +
-          row("Source", s.source || "");
-      });
-      rejections.forEach((r) => {
-        html +=
-          '<div style="font-weight:700;color:#64748b;text-decoration:line-through">REJECTED</div>' +
-          '<div style="color:#94a3b8;font-size:10px">' +
-          (r.text || "no reason") +
-          "</div>";
-      });
-      risk.forEach((r) => {
-        html += '<div style="margin-top:2px;color:#e94560">' + r.text + "</div>";
-      });
-      return html;
-    }
+    const info = _frameInfoBlock(cv, param.time);
+    if (info) return info;
   }
 
   if (cv._srHits && cv._srHits.length) {

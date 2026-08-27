@@ -391,11 +391,25 @@ test("pullback marker hover shows direction and swing pattern", () => {
   assert.ok(tooltip.innerHTML.includes("108"), "swing pattern shown");
 });
 
+test("pullback candle popup also shows its signal and rejection", () => {
+  const model = makeModel();
+  model.frames[2].signals = [{ direction: "bullish", confidence: 0.75, source: "PB" }];
+  model.frames[2].signal_rejections = [
+    { text: "no valid ATR fact", level: "warning", source: "RiskEngine" },
+  ];
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateTrades(2); // frame 2 has pullback at 2024-01-03
+  const tooltip = tooltipHtmlFor(cv, { time: "2024-01-03", point: { x: 5, y: 108 } });
+  assert.ok(tooltip.innerHTML.includes("PULLBACK"), "pullback label");
+  assert.ok(tooltip.innerHTML.includes("SIGNAL BULLISH"), "signal label");
+  assert.ok(tooltip.innerHTML.includes("REJECTED"), "rejection label");
+  assert.ok(tooltip.innerHTML.includes("no valid ATR fact"), "rejection text shown");
+});
+
 test("signal hover shows signal and risk-rejection details", () => {
   const model = makeModel();
-  model.frames[3].signals = [
-    { direction: "bullish", confidence: 0.8, source: "PB" },
-  ];
+  model.frames[3].signals = [{ direction: "bullish", confidence: 0.8, source: "PB" }];
   model.frames[3].risk_evidence = [
     { text: "Rejected: rr 0.5 below min 1.0", level: "warning", source: "risk" },
   ];
