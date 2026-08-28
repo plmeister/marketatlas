@@ -55,6 +55,11 @@ class RiskEngine:
         swing_buffer_atr: float = 0.2,
         sr_buffer_atr: float = 0.5,
         entry_buffer_atr: float = 0.2,
+        stop_swing_offset: int = 0,
+        min_atr_pct: float = 0.0,
+        max_atr_pct: float = 0.0,
+        min_vol_ratio: float = 0.0,
+        max_vol_ratio: float = 0.0,
         bindings: dict[str, str] | None = None,
     ) -> None:
         self._risk_pct = risk_pct
@@ -67,6 +72,11 @@ class RiskEngine:
         self._swing_buffer_atr = swing_buffer_atr
         self._sr_buffer_atr = sr_buffer_atr
         self._entry_buffer_atr = entry_buffer_atr
+        self._stop_swing_offset = max(stop_swing_offset, 0)
+        self._min_atr_pct = min_atr_pct
+        self._max_atr_pct = max_atr_pct
+        self._min_vol_ratio = min_vol_ratio
+        self._max_vol_ratio = max_vol_ratio
         self._atr_key = atr_key
         self._sr_key = sr_key
         self._swing_key = swing_key
@@ -125,6 +135,72 @@ class RiskEngine:
         atr_val = atr.value
         current = view.current
         close_price = current.close
+
+        # Volatility regime gate (0.0 = disabled): pullback signals in wild
+        # or dead markets bleed to stop-outs regardless of direction, so band
+        # ATR relative to price before committing capital (backlog: ATR band).
+        atr_pct = atr_val / close_price * 100 if close_price else 0.0
+        if self._min_atr_pct > 0 and atr_pct < self._min_atr_pct:
+            rejection.append(
+                EvidenceEntry(
+                    text=(
+                        f"Rejected: ATR {atr_val:.5f} ({atr_pct:.2f}% of price) "
+                        f"below min {self._min_atr_pct:.2f}% — market too quiet"
+                    ),
+                    level=EvidenceLevel.WARNING,
+                    source="RiskEngine",
+                )
+            )
+            return None, tuple(rejection)
+        if self._max_atr_pct > 0 and atr_pct > self._max_atr_pct:
+            rejection.append(
+                EvidenceEntry(
+                    text=(
+                        f"Rejected: ATR {atr_val:.5f} ({atr_pct:.2f}% of price) "
+                        f"above max {self._max_atr_pct:.2f}% — market too wild"
+                    ),
+                    level=EvidenceLevel.WARNING,
+                    source="RiskEngine",
+                )
+            )
+            return None, tuple(rejection)
+
+        # Volume-of-interest gate (0.0 = disabled): the pullback should break on
+        # participation, not drift. Ratio is the signal candle's volume against
+        # the trailing 20-candle mean; dead-candle and blow-off-candle signals
+        # bleed out.
+        if self._min_vol_ratio > 0 or self._max_vol_ratio > 0:
+            vols = view.volumes
+            hist_vols = [v_ for v_ in vols[:-1]][-20:]  # prior candles, excl current
+            avg_vol = sum(hist_vols) / len(hist_vols) if hist_vols else 0.0
+            if avg_vol > 0:
+                vol_ratio = current.volume / avg_vol
+                if self._min_vol_ratio > 0 and vol_ratio < self._min_vol_ratio:
+                    rejection.append(
+                        EvidenceEntry(
+                            text=(
+                                f"Rejected: volume {current.volume:.0f} "
+                                f"({vol_ratio:.2f}x 20d avg) below min "
+                                f"{self._min_vol_ratio:.2f}x — candle too quiet"
+                            ),
+                            level=EvidenceLevel.WARNING,
+                            source="RiskEngine",
+                        )
+                    )
+                    return None, tuple(rejection)
+                if self._max_vol_ratio > 0 and vol_ratio > self._max_vol_ratio:
+                    rejection.append(
+                        EvidenceEntry(
+                            text=(
+                                f"Rejected: volume {current.volume:.0f} "
+                                f"({vol_ratio:.2f}x 20d avg) above max "
+                                f"{self._max_vol_ratio:.2f}x — blow-off candle"
+                            ),
+                            level=EvidenceLevel.WARNING,
+                            source="RiskEngine",
+                        )
+                    )
+                    return None, tuple(rejection)
 
         # Breakout entry (backlog: continued-trend entry). The signal fires on a
         # confirmed pullback candle; buying (bullish) requires price to push
@@ -303,7 +379,7 @@ class RiskEngine:
                     for s in swing_fact.swings
                     if s.type == SwingType.LOW and s.price < entry
                 ]
-                anchor = self._last_but_one(lows)
+                anchor = self._swing_at_offset(lows, self._stop_swing_offset)
                 if anchor is not None:
                     return anchor
             else:
@@ -312,7 +388,7 @@ class RiskEngine:
                     for s in swing_fact.swings
                     if s.type == SwingType.HIGH and s.price > entry
                 ]
-                anchor = self._last_but_one(highs)
+                anchor = self._swing_at_offset(highs, self._stop_swing_offset)
                 if anchor is not None:
                     return anchor
 
@@ -322,19 +398,19 @@ class RiskEngine:
             return entry + 2.0 * atr
 
     @staticmethod
-    def _last_but_one(points: list[SwingPoint]) -> float | None:
-        """Price of the second-most-recent swing, or the only one if just one.
+    def _swing_at_offset(points: list[SwingPoint], offset: int) -> float | None:
+        """Price of the swing ``offset`` places back from the most recent one.
 
-        For a continued-trend entry the stop sits below the pullback's prior
-        higher-low, not the final low the breakout just broke above (which is
-        too tight to trust and is the very level being rejected).
+        ``offset=0`` is the final (most recent) swing — the tightest anchor,
+        closest to entry, giving the narrowest stop/target. ``offset=1`` is the
+        second-most-recent (the old last-but-one choice), etc. Falls back to
+        the only swing when there are fewer than ``offset + 1``.
         """
         if not points:
             return None
         ordered = sorted(points, key=lambda s: (s.index, s.timestamp))
-        if len(ordered) < 2:
-            return ordered[-1].price
-        return ordered[-2].price
+        idx = max(0, len(ordered) - 1 - offset)
+        return ordered[idx].price
 
     def _find_valid_rr(
         self,

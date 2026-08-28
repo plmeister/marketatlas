@@ -1,6 +1,6 @@
-import pytest
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
@@ -16,7 +16,7 @@ from marketatlas.facts.structural import (
     SwingType,
     TrendDirection,
 )
-from marketatlas.strategy.risk import _fmt_p, RiskEngine
+from marketatlas.strategy.risk import RiskEngine, _fmt_p
 from marketatlas.strategy.signals import TradeSignal
 
 pytestmark = pytest.mark.tier1
@@ -380,11 +380,96 @@ class TestRiskEngine:
         engine = RiskEngine(max_hold_days=10)
         assert engine.max_hold_days == 10
 
+    def test_atr_below_min_band_rejects(self) -> None:
+        store = _make_store([(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(min_atr_pct=0.5, max_atr_pct=2.0)
+        quiet_atr = _atr_fact(value=0.3)  # 0.29% of 102
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=quiet_atr, sr=_sr_fact(())), view
+        )
+        assert candidate is None
+        assert any("too quiet" in e.text for e in evidence)
+
+    def test_atr_above_max_band_rejects(self) -> None:
+        store = _make_store([(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(min_atr_pct=0.5, max_atr_pct=2.0)
+        wild_atr = _atr_fact(value=3.0)  # 2.94% of 102
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=wild_atr, sr=_sr_fact(())), view
+        )
+        assert candidate is None
+        assert any("too wild" in e.text for e in evidence)
+
+    def test_atr_within_band_passes(self) -> None:
+        store = _make_store([(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(min_atr_pct=0.5, max_atr_pct=2.0, max_stop_atr=10.0)
+        ok_atr = _atr_fact(value=2.0)  # 1.96% of 102
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=ok_atr, sr=_sr_fact(())), view, balance=1000.0
+        )
+        assert candidate is not None
+        assert candidate.entry > 100.0
+
+    def test_volume_below_min_ratio_rejects(self) -> None:
+        store = _make_store(
+            [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 4
+            + [(100.0, 105.0, 95.0, 102.0, 100.0)]
+        )
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(min_vol_ratio=0.6, max_vol_ratio=2.5, max_stop_atr=10.0)
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(), sr=_sr_fact(())), view
+        )
+        assert candidate is None
+        assert any("too quiet" in e.text for e in evidence)
+
+    def test_volume_above_max_ratio_rejects(self) -> None:
+        store = _make_store(
+            [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 4
+            + [(100.0, 105.0, 95.0, 102.0, 5000.0)]
+        )
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(min_vol_ratio=0.6, max_vol_ratio=2.5, max_stop_atr=10.0)
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(), sr=_sr_fact(())), view
+        )
+        assert candidate is None
+        assert any("blow-off" in e.text for e in evidence)
+
+    def test_volume_within_band_passes(self) -> None:
+        store = _make_store([(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(min_vol_ratio=0.6, max_vol_ratio=2.5, max_stop_atr=10.0)
+        candidate, _ = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(), sr=_sr_fact(())), view
+        )
+        assert candidate is not None
+
+    def test_swing_buffer_widens_stop(self) -> None:
+        store = _make_store([(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5)
+        view = MarketView(store, cursor=4, window_size=4)
+        swing = _swings_fact((SwingPoint(price=98.0, index=0, type=SwingType.LOW, timestamp=BASE),))
+        base = RiskEngine(swing_buffer_atr=0.2, min_rr=1.0, max_rr=4.0, max_stop_atr=7.0)
+        wide = RiskEngine(swing_buffer_atr=0.8, min_rr=1.0, max_rr=4.0, max_stop_atr=7.0)
+        c1, _ = base.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(), swing=swing, sr=_sr_fact(())), view
+        )
+        c2, _ = wide.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(), swing=swing, sr=_sr_fact(())), view
+        )
+        assert c1 is not None and c2 is not None
+        assert c2.stop < c1.stop  # wider buffer pushes stop further below swing
+
     def test_custom_keys(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
-        engine = RiskEngine(atr_key="atr_custom", sr_key="sr_custom", swing_key="swing_custom", max_stop_atr=10.0)
+        engine = RiskEngine(
+            atr_key="atr_custom", sr_key="sr_custom", swing_key="swing_custom", max_stop_atr=10.0
+        )
         atr = ATRFact(timestamp=BASE, evidence=(), value=2.0, period=14)
         swings = _swings_fact(
             (SwingPoint(price=96.0, index=0, type=SwingType.LOW, timestamp=BASE),)
@@ -598,12 +683,12 @@ class TestRiskEngine:
                     "_find_valid_rr should have filtered it"
                 )
 
-    def test_stop_uses_last_but_one_swing_low(self) -> None:
-        """Bullish stop anchors to the last-but-one swing low below entry.
+    def test_stop_uses_final_swing_low_by_default(self) -> None:
+        """Bullish stop anchors to the final (most recent) swing low below entry.
 
-        The most recent (final) low is the level the breakout just rejected;
-        the stop sits below the prior higher-low instead. Of lows 97@i0 and
-        94@i2 both below entry, the last-but-one is 97.
+        The final low is the pullback low the breakout just cleared — the
+        tightest anchor. Of lows 97@i0 and 94@i2 both below entry, the final is
+        94.
         """
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
@@ -620,14 +705,31 @@ class TestRiskEngine:
             _bullish_signal(), _facts(atr=_atr_fact(2.0), swing=swings, sr=_sr_fact(())), view
         )
         assert candidate is not None
+        expected_stop = 94.0 - 0.2 * 2.0
+        assert abs(candidate.stop - expected_stop) < 0.01
+
+    def test_stop_swing_offset_selects_prior_swing(self) -> None:
+        """stop_swing_offset=1 selects the last-but-one swing low (old default)."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0, max_stop_atr=10.0, stop_swing_offset=1)
+        older = BASE - timedelta(days=10)
+        swings = _swings_fact(
+            (
+                SwingPoint(price=97.0, index=0, type=SwingType.LOW, timestamp=older),
+                SwingPoint(price=94.0, index=2, type=SwingType.LOW, timestamp=BASE),
+            )
+        )
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), swing=swings, sr=_sr_fact(())), view
+        )
+        assert candidate is not None
         expected_stop = 97.0 - 0.2 * 2.0
         assert abs(candidate.stop - expected_stop) < 0.01
 
-    def test_stop_uses_last_but_one_swing_high(self) -> None:
-        """Bearish stop anchors to the last-but-one swing high above entry.
-
-        Of highs 103@i0 and 107@i2 both above entry, the last-but-one is 103.
-        """
+    def test_stop_uses_final_swing_high_by_default(self) -> None:
+        """Bearish stop anchors to the final (most recent) swing high above entry."""
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
@@ -643,7 +745,7 @@ class TestRiskEngine:
             _bearish_signal(), _facts(atr=_atr_fact(2.0), swing=swings, sr=_sr_fact(())), view
         )
         assert candidate is not None
-        expected_stop = 103.0 + 0.2 * 2.0
+        expected_stop = 107.0 + 0.2 * 2.0
         assert abs(candidate.stop - expected_stop) < 0.01
 
     def test_sr_buffer_rejects_target_too_close_to_resistance(self) -> None:
