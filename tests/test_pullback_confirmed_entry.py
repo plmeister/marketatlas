@@ -432,7 +432,7 @@ class TestEndToEnd:
             signals=(SignalConfig(type="PullbackSignal", rules={}),),
             risk=RiskConfig(
                 algorithm="default",
-                params={"risk_pct": 1.0, "min_rr": 0.0, "max_rr": 4.0, "sr_buffer_atr": 0.0, "max_stop_atr": 5.0},
+                params={"risk_pct": 1.0, "min_rr": 0.0, "max_rr": 4.0, "sr_buffer_atr": 0.0, "max_stop_atr": 5.0, "stop_swing_offset": 1},
             ),
         )
 
@@ -459,20 +459,19 @@ class TestEndToEnd:
         assert signals[0].direction == TrendDirection.BULLISH
 
         candidate, evidence = strategy.risk_engine.evaluate(signals[0], facts, view)
-        # New risk model: the last-but-one swing-low stop (98.14) sits below the
-        # support level (99.0) the breakout rejected -> the stop crosses an S/R
-        # level, so the candidate is rejected rather than clamped.
+        # With stop_swing_offset=1 the last-but-one swing-low stop (98.14) sits
+        # below the support level (99.0) the breakout rejected -> the stop
+        # crosses an S/R level, so the candidate is rejected rather than clamped.
         assert candidate is None
         assert any("breaks through support" in e.text for e in evidence)
 
     def test_backtester_skips_trade_when_stop_crosses_support(self) -> None:
-        """Backlog 067 continuation: SR-cross rejection yields no fill.
+        """SR-cross rejection yields no fill.
 
-        The confirmed pullback now reaches the risk engine but is rejected
-        because the last-but-one-anchored stop crosses the support level, so
-        no trade is submitted or recorded. This documents the conservative
-        stop-guard behaviour introduced with entry-buffer + last-but-one stop
-        anchoring.
+        With stop_swing_offset=1 (last-but-one-anchored stop) the stop crosses
+        the support level, so no trade is submitted or recorded. This documents
+        the conservative stop-guard behaviour behind the entry-buffer + swing
+        anchoring; the default final-swing stop is narrower and does not cross.
         """
         store = self._rising_store()
         strategy = Strategy("pullback_e2e", self._strategy_config())

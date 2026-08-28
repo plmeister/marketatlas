@@ -178,7 +178,7 @@ class TestTradeResolution:
         expected_pnl = (100.0 - 105.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
-    def test_max_hold_days_force_close(self) -> None:
+    def test_max_hold_days_cancels_open_trade(self) -> None:
         tb = TradeBook(initial_balance=1000.0)
         t0 = datetime(2024, 1, 1)
 
@@ -186,12 +186,14 @@ class TestTradeResolution:
         tb.submit_order(cand, _signal(), "s", t0)
         tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
 
-        # Candle at day 11 (10 days after entry)
+        # Candle at day 11 (10 days after entry), neither stop nor target hit
         still_open = _candle(t0 + timedelta(days=11), h=110.0, lo=99.0, c=108.0)
         tb.resolve_at_cursor(still_open, max_hold_days=10)
 
         assert tb.has_no_open_trade is True
-        assert tb.win_count == 1
+        assert tb.trades[-1].result == "cancelled"
+        assert tb.trades[-1].pnl == 0.0
+        assert tb.total_pnl == 0.0
 
     def test_no_resolution_without_trade(self) -> None:
         tb = TradeBook()
@@ -209,19 +211,30 @@ class TestBreakevenCount:
         tb.submit_order(cand, _signal(), "s", t0)
         tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
 
-        # Candle closes exactly at entry → pnl = 0
+        # Candle closes exactly at entry → still open (neither stop nor target)
         be_candle = _candle(t0 + timedelta(days=2), o=100.0, h=104.0, lo=96.0, c=100.0)
         tb.resolve_at_cursor(be_candle)
-
-        # Neither hit stop (95) nor target (105) → still open
         assert tb.has_no_open_trade is False
 
-        # Force close via max hold
-        close_candle = _candle(t0 + timedelta(days=11), c=100.0)
-        tb.resolve_at_cursor(close_candle, max_hold_days=10)
+        # Close at entry → pnl = 0 → breakeven
+        tb.close_trade(100.0, t0 + timedelta(days=2))
 
         assert tb.breakeven_count == 1
         assert tb.total_pnl == pytest.approx(0.0)
+
+    def test_max_hold_cancels_not_breakeven(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+
+        cand = _candidate(entry=100.0, stop=95.0, target=105.0, size=0.2)
+        tb.submit_order(cand, _signal(), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
+
+        still_open = _candle(t0 + timedelta(days=11), c=100.0)
+        tb.resolve_at_cursor(still_open, max_hold_days=10)
+
+        assert tb.trades[-1].result == "cancelled"
+        assert tb.breakeven_count == 0
 
 
 class TestFillCandleResolution:
@@ -373,15 +386,12 @@ class TestSummary:
         tb.fill_order(_candle(t1, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t1 + timedelta(days=1), lo=94.0, h=101.0))
 
-        # Breakeven
+        # Breakeven (exit exactly at entry)
         t2 = t0 + timedelta(days=10)
         c3 = _candidate(entry=100.0, stop=95.0, target=200.0, size=0.2)
         tb.submit_order(c3, _signal(), "s", t2)
         tb.fill_order(_candle(t2, h=110.0, lo=90.0))
-        tb.resolve_at_cursor(
-            _candle(t2 + timedelta(days=11), h=110.0, lo=99.0, c=100.0),
-            max_hold_days=10,
-        )
+        tb.close_trade(100.0, t2 + timedelta(days=1))
 
         s = tb.summary
         assert s["total_trades"] == 3
@@ -569,6 +579,19 @@ class TestMonthlySummary:
         assert monthly["2024-02"]["trades"] == 1
         assert monthly["2024-02"]["wins"] == 1
         assert monthly["2024-02"]["losses"] == 0
+
+    def test_monthly_growth_compounds_and_frames_gaps(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        self._close(tb, datetime(2024, 1, 3), win=True)  # +6.0 -> 1006.0
+        self._close(tb, datetime(2024, 3, 5), win=True)  # +6.0 -> 1012.0
+
+        monthly = tb.monthly_summary()
+        assert list(monthly) == ["2024-01", "2024-02", "2024-03"]
+        assert monthly["2024-01"]["growth_pct"] == pytest.approx(6.0 / 1000.0 * 100)
+        assert monthly["2024-02"]["trades"] == 0
+        assert monthly["2024-02"]["total_pnl"] == 0.0
+        assert monthly["2024-02"]["growth_pct"] == 0.0
+        assert monthly["2024-03"]["growth_pct"] == pytest.approx(6.0 / 1006.0 * 100)
 
     def test_empty_when_no_closed_trades(self) -> None:
         assert TradeBook(initial_balance=1000.0).monthly_summary() == {}

@@ -86,8 +86,9 @@ def _default_candles(n: int = 100, start: datetime | None = None) -> tuple[Candl
 def _fill_candles(n: int = 100, start: datetime | None = None) -> tuple[Candle, ...]:
     """Candles whose low dips to the default entry (100) every bar.
 
-    The ramped close stays above entry (wins on max-hold close) while the low
-    crosses it, so a bullish trigger-fill can fire at any index.
+    The ramped close stays above entry while the low crosses it, so a bullish
+    trigger-fill can fire at any index; a held trade resolves via max-hold
+    cancellation (neither stop nor target ever breached).
     """
     return _candles(n, start or datetime(2024, 1, 1, tzinfo=UTC), dip_to=100.0)
 
@@ -369,8 +370,10 @@ class TestTradeAttribution:
         a_entry = by_instrument["A"]
         b_entry = by_instrument["B"]
         assert isinstance(a_entry, dict) and isinstance(b_entry, dict)
-        assert a_entry["wins"] == 1 and b_entry["wins"] == 1
+        assert a_entry["wins"] == 0 and b_entry["wins"] == 0
         assert a_entry["losses"] == 0 and b_entry["losses"] == 0
+        assert a_entry["trades"] == 1 and b_entry["trades"] == 1
+        assert a_entry["total_pnl"] == 0.0 and b_entry["total_pnl"] == 0.0
 
     def test_trade_outcome_instrument_populated(self) -> None:
         result = self._run_two_instrument(
@@ -462,13 +465,10 @@ class TestOwnInstrumentResolution:
         trades = result.tradebook.trades
         assert len(trades) == 1
         trade = trades[0]
-        # Closed by max-hold on A's own candle, not by B's violent candle
+        # Cancelled by max-hold on A's own candle, not by B's violent candle
         assert trade.exit_timestamp == a[8].timestamp
-        # Exit price is A's close, never B's
-        assert trade.pnl == pytest.approx(
-            (a[8].close - trade.candidate.entry) * trade.candidate.size
-        )
-        assert trade.result == "breakeven"
+        assert trade.pnl == 0.0
+        assert trade.result == "cancelled"
 
 
 class TestSharedBalance:

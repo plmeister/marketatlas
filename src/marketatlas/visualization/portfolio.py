@@ -382,12 +382,14 @@ def _monthly_rows_html(monthly: Mapping[str, Any]) -> str:
         if not isinstance(entry, dict):
             continue
         total_pnl = float(entry.get("total_pnl", 0.0))
+        growth = float(entry.get("growth_pct", 0.0))
         trades = int(entry.get("trades", 0))
         wins = int(entry.get("wins", 0))
         losses = int(entry.get("losses", 0))
         rows.append(
             f"<tr><td>{month}</td>"
             f'<td class="{_sign_class(total_pnl)}">{_fmt_pnl(total_pnl)}</td>'
+            f'<td class="{_sign_class(growth)}">{_fmt_pct(growth)}</td>'
             f"<td>{trades}</td>"
             f"<td>{wins}-{losses}</td></tr>"
         )
@@ -396,7 +398,7 @@ def _monthly_rows_html(monthly: Mapping[str, Any]) -> str:
     return (
         "<h2>Monthly</h2>\n"
         "<table>\n<thead>\n"
-        "<tr><th>Month</th><th>P&amp;L</th><th>Trades</th><th>W-L</th></tr>\n"
+        "<tr><th>Month</th><th>P&amp;L</th><th>Growth</th><th>Trades</th><th>W-L</th></tr>\n"
         "</thead>\n<tbody>\n" + "\n".join(rows) + "\n</tbody>\n</table>"
     )
 

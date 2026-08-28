@@ -11,6 +11,7 @@ from marketatlas.strategy.trade import TradeCandidate
 
 @dataclass(frozen=True)
 class TradeOutcome:
+    submit_time: datetime
     entry_timestamp: datetime
     exit_timestamp: datetime | None
     candidate: TradeCandidate
@@ -18,7 +19,7 @@ class TradeOutcome:
     source_strategy: str
     instrument: str
     pnl: float | None
-    result: str | None  # "win" / "loss" / "breakeven" / None
+    result: str | None  # "win" / "loss" / "breakeven" / "cancelled" / None
 
 
 class TradeBook:
@@ -171,6 +172,7 @@ class TradeBook:
             if candle.low > candidate.entry:
                 return
         self._open_trade = TradeOutcome(
+            submit_time=self._pending_timestamp or candle.timestamp,
             entry_timestamp=candle.timestamp,
             exit_timestamp=None,
             candidate=candidate,
@@ -204,6 +206,7 @@ class TradeBook:
             result = "breakeven"
 
         closed = TradeOutcome(
+            submit_time=trade.submit_time,
             entry_timestamp=trade.entry_timestamp,
             exit_timestamp=timestamp,
             candidate=c,
@@ -230,7 +233,7 @@ class TradeBook:
         c = self._open_trade.candidate
         days_held = (candle.timestamp - self._open_trade.entry_timestamp).days
         if days_held >= max_hold_days:
-            self.close_trade(candle.close, candle.timestamp)
+            self._cancel_open(candle.timestamp)
             return
 
         if c.direction == TrendDirection.BULLISH:
@@ -255,6 +258,7 @@ class TradeBook:
         if pending is None or signal is None:
             return
         cancelled = TradeOutcome(
+            submit_time=self._pending_timestamp or candle.timestamp,
             entry_timestamp=self._pending_timestamp or candle.timestamp,
             exit_timestamp=candle.timestamp,
             candidate=pending,
@@ -270,6 +274,30 @@ class TradeBook:
         self._pending_source = ""
         self._pending_instrument = ""
         self._pending_timestamp = None
+
+    def _cancel_open(self, timestamp: datetime) -> None:
+        """Cancel a filled trade that never hit stop or target within max_hold_days.
+
+        The broker cancels the open position at no cost, so the trade is
+        recorded as cancelled with ``pnl=0`` and frees the book for later
+        signals — no market close (backlog: broker cancels, no partial fill).
+        """
+        trade = self._open_trade
+        if trade is None:
+            return
+        cancelled = TradeOutcome(
+            submit_time=trade.submit_time,
+            entry_timestamp=trade.entry_timestamp,
+            exit_timestamp=timestamp,
+            candidate=trade.candidate,
+            signal=trade.signal,
+            source_strategy=trade.source_strategy,
+            instrument=trade.instrument,
+            pnl=0.0,
+            result="cancelled",
+        )
+        self._trades.append(cancelled)
+        self._open_trade = None
 
     def filtered_by_instrument(self, canonical: str) -> TradeBook:
         """A copy of the book holding only ``canonical``'s closed trades.
@@ -321,10 +349,18 @@ class TradeBook:
         }
 
     def monthly_summary(self) -> dict[str, dict[str, object]]:
-        """Closed trades grouped by entry month (``YYYY-MM``), sorted chronologically."""
+        """Closed trades grouped by exit month (``YYYY-MM``), sorted chronologically.
+
+        Every month from the first to the last trade is present, including months
+        with no closed trades (zero-filled). Each month carries ``growth_pct`` —
+        the fund's realized growth for that month, computed from the running
+        balance change driven by that month's closes, so percentages compound
+        across the span.
+        """
         months: dict[str, dict[str, object]] = {}
         for trade in self._trades:
-            key = trade.entry_timestamp.strftime("%Y-%m")
+            timestamp = trade.exit_timestamp or trade.entry_timestamp
+            key = timestamp.strftime("%Y-%m")
             if key not in months:
                 months[key] = {
                     "trades": 0,
@@ -343,7 +379,38 @@ class TradeBook:
                 row["breakevens"] = row["breakevens"] + 1  # type: ignore[operator]
             if trade.pnl is not None:
                 row["total_pnl"] = row["total_pnl"] + trade.pnl  # type: ignore[operator]
-        return dict(sorted(months.items()))
+        if not months:
+            return {}
+        keys = sorted(months)
+        cursor = datetime.strptime(keys[0], "%Y-%m").replace(day=1)
+        end = datetime.strptime(keys[-1], "%Y-%m").replace(day=1)
+        balance = self._initial_balance
+        result: dict[str, dict[str, object]] = {}
+        while cursor <= end:
+            key = cursor.strftime("%Y-%m")
+            row = months.get(
+                key,
+                {
+                    "trades": 0,
+                    "wins": 0,
+                    "losses": 0,
+                    "breakevens": 0,
+                    "total_pnl": 0.0,
+                },
+            )
+            start_balance = balance
+            balance += float(row["total_pnl"])  # type: ignore[arg-type]
+            row["growth_pct"] = (
+                (balance - start_balance) / start_balance * 100
+                if start_balance != 0
+                else 0.0
+            )
+            result[key] = row
+            if cursor.month == 12:
+                cursor = cursor.replace(year=cursor.year + 1, month=1)
+            else:
+                cursor = cursor.replace(month=cursor.month + 1)
+        return result
 
     def _instrument_breakdown(self) -> dict[str, dict[str, object]]:
         return self._breakdown_by("instrument")

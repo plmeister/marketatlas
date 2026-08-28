@@ -229,13 +229,14 @@ def run_command(args: argparse.Namespace) -> None:
 
     monthly = tradebook.monthly_summary()
     if monthly:
-        print("\n  Monthly breakdown (by entry month):")
+        print("\n  Monthly breakdown (by exit month):")
         for month, stats in monthly.items():
             assert isinstance(stats, dict)
             print(
                 f"    {month}: {stats['trades']:3d} trades,"
                 f" {stats['wins']}W/{stats['losses']}L,"
-                f" P&L=${stats['total_pnl']:+.2f}"
+                f" P&L=${stats['total_pnl']:+.2f},"
+                f" growth={stats.get('growth_pct', 0.0):+.2f}%"
             )
 
     if tradebook.trades:
@@ -656,13 +657,14 @@ def run_portfolio_command(args: argparse.Namespace) -> None:
 
     monthly = result.tradebook.monthly_summary()
     if monthly:
-        print("\n  Monthly breakdown (by entry month):")
+        print("\n  Monthly breakdown (by exit month):")
         for month, stats in monthly.items():
             assert isinstance(stats, dict)
             print(
                 f"    {month}: {stats['trades']:3d} trades,"
                 f" {stats['wins']}W/{stats['losses']}L,"
-                f" P&L=${stats['total_pnl']:+.2f}"
+                f" P&L=${stats['total_pnl']:+.2f},"
+                f" growth={stats.get('growth_pct', 0.0):+.2f}%"
             )
 
     if args.output:
