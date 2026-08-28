@@ -61,6 +61,7 @@ def render_portfolio_index(
     by_instrument = by_instrument if isinstance(by_instrument, dict) else {}
     by_strategy = summary.get("by_strategy")
     by_strategy = by_strategy if isinstance(by_strategy, dict) else {}
+    monthly = result.tradebook.monthly_summary()
 
     total_pnl = float(summary.get("total_pnl", 0.0))
     pnl_class = _sign_class(total_pnl)
@@ -102,6 +103,7 @@ def render_portfolio_index(
         exp_class=exp_class,
         instrument_rows=instrument_rows,
         strategy_rows=strategy_rows,
+        monthly_rows=_monthly_rows_html(monthly),
     )
 
     index_path = output_dir / f"{stem}.html"
@@ -374,6 +376,31 @@ def _strategy_rows_html(by_strategy: Mapping[str, Any]) -> str:
     )
 
 
+def _monthly_rows_html(monthly: Mapping[str, Any]) -> str:
+    rows: list[str] = []
+    for month, entry in monthly.items():
+        if not isinstance(entry, dict):
+            continue
+        total_pnl = float(entry.get("total_pnl", 0.0))
+        trades = int(entry.get("trades", 0))
+        wins = int(entry.get("wins", 0))
+        losses = int(entry.get("losses", 0))
+        rows.append(
+            f"<tr><td>{month}</td>"
+            f'<td class="{_sign_class(total_pnl)}">{_fmt_pnl(total_pnl)}</td>'
+            f"<td>{trades}</td>"
+            f"<td>{wins}-{losses}</td></tr>"
+        )
+    if not rows:
+        return ""
+    return (
+        "<h2>Monthly</h2>\n"
+        "<table>\n<thead>\n"
+        "<tr><th>Month</th><th>P&amp;L</th><th>Trades</th><th>W-L</th></tr>\n"
+        "</thead>\n<tbody>\n" + "\n".join(rows) + "\n</tbody>\n</table>"
+    )
+
+
 def _fmt_pnl(value: float) -> str:
     return f"{value:+.2f}"
 
@@ -489,6 +516,7 @@ _INDEX_TEMPLATE = """\
     </tbody>
   </table>
 {strategy_rows}
+{monthly_rows}
 </main>
 </body>
 </html>

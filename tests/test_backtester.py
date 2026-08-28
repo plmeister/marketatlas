@@ -257,7 +257,7 @@ class TestTradeBookMetrics:
         signal = self._make_signal()
         ts = datetime(2024, 1, 1)
         tb.submit_order(candidate, signal, "test", ts)
-        tb.fill_order(100.0, ts)
+        tb.fill_order(Candle(timestamp=ts, open=101.0, high=102.0, low=99.0, close=101.0, volume=1000.0))
         tb.close_trade(104.0, ts)
         assert tb.gross_profit == 4.0
         assert tb.gross_loss == 0.0
@@ -272,7 +272,7 @@ class TestTradeBookMetrics:
         signal = self._make_signal()
         ts = datetime(2024, 1, 1)
         tb.submit_order(candidate, signal, "test", ts)
-        tb.fill_order(100.0, ts)
+        tb.fill_order(Candle(timestamp=ts, open=101.0, high=102.0, low=99.0, close=101.0, volume=1000.0))
         tb.close_trade(98.0, ts)
         assert tb.gross_profit == 0.0
         assert tb.gross_loss == 2.0
@@ -288,15 +288,15 @@ class TestTradeBookMetrics:
         ts = datetime(2024, 1, 1)
 
         tb.submit_order(candidate, signal, "test", ts)
-        tb.fill_order(100.0, ts)
+        tb.fill_order(Candle(timestamp=ts, open=101.0, high=102.0, low=99.0, close=101.0, volume=1000.0))
         tb.close_trade(104.0, ts)
 
         tb.submit_order(candidate, signal, "test", ts)
-        tb.fill_order(100.0, ts)
+        tb.fill_order(Candle(timestamp=ts, open=101.0, high=102.0, low=99.0, close=101.0, volume=1000.0))
         tb.close_trade(98.0, ts)
 
         tb.submit_order(candidate, signal, "test", ts)
-        tb.fill_order(100.0, ts)
+        tb.fill_order(Candle(timestamp=ts, open=101.0, high=102.0, low=99.0, close=101.0, volume=1000.0))
         tb.close_trade(105.0, ts)
 
         assert tb.win_count == 2
@@ -319,7 +319,7 @@ class TestTradeBookMetrics:
         signal = self._make_signal(direction=TrendDirection.BEARISH)
         ts = datetime(2024, 1, 1)
         tb.submit_order(candidate, signal, "test", ts)
-        tb.fill_order(100.0, ts)
+        tb.fill_order(Candle(timestamp=ts, open=101.0, high=102.0, low=99.0, close=101.0, volume=1000.0))
         tb.close_trade(96.0, ts)
         assert tb.gross_profit == 4.0
         assert tb.profit_factor == float("inf")

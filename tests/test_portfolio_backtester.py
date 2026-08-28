@@ -9,6 +9,7 @@ resolution always use the position's own instrument candles.
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from pathlib import Path
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.graph import AnalysisGraph
@@ -50,17 +51,21 @@ def _candles(
     ramp: float = 0.1,
     high_pad: float = 0.5,
     low_pad: float = 0.5,
+    dip_to: float | None = None,
 ) -> tuple[Candle, ...]:
     candles = []
     for i in range(n):
         close = close_base + ramp * i
         ts = start + step * i
+        low = close - low_pad
+        if dip_to is not None and low > dip_to:
+            low = dip_to
         candles.append(
             Candle(
                 timestamp=ts,
                 open=close,
                 high=close + high_pad,
-                low=close - low_pad,
+                low=low,
                 close=close,
                 volume=1000.0,
             )
@@ -76,6 +81,15 @@ def _store(canonical: str, candles: tuple[Candle, ...]) -> MarketStore:
 
 def _default_candles(n: int = 100, start: datetime | None = None) -> tuple[Candle, ...]:
     return _candles(n, start or datetime(2024, 1, 1, tzinfo=UTC))
+
+
+def _fill_candles(n: int = 100, start: datetime | None = None) -> tuple[Candle, ...]:
+    """Candles whose low dips to the default entry (100) every bar.
+
+    The ramped close stays above entry (wins on max-hold close) while the low
+    crosses it, so a bullish trigger-fill can fire at any index.
+    """
+    return _candles(n, start or datetime(2024, 1, 1, tzinfo=UTC), dip_to=100.0)
 
 
 def _candidate(
@@ -325,8 +339,8 @@ class TestTradeAttribution:
         self, signals: list[tuple[str, str, tuple[int, ...], TradeSignal]]
     ) -> PortfolioBacktestResult:
         start = datetime(2024, 1, 1, tzinfo=UTC)
-        a = _store("A", _default_candles(100, start))
-        b = _store("B", _default_candles(100, start))
+        a = _store("A", _fill_candles(100, start))
+        b = _store("B", _fill_candles(100, start))
         bundle = _PortfolioBundle(
             signals=signals,
             strategies=["strat"],
@@ -380,8 +394,8 @@ class TestTradeAttribution:
 class TestSingleOpenTrade:
     def test_concurrent_signals_single_trade(self) -> None:
         start = datetime(2024, 1, 1, tzinfo=UTC)
-        a = _store("A", _default_candles(100, start))
-        b = _store("B", _default_candles(100, start))
+        a = _store("A", _fill_candles(100, start))
+        b = _store("B", _fill_candles(100, start))
         bundle = _PortfolioBundle(
             signals=[
                 _signal_entry("strat", "A", (60,), _signal()),
@@ -402,8 +416,8 @@ class TestSingleOpenTrade:
 
     def test_second_instrument_trades_after_close(self) -> None:
         start = datetime(2024, 1, 1, tzinfo=UTC)
-        a = _store("A", _default_candles(100, start))
-        b = _store("B", _default_candles(100, start))
+        a = _store("A", _fill_candles(100, start))
+        b = _store("B", _fill_candles(100, start))
         bundle = _PortfolioBundle(
             signals=[
                 _signal_entry("strat", "A", (60,), _signal()),
@@ -460,8 +474,8 @@ class TestOwnInstrumentResolution:
 class TestSharedBalance:
     def test_balance_compounds_across_instruments(self) -> None:
         start = datetime(2024, 1, 1, tzinfo=UTC)
-        a = _store("A", _default_candles(100, start))
-        b = _store("B", _default_candles(100, start))
+        a = _store("A", _fill_candles(100, start))
+        b = _store("B", _fill_candles(100, start))
         engine = _default_engine(_candidate())
         bundle = _PortfolioBundle(
             signals=[
@@ -496,8 +510,8 @@ class TestSharedBalance:
 class TestDeterministicOrdering:
     def _bundle(self, primary_reject: bool) -> tuple[_PortfolioBundle, PortfolioBacktester]:
         start = datetime(2024, 1, 1, tzinfo=UTC)
-        a = _store("A", _default_candles(100, start))
-        b = _store("B", _default_candles(100, start))
+        a = _store("A", _fill_candles(100, start))
+        b = _store("B", _fill_candles(100, start))
         primary = _default_engine(_candidate(), reject=primary_reject)
         secondary = _default_engine(_candidate())
         bundle = _PortfolioBundle(
@@ -613,3 +627,52 @@ class TestPortfolioResult:
         assert len(restored.frames["A"]) == len(result.frames["A"])
         assert restored.tradebook.trades == result.tradebook.trades
         assert [r.canonical for r in restored.by_instrument] == ["A", "B"]
+
+
+class TestMonthlyIndex:
+    def _candle(self, ts: datetime, high: float, low: float) -> Candle:
+        return Candle(timestamp=ts, open=100.0, high=high, low=low, close=100.0, volume=1000.0)
+
+    def _closed_trade(self, tb: TradeBook, t0: datetime) -> None:
+        cand = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.4)
+        tb.submit_order(cand, _signal(), "A", t0)
+        tb.fill_order(self._candle(t0, high=110.0, low=90.0))
+        tb.resolve_at_cursor(self._candle(t0 + timedelta(days=1), high=116.0, low=108.0))
+
+    def test_index_renders_monthly_summary(self, tmp_path: Path) -> None:
+        from marketatlas.visualization.portfolio import render_portfolio_index
+
+        book = TradeBook(initial_balance=1000.0)
+        self._closed_trade(book, datetime(2024, 1, 3, tzinfo=UTC))
+        self._closed_trade(book, datetime(2024, 2, 5, tzinfo=UTC))
+        result = PortfolioBacktestResult(
+            instruments=(_instrument("A"),),
+            frames={},
+            tradebook=book,
+            window_size=100,
+            max_hold_days=10,
+        )
+
+        render_portfolio_index(result, tmp_path, "portfolio")
+
+        html = (tmp_path / "portfolio.html").read_text(encoding="utf-8")
+        assert "<h2>Monthly</h2>" in html
+        assert "2024-01" in html
+        assert "2024-02" in html
+        assert "1-0" in html
+
+    def test_index_omits_monthly_when_no_trades(self, tmp_path: Path) -> None:
+        from marketatlas.visualization.portfolio import render_portfolio_index
+
+        result = PortfolioBacktestResult(
+            instruments=(_instrument("A"),),
+            frames={},
+            tradebook=TradeBook(initial_balance=1000.0),
+            window_size=100,
+            max_hold_days=10,
+        )
+
+        render_portfolio_index(result, tmp_path, "portfolio")
+
+        html = (tmp_path / "portfolio.html").read_text(encoding="utf-8")
+        assert "<h2>Monthly</h2>" not in html

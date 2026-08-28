@@ -19,12 +19,14 @@ class SupportResistanceAnalyzer(Analyzer):
         swing_key: str = "swing",
         atr_series_key: str = "atr_14_series",
         level_tolerance_atr: float = 0.5,
+        min_touches: int = 2,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self._swing_key = swing_key
         self._atr_series_key = atr_series_key
         self._level_tolerance_atr = level_tolerance_atr
+        self._min_touches = min_touches
 
     @property
     def instance_key(self) -> str:
@@ -103,12 +105,16 @@ class SupportResistanceAnalyzer(Analyzer):
 
         levels: list[SRLevel] = []
         for cluster_prices in cluster_low:
+            if len(cluster_prices) < self._min_touches:
+                continue
             avg_price = sum(cluster_prices) / len(cluster_prices)
             strength = len(cluster_prices)
             level_type = "support"
             levels.append(SRLevel(price=avg_price, strength=strength, type=level_type))
 
         for cluster_prices in cluster_high:
+            if len(cluster_prices) < self._min_touches:
+                continue
             avg_price = sum(cluster_prices) / len(cluster_prices)
             strength = len(cluster_prices)
             level_type = "resistance"

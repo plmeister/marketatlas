@@ -11,6 +11,7 @@ from marketatlas.facts.structural import (
     SRFact,
     SRLevel,
     SwingFact,
+    SwingPoint,
     SwingType,
     TrendDirection,
 )
@@ -53,6 +54,7 @@ class RiskEngine:
         swing_key: str = "swing",
         swing_buffer_atr: float = 0.2,
         sr_buffer_atr: float = 0.5,
+        entry_buffer_atr: float = 0.2,
         bindings: dict[str, str] | None = None,
     ) -> None:
         self._risk_pct = risk_pct
@@ -64,6 +66,7 @@ class RiskEngine:
         self._slippage_pct = slippage_pct
         self._swing_buffer_atr = swing_buffer_atr
         self._sr_buffer_atr = sr_buffer_atr
+        self._entry_buffer_atr = entry_buffer_atr
         self._atr_key = atr_key
         self._sr_key = sr_key
         self._swing_key = swing_key
@@ -121,12 +124,18 @@ class RiskEngine:
 
         atr_val = atr.value
         current = view.current
-        open_price = current.open
+        close_price = current.close
 
+        # Breakout entry (backlog: continued-trend entry). The signal fires on a
+        # confirmed pullback candle; buying (bullish) requires price to push
+        # above that candle's close by an ATR buffer, so the order only triggers
+        # once the uptrend resumes — a real breakout, not the flat open.
         if signal.direction == TrendDirection.BULLISH:
-            entry = open_price * (1 + self._slippage_pct / 100)
+            raw_entry = close_price + self._entry_buffer_atr * atr_val
+            entry = raw_entry * (1 + self._slippage_pct / 100)
         else:
-            entry = open_price * (1 - self._slippage_pct / 100)
+            raw_entry = close_price - self._entry_buffer_atr * atr_val
+            entry = raw_entry * (1 - self._slippage_pct / 100)
 
         swing_fact = facts.get(swing_key) if swing_key is not None else None
         stop_anchor = self._find_stop_anchor(signal.direction, entry, atr_val, swing_fact)
@@ -163,6 +172,22 @@ class RiskEngine:
                 )
             )
             return None, tuple(rejection)
+
+        if self._avoid_srxing:
+            hit = self._stop_crosses_sr(signal.direction, entry, stop, sr_fact.levels)
+            if hit is not None:
+                rejection.append(
+                    EvidenceEntry(
+                        text=(
+                            f"Rejected: stop {_fmt_p(stop)} breaks through "
+                            f"{hit.type} {_fmt_p(hit.price)} "
+                            f"(entry {_fmt_p(entry)})"
+                        ),
+                        level=EvidenceLevel.WARNING,
+                        source="RiskEngine",
+                    )
+                )
+                return None, tuple(rejection)
 
         found = self._find_valid_rr(signal.direction, entry, stop_distance, sr_fact, atr_val)
         if found is None:
@@ -278,21 +303,38 @@ class RiskEngine:
                     for s in swing_fact.swings
                     if s.type == SwingType.LOW and s.price < entry
                 ]
-                if lows:
-                    return max(lows, key=lambda s: s.timestamp).price
+                anchor = self._last_but_one(lows)
+                if anchor is not None:
+                    return anchor
             else:
                 highs = [
                     s
                     for s in swing_fact.swings
                     if s.type == SwingType.HIGH and s.price > entry
                 ]
-                if highs:
-                    return max(highs, key=lambda s: s.timestamp).price
+                anchor = self._last_but_one(highs)
+                if anchor is not None:
+                    return anchor
 
         if direction == TrendDirection.BULLISH:
             return entry - 2.0 * atr
         else:
             return entry + 2.0 * atr
+
+    @staticmethod
+    def _last_but_one(points: list[SwingPoint]) -> float | None:
+        """Price of the second-most-recent swing, or the only one if just one.
+
+        For a continued-trend entry the stop sits below the pullback's prior
+        higher-low, not the final low the breakout just broke above (which is
+        too tight to trust and is the very level being rejected).
+        """
+        if not points:
+            return None
+        ordered = sorted(points, key=lambda s: (s.index, s.timestamp))
+        if len(ordered) < 2:
+            return ordered[-1].price
+        return ordered[-2].price
 
     def _find_valid_rr(
         self,
@@ -375,6 +417,30 @@ class RiskEngine:
             if lo < level.price < hi:
                 return True
         return False
+
+    def _stop_crosses_sr(
+        self,
+        direction: TrendDirection,
+        entry: float,
+        stop: float,
+        levels: tuple[SRLevel, ...],
+    ) -> SRLevel | None:
+        """Return the S/R level the stop would break through, or None.
+
+        For a long the stop sits below the entry; it must not be placed beneath
+        a support level (that would stop out straight through the floor). For a
+        short the stop sits above the entry; it must not be placed above a
+        resistance level. Any such level between the stop and entry rejects the
+        candidate — the stop is not clamped, the trade is refused.
+        """
+        for level in levels:
+            if direction == TrendDirection.BULLISH:
+                if level.type == "support" and stop < level.price < entry:
+                    return level
+            else:
+                if level.type == "resistance" and entry < level.price < stop:
+                    return level
+        return None
 
 
 def _frange(start: float, stop: float, step: float) -> list[float]:

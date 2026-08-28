@@ -10,8 +10,6 @@ from marketatlas.strategy.signals import TradeSignal
 from marketatlas.strategy.trade import TradeCandidate
 from marketatlas.strategy.tradebook import TradeBook
 
-
-
 pytestmark = pytest.mark.tier1
 def _candle(
     ts: datetime,
@@ -83,14 +81,14 @@ class TestTradeBookBasics:
         assert tb.has_pending_order is True
         assert tb.has_no_open_trade is True
 
-        tb.fill_order(100.0, ts + timedelta(days=1))
+        tb.fill_order(_candle(ts + timedelta(days=1), h=110.0, lo=90.0))
         assert tb.has_pending_order is False
         assert tb.has_no_open_trade is False
 
     def test_fill_without_pending_noop(self) -> None:
         tb = TradeBook()
         ts = datetime(2024, 1, 1)
-        tb.fill_order(100.0, ts)
+        tb.fill_order(_candle(ts, h=110.0, lo=90.0))
         assert tb.has_no_open_trade is True
 
 
@@ -110,7 +108,7 @@ class TestTradeResolution:
 
         cand = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
         tb.submit_order(cand, _signal(), "s", t0)
-        tb.fill_order(100.0, t0 + timedelta(days=1))
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
 
         hit_target = _candle(t0 + timedelta(days=2), h=116.0, lo=99.0, c=114.0)
         tb.resolve_at_cursor(hit_target)
@@ -127,7 +125,7 @@ class TestTradeResolution:
 
         cand = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
         tb.submit_order(cand, _signal(), "s", t0)
-        tb.fill_order(100.0, t0 + timedelta(days=1))
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
 
         hit_stop = _candle(t0 + timedelta(days=2), h=101.0, lo=94.0, c=96.0)
         tb.resolve_at_cursor(hit_stop)
@@ -149,7 +147,7 @@ class TestTradeResolution:
             size=0.2,
         )
         tb.submit_order(cand, _signal(TrendDirection.BEARISH), "s", t0)
-        tb.fill_order(100.0, t0 + timedelta(days=1))
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
 
         hit_target = _candle(t0 + timedelta(days=2), h=101.0, lo=84.0, c=86.0)
         tb.resolve_at_cursor(hit_target)
@@ -170,7 +168,7 @@ class TestTradeResolution:
             size=0.2,
         )
         tb.submit_order(cand, _signal(TrendDirection.BEARISH), "s", t0)
-        tb.fill_order(100.0, t0 + timedelta(days=1))
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
 
         hit_stop = _candle(t0 + timedelta(days=2), h=106.0, lo=98.0, c=99.0)
         tb.resolve_at_cursor(hit_stop)
@@ -186,7 +184,7 @@ class TestTradeResolution:
 
         cand = _candidate(entry=100.0, stop=95.0, target=200.0, size=0.2)
         tb.submit_order(cand, _signal(), "s", t0)
-        tb.fill_order(100.0, t0 + timedelta(days=1))
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
 
         # Candle at day 11 (10 days after entry)
         still_open = _candle(t0 + timedelta(days=11), h=110.0, lo=99.0, c=108.0)
@@ -209,7 +207,7 @@ class TestBreakevenCount:
 
         cand = _candidate(entry=100.0, stop=95.0, target=105.0, size=0.2)
         tb.submit_order(cand, _signal(), "s", t0)
-        tb.fill_order(100.0, t0 + timedelta(days=1))
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
 
         # Candle closes exactly at entry → pnl = 0
         be_candle = _candle(t0 + timedelta(days=2), o=100.0, h=104.0, lo=96.0, c=100.0)
@@ -244,9 +242,10 @@ class TestFillCandleResolution:
     ) -> None:
         c = cand or _candidate()
         tb.submit_order(c, _signal(c.direction), "s", datetime(2024, 1, 1))
-        tb.fill_order(fill_price, fill_ts)
+        tb.fill_order(_candle(fill_ts, h=110.0, lo=90.0))
 
-    def test_slippage_applied_at_fill_price(self) -> None:
+    def test_fill_uses_submitted_candidate_as_is(self) -> None:
+        """Broker fills with the submitted order values; no re-pricing at fill."""
         tb = TradeBook()
         t0 = datetime(2024, 1, 1)
         cand = TradeCandidate(
@@ -265,44 +264,50 @@ class TestFillCandleResolution:
         self._fill(tb, t0 + timedelta(days=1), cand=cand)
         open_trade = tb._open_trade
         assert open_trade is not None
-        assert open_trade.candidate.entry == pytest.approx(100.1)
-        assert open_trade.candidate.size == pytest.approx(1.0 / 5.1)
-        assert open_trade.candidate.rr_ratio == pytest.approx(14.9 / 5.1)
+        assert open_trade.candidate is cand
+        assert open_trade.candidate.entry == 100.0
+        assert open_trade.candidate.size == 0.2
+        assert open_trade.candidate.rr_ratio == 3.0
 
-    def test_fill_candle_gap_through_target_exits_at_open(self) -> None:
+    def test_no_fill_until_entry_crossed(self) -> None:
+        """Order stays pending until a bullish candle rises through the entry."""
         tb = TradeBook(initial_balance=1000.0)
         t0 = datetime(2024, 1, 1)
-        fill_ts = t0 + timedelta(days=1)
-        self._fill(tb, fill_ts, fill_price=120.0, cand=_candidate(target=115.0))
-        tb.resolve_at_cursor(_candle(fill_ts, o=120.0, h=130.0, lo=118.0, c=125.0))
+        cand = _candidate(entry=100.0, stop=95.0, target=115.0)
+        tb.submit_order(cand, _signal(), "s", t0)
+        # Bullish: price never rises to entry (high 98 < entry 100) -> no fill
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=98.0, lo=90.0))
+        assert tb.has_pending_order is True
         assert tb.has_no_open_trade is True
-        assert tb.trades[0].result == "breakeven"
-        assert tb.trades[0].exit_timestamp == fill_ts
+        # Later candle rises through entry (high 102 >= 100) -> fills
+        tb.fill_order(_candle(t0 + timedelta(days=2), h=102.0, lo=99.0))
+        assert tb.has_pending_order is False
+        assert tb.has_no_open_trade is False
 
-    def test_fill_candle_gap_through_stop_exits_at_open(self) -> None:
+    def test_gap_away_from_entry_never_fills(self) -> None:
+        """A gap that leaves price below a bullish entry never fills."""
         tb = TradeBook(initial_balance=1000.0)
         t0 = datetime(2024, 1, 1)
-        fill_ts = t0 + timedelta(days=1)
-        self._fill(tb, fill_ts, fill_price=90.0, cand=_candidate(stop=95.0))
-        tb.resolve_at_cursor(_candle(fill_ts, o=90.0, h=92.0, lo=88.0, c=91.0))
+        cand = _candidate(entry=100.0, stop=95.0, target=115.0)
+        tb.submit_order(cand, _signal(), "s", t0)
+        for i in range(1, 6):
+            tb.fill_order(_candle(t0 + timedelta(days=i), h=99.0, lo=90.0))
+        assert tb.has_pending_order is True
         assert tb.has_no_open_trade is True
-        assert tb.trades[0].result == "breakeven"
-        assert tb.trades[0].exit_timestamp == fill_ts
 
-    def test_bearish_fill_candle_gap_through_target_exits_at_open(self) -> None:
+    def test_bearish_no_fill_until_entry_crossed(self) -> None:
+        """Bearish order fills only when price falls to the entry."""
         tb = TradeBook(initial_balance=1000.0)
         t0 = datetime(2024, 1, 1)
-        fill_ts = t0 + timedelta(days=1)
-        self._fill(
-            tb,
-            fill_ts,
-            fill_price=80.0,
-            cand=_candidate(direction=TrendDirection.BEARISH, stop=105.0, target=85.0),
-        )
-        tb.resolve_at_cursor(_candle(fill_ts, o=80.0, h=82.0, lo=78.0, c=81.0))
-        assert tb.has_no_open_trade is True
-        assert tb.trades[0].result == "breakeven"
-        assert tb.trades[0].exit_timestamp == fill_ts
+        cand = _candidate(direction=TrendDirection.BEARISH, entry=100.0, stop=105.0, target=85.0)
+        tb.submit_order(cand, _signal(cand.direction), "s", t0)
+        # Bearish: price never falls to entry (low 102 > entry 100) -> no fill
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=102.0))
+        assert tb.has_pending_order is True
+        # Later falls through entry (low 99 <= 100) -> fills
+        tb.fill_order(_candle(t0 + timedelta(days=2), h=103.0, lo=99.0))
+        assert tb.has_pending_order is False
+        assert tb.has_no_open_trade is False
 
     def test_fill_candle_same_day_target_cross_is_a_win(self) -> None:
         tb = TradeBook(initial_balance=1000.0)
@@ -338,24 +343,16 @@ class TestFillCandleResolution:
         assert tb.trades[0].result == "win"
         assert tb.total_pnl == pytest.approx((120.0 - 100.0) * 0.2)
 
-    def test_fill_rejected_when_actual_rr_below_min(self) -> None:
+    def test_fill_uses_submitted_min_rr_not_refiltered_at_fill(self) -> None:
+        """RR is validated at order placement; the broker fills as submitted."""
         tb = TradeBook()
         t0 = datetime(2024, 1, 1)
         cand = replace(_candidate(stop=95.0, target=115.0), min_rr=1.0)
         self._fill(tb, t0 + timedelta(days=1), fill_price=106.0, cand=cand)
         assert tb.has_pending_order is False
-        assert tb.has_no_open_trade is True
-        assert tb.closed_count == 0
-
-    def test_fill_kept_when_actual_rr_meets_min(self) -> None:
-        tb = TradeBook()
-        t0 = datetime(2024, 1, 1)
-        cand = replace(_candidate(stop=95.0, target=115.0), min_rr=1.0)
-        self._fill(tb, t0 + timedelta(days=1), fill_price=102.0, cand=cand)
-        assert tb.has_pending_order is False
         assert tb.has_no_open_trade is False
         assert tb._open_trade is not None
-        assert tb._open_trade.candidate.rr_ratio >= 1.0
+        assert tb._open_trade.candidate is cand
 
 
 class TestSummary:
@@ -366,21 +363,21 @@ class TestSummary:
         # Win
         c1 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
         tb.submit_order(c1, _signal(), "s", t0)
-        tb.fill_order(100.0, t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=99.0))
 
         # Loss
         t1 = t0 + timedelta(days=5)
         c2 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
         tb.submit_order(c2, _signal(), "s", t1)
-        tb.fill_order(100.0, t1)
+        tb.fill_order(_candle(t1, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t1 + timedelta(days=1), lo=94.0, h=101.0))
 
         # Breakeven
         t2 = t0 + timedelta(days=10)
         c3 = _candidate(entry=100.0, stop=95.0, target=200.0, size=0.2)
         tb.submit_order(c3, _signal(), "s", t2)
-        tb.fill_order(100.0, t2)
+        tb.fill_order(_candle(t2, h=110.0, lo=90.0))
         tb.resolve_at_cursor(
             _candle(t2 + timedelta(days=11), h=110.0, lo=99.0, c=100.0),
             max_hold_days=10,
@@ -406,14 +403,14 @@ class TestMaxDrawdown:
         # Win: +4.0
         c1 = _candidate(entry=100.0, stop=95.0, target=110.0, size=0.4)
         tb.submit_order(c1, _signal(), "s", t0)
-        tb.fill_order(100.0, t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=111.0, lo=99.0))
 
         # Loss: -2.0
         t1 = t0 + timedelta(days=5)
         c2 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.4)
         tb.submit_order(c2, _signal(), "s", t1)
-        tb.fill_order(100.0, t1)
+        tb.fill_order(_candle(t1, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t1 + timedelta(days=1), lo=94.0, h=101.0))
 
         assert tb.max_drawdown == pytest.approx(2.0 / 1004.0)
@@ -427,14 +424,14 @@ class TestStrategyBreakdown:
         # Strategy A: win
         c1 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
         tb.submit_order(c1, _signal(), "strat_a", t0)
-        tb.fill_order(100.0, t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=99.0))
 
         # Strategy B: loss
         t1 = t0 + timedelta(days=5)
         c2 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
         tb.submit_order(c2, _signal(), "strat_b", t1)
-        tb.fill_order(100.0, t1)
+        tb.fill_order(_candle(t1, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t1 + timedelta(days=1), lo=94.0, h=101.0))
 
         bd = tb.summary["by_strategy"]
@@ -450,13 +447,13 @@ class TestStrategyBreakdown:
 
         c1 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
         tb.submit_order(c1, _signal(), "strat_a", t0, instrument="GBPUSD")
-        tb.fill_order(100.0, t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=99.0))
 
         t1 = t0 + timedelta(days=5)
         c2 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
         tb.submit_order(c2, _signal(), "strat_a", t1, instrument="BTCUSD")
-        tb.fill_order(100.0, t1)
+        tb.fill_order(_candle(t1, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t1 + timedelta(days=1), lo=94.0, h=101.0))
 
         trades = tb.trades
@@ -476,7 +473,7 @@ class TestStrategyBreakdown:
         t0 = datetime(2024, 1, 1)
         c1 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
         tb.submit_order(c1, _signal(), "s", t0)
-        tb.fill_order(100.0, t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=99.0))
         assert tb.trades[0].instrument == ""
 
@@ -489,14 +486,14 @@ class TestProfitFactor:
         # Win: +4.0
         c1 = _candidate(entry=100.0, stop=95.0, target=110.0, size=0.4)
         tb.submit_order(c1, _signal(), "s", t0)
-        tb.fill_order(100.0, t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=111.0, lo=99.0))
 
         # Loss: -2.0
         t1 = t0 + timedelta(days=5)
         c2 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.4)
         tb.submit_order(c2, _signal(), "s", t1)
-        tb.fill_order(100.0, t1)
+        tb.fill_order(_candle(t1, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t1 + timedelta(days=1), lo=94.0, h=101.0))
 
         assert tb.profit_factor == pytest.approx(4.0 / 2.0)
@@ -507,7 +504,7 @@ class TestProfitFactor:
 
         c1 = _candidate(entry=100.0, stop=95.0, target=110.0, size=0.4)
         tb.submit_order(c1, _signal(), "s", t0)
-        tb.fill_order(100.0, t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=111.0, lo=99.0))
 
         assert tb.profit_factor == float("inf")
@@ -521,7 +518,7 @@ class TestPeakBalance:
         # Win: balance goes to 1004
         c1 = _candidate(entry=100.0, stop=95.0, target=110.0, size=0.4)
         tb.submit_order(c1, _signal(), "s", t0)
-        tb.fill_order(100.0, t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=111.0, lo=99.0))
         assert tb.peak_balance == pytest.approx(1004.0)
 
@@ -529,7 +526,7 @@ class TestPeakBalance:
         t1 = t0 + timedelta(days=5)
         c2 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.4)
         tb.submit_order(c2, _signal(), "s", t1)
-        tb.fill_order(100.0, t1)
+        tb.fill_order(_candle(t1, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t1 + timedelta(days=1), lo=94.0, h=101.0))
         assert tb.peak_balance == pytest.approx(1004.0)
 
@@ -538,8 +535,40 @@ class TestPeakBalance:
         t0 = datetime(2024, 1, 1)
         c1 = _candidate(entry=100.0, stop=95.0, target=110.0, size=0.4)
         tb.submit_order(c1, _signal(), "s", t0)
-        tb.fill_order(100.0, t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
         tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=111.0, lo=99.0))
         s = tb.summary
         assert "peak_balance" in s
         assert s["peak_balance"] == pytest.approx(1004.0)
+
+
+class TestMonthlySummary:
+    def _close(self, tb: TradeBook, t0: datetime, win: bool) -> None:
+        cand = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.4)
+        tb.submit_order(cand, _signal(), "s", t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
+        if win:
+            tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=108.0))
+        else:
+            tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), lo=94.0, h=100.0))
+
+    def test_groups_and_sorts_by_entry_month(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        jan = datetime(2024, 1, 3)
+        feb = datetime(2024, 2, 5)
+        self._close(tb, jan, win=True)
+        self._close(tb, datetime(2024, 1, 20), win=False)
+        self._close(tb, feb, win=True)
+
+        monthly = tb.monthly_summary()
+        assert list(monthly) == ["2024-01", "2024-02"]
+        assert monthly["2024-01"]["trades"] == 2
+        assert monthly["2024-01"]["wins"] == 1
+        assert monthly["2024-01"]["losses"] == 1
+        assert monthly["2024-01"]["total_pnl"] == pytest.approx((115.0 - 100.0) * 0.4 + (95.0 - 100.0) * 0.4)
+        assert monthly["2024-02"]["trades"] == 1
+        assert monthly["2024-02"]["wins"] == 1
+        assert monthly["2024-02"]["losses"] == 0
+
+    def test_empty_when_no_closed_trades(self) -> None:
+        assert TradeBook(initial_balance=1000.0).monthly_summary() == {}

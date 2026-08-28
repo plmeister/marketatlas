@@ -238,7 +238,7 @@ class TestRiskIsolation:
 class TestTradeBookResolution:
     """Signal at cursor N fills at open of cursor N+1."""
 
-    def test_fill_order_uses_next_candle_open(self) -> None:
+    def test_fill_order_waits_for_entry_cross(self) -> None:
         tb = TradeBook(initial_balance=1000.0)
         from marketatlas.strategy.signals import TradeSignal
         from marketatlas.strategy.trade import TradeCandidate
@@ -278,7 +278,7 @@ class TestTradeBookResolution:
             close=108.0,
             volume=5000.0,
         )
-        tb.fill_order(fill_candle.open, fill_candle.timestamp)
+        tb.fill_order(fill_candle)
 
         assert not tb.has_pending_order
         assert not tb.has_no_open_trade
@@ -286,8 +286,8 @@ class TestTradeBookResolution:
         open_trade = tb._open_trade
         assert open_trade is not None
         assert open_trade.entry_timestamp == fill_time
-        assert open_trade.candidate.entry == 101.0 * 1.001
-        assert open_trade.candidate.size == 10.0 / (101.0 * 1.001 - 95.0)
+        assert open_trade.candidate.entry == 100.5
+        assert open_trade.candidate.size == 0.1
 
         stop_candle = Candle(
             timestamp=datetime(2024, 1, 12),
@@ -330,7 +330,7 @@ class TestTradeBookResolution:
         )
 
         tb.submit_order(candidate, signal, "test", datetime(2024, 1, 10))
-        tb.fill_order(101.0, datetime(2024, 1, 11))
+        tb.fill_order(Candle(timestamp=datetime(2024, 1, 11), open=101.0, high=110.0, low=99.0, close=108.0, volume=5000.0))
 
         safe_candle = Candle(
             timestamp=datetime(2024, 1, 12),
@@ -422,7 +422,7 @@ class TestSingleTradeConstraint:
         assert tb.has_no_open_trade
         assert tb.has_pending_order
 
-        tb.fill_order(101.0, datetime(2024, 1, 11))
+        tb.fill_order(Candle(timestamp=datetime(2024, 1, 11), open=101.0, high=110.0, low=99.0, close=108.0, volume=5000.0))
 
         # After fill: open trade exists, no pending order
         assert not tb.has_no_open_trade

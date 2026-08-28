@@ -208,7 +208,7 @@ class PortfolioBacktester:
         if tradebook.has_pending_order:
             pending_ts = self._pending_ts
             if pending_ts is not None and candle.timestamp > pending_ts:
-                tradebook.fill_order(candle.open, candle.timestamp)
+                tradebook.fill_order(candle)
         if not tradebook.has_no_open_trade:
             tradebook.resolve_at_cursor(candle, self._max_hold_days)
         if tradebook.has_no_open_trade and not tradebook.has_pending_order:

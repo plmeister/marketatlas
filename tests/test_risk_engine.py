@@ -127,7 +127,7 @@ class TestRiskEngine:
             _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
         )
         assert candidate is not None
-        expected_entry = 100.0 * (1 + 0.1 / 100)
+        expected_entry = (102.0 + 0.2 * 2.0) * (1 + 0.1 / 100)
         assert abs(candidate.entry - expected_entry) < 0.01
 
     def test_bearish_entry_with_slippage(self) -> None:
@@ -139,7 +139,7 @@ class TestRiskEngine:
             _bearish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
         )
         assert candidate is not None
-        expected_entry = 100.0 * (1 - 0.1 / 100)
+        expected_entry = (102.0 - 0.2 * 2.0) * (1 - 0.1 / 100)
         assert abs(candidate.entry - expected_entry) < 0.01
 
     def test_bullish_stop_below_swing_low(self) -> None:
@@ -149,7 +149,7 @@ class TestRiskEngine:
         engine = RiskEngine(slippage_pct=0.0)
         swings = _swings_fact(
             (
-                SwingPoint(price=96.0, index=0, type=SwingType.LOW, timestamp=BASE),
+                SwingPoint(price=99.0, index=0, type=SwingType.LOW, timestamp=BASE),
                 SwingPoint(price=104.0, index=2, type=SwingType.HIGH, timestamp=BASE),
             )
         )
@@ -157,7 +157,7 @@ class TestRiskEngine:
             _bullish_signal(), _facts(atr=_atr_fact(2.0), swing=swings, sr=_sr_fact(())), view
         )
         assert candidate is not None
-        expected_stop = 96.0 - 0.2 * 2.0
+        expected_stop = 99.0 - 0.2 * 2.0
         assert abs(candidate.stop - expected_stop) < 0.01
 
     def test_bearish_stop_above_swing_high(self) -> None:
@@ -366,7 +366,8 @@ class TestRiskEngine:
         )
         assert candidate is None
         rr_text = next(e.text for e in evidence if "RR" in e.text)
-        assert "1.1045" in rr_text, rr_text
+        # entry = close + 0.2*ATR = 1.10475 -> formatted to 4dp "1.1048"
+        assert "1.1047" in rr_text, rr_text
 
     def test_fmt_p_precision(self) -> None:
         assert _fmt_p(60234.567) == "60234.57"
@@ -383,7 +384,7 @@ class TestRiskEngine:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
-        engine = RiskEngine(atr_key="atr_custom", sr_key="sr_custom", swing_key="swing_custom")
+        engine = RiskEngine(atr_key="atr_custom", sr_key="sr_custom", swing_key="swing_custom", max_stop_atr=10.0)
         atr = ATRFact(timestamp=BASE, evidence=(), value=2.0, period=14)
         swings = _swings_fact(
             (SwingPoint(price=96.0, index=0, type=SwingType.LOW, timestamp=BASE),)
@@ -405,6 +406,7 @@ class TestRiskEngine:
         engine = RiskEngine(
             slippage_pct=0.0,
             bindings={"atr_14": "atr_series_daily", "sr": "sr_daily", "swing": "swing_daily"},
+            max_stop_atr=10.0,
         )
         atr = ATRFact(timestamp=BASE, evidence=(), value=2.0, period=14)
         swings = _swings_fact(
@@ -459,8 +461,8 @@ class TestRiskEngine:
             _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
         )
         assert candidate is not None
-        # stop = (entry - 2*ATR) - 0.2*ATR = 100 - 4 - 0.4 = 95.6
-        expected_stop = 100.0 - 2.0 * 2.0 - 0.2 * 2.0
+        # stop = (entry - 2*ATR) - 0.2*ATR, entry = close + 0.2*ATR = 102.4
+        expected_stop = (102.0 + 0.2 * 2.0) - 2.0 * 2.0 - 0.2 * 2.0
         assert abs(candidate.stop - expected_stop) < 0.01
 
     def test_bearish_no_swing_fact_fallback_stop(self) -> None:
@@ -473,8 +475,8 @@ class TestRiskEngine:
             _bearish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
         )
         assert candidate is not None
-        # stop = (entry + 2*ATR) + 0.2*ATR = 100 + 4 + 0.4 = 104.4
-        expected_stop = 100.0 + 2.0 * 2.0 + 0.2 * 2.0
+        # stop = (entry + 2*ATR) + 0.2*ATR, entry = close - 0.2*ATR = 101.6
+        expected_stop = (102.0 - 0.2 * 2.0) + 2.0 * 2.0 + 0.2 * 2.0
         assert abs(candidate.stop - expected_stop) < 0.01
 
     def test_bullish_swing_low_above_entry_fallback(self) -> None:
@@ -492,7 +494,7 @@ class TestRiskEngine:
             view,
         )
         assert candidate is not None
-        expected_stop = 100.0 - 2.0 * 2.0 - 0.2 * 2.0
+        expected_stop = (102.0 + 0.2 * 2.0) - 2.0 * 2.0 - 0.2 * 2.0
         assert abs(candidate.stop - expected_stop) < 0.01
 
     def test_bearish_swing_high_below_entry_fallback(self) -> None:
@@ -510,7 +512,7 @@ class TestRiskEngine:
             view,
         )
         assert candidate is not None
-        expected_stop = 100.0 + 2.0 * 2.0 + 0.2 * 2.0
+        expected_stop = (102.0 - 0.2 * 2.0) + 2.0 * 2.0 + 0.2 * 2.0
         assert abs(candidate.stop - expected_stop) < 0.01
 
     def test_size_and_reward_calculation(self) -> None:
@@ -596,10 +598,12 @@ class TestRiskEngine:
                     "_find_valid_rr should have filtered it"
                 )
 
-    def test_stop_uses_most_recent_swing_low(self) -> None:
-        """Bullish stop anchors to the most recent swing low below entry.
+    def test_stop_uses_last_but_one_swing_low(self) -> None:
+        """Bullish stop anchors to the last-but-one swing low below entry.
 
-        Older swing low may be higher/closer to entry; recency wins.
+        The most recent (final) low is the level the breakout just rejected;
+        the stop sits below the prior higher-low instead. Of lows 97@i0 and
+        94@i2 both below entry, the last-but-one is 97.
         """
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
@@ -616,11 +620,14 @@ class TestRiskEngine:
             _bullish_signal(), _facts(atr=_atr_fact(2.0), swing=swings, sr=_sr_fact(())), view
         )
         assert candidate is not None
-        expected_stop = 94.0 - 0.2 * 2.0
+        expected_stop = 97.0 - 0.2 * 2.0
         assert abs(candidate.stop - expected_stop) < 0.01
 
-    def test_stop_uses_most_recent_swing_high(self) -> None:
-        """Bearish stop anchors to the most recent swing high above entry."""
+    def test_stop_uses_last_but_one_swing_high(self) -> None:
+        """Bearish stop anchors to the last-but-one swing high above entry.
+
+        Of highs 103@i0 and 107@i2 both above entry, the last-but-one is 103.
+        """
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
@@ -636,7 +643,7 @@ class TestRiskEngine:
             _bearish_signal(), _facts(atr=_atr_fact(2.0), swing=swings, sr=_sr_fact(())), view
         )
         assert candidate is not None
-        expected_stop = 107.0 + 0.2 * 2.0
+        expected_stop = 103.0 + 0.2 * 2.0
         assert abs(candidate.stop - expected_stop) < 0.01
 
     def test_sr_buffer_rejects_target_too_close_to_resistance(self) -> None:
@@ -651,7 +658,7 @@ class TestRiskEngine:
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(min_rr=2.0, max_rr=4.0, slippage_pct=0.0)
-        sr = _sr_fact((SRLevel(price=109.5, strength=3, type="resistance"),))
+        sr = _sr_fact((SRLevel(price=111.5, strength=3, type="resistance"),))
         candidate, evidence = engine.evaluate(
             _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
         )
@@ -670,12 +677,13 @@ class TestRiskEngine:
         engine = RiskEngine(
             min_rr=2.0, max_rr=4.0, slippage_pct=0.0, sr_buffer_atr=0.0
         )
-        sr = _sr_fact((SRLevel(price=109.5, strength=3, type="resistance"),))
+        sr = _sr_fact((SRLevel(price=111.5, strength=3, type="resistance"),))
         candidate, _evidence = engine.evaluate(
             _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
         )
         assert candidate is not None
-        expected_target = 100.0 + 2.0 * abs(100.0 - 95.6)
+        # entry = close + 0.2*ATR = 102.4; fallback stop = 98.0; rr=2
+        expected_target = (102.0 + 0.2 * 2.0) + 2.0 * ((102.0 + 0.2 * 2.0) - 98.0)
         assert abs(candidate.target - expected_target) < 0.01
 
     def test_sr_buffer_rejects_target_too_close_to_support(self) -> None:
@@ -684,9 +692,41 @@ class TestRiskEngine:
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(min_rr=2.0, max_rr=4.0, slippage_pct=0.0)
-        sr = _sr_fact((SRLevel(price=90.5, strength=3, type="support"),))
+        sr = _sr_fact((SRLevel(price=92.0, strength=3, type="support"),))
         candidate, evidence = engine.evaluate(
             _bearish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
         )
         assert candidate is None
         assert any("RR" in e.text for e in evidence)
+
+    def test_stop_crossing_sr_rejects(self) -> None:
+        """Bullish stop that breaks a support level is rejected, never clamped."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0)
+        swings = _swings_fact(
+            (SwingPoint(price=97.0, index=0, type=SwingType.LOW, timestamp=BASE),)
+        )
+        sr = _sr_fact((SRLevel(price=97.5, strength=3, type="support"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), swing=swings, sr=sr), view
+        )
+        assert candidate is None
+        assert any("breaks through support" in e.text for e in evidence)
+
+    def test_stop_crossing_sr_rejects_bearish(self) -> None:
+        """Bearish stop that breaks a resistance level is rejected, never clamped."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0)
+        swings = _swings_fact(
+            (SwingPoint(price=103.0, index=0, type=SwingType.HIGH, timestamp=BASE),)
+        )
+        sr = _sr_fact((SRLevel(price=103.0, strength=3, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bearish_signal(), _facts(atr=_atr_fact(2.0), swing=swings, sr=sr), view
+        )
+        assert candidate is None
+        assert any("breaks through resistance" in e.text for e in evidence)

@@ -112,7 +112,8 @@ class TestSupportResistanceAnalyzer:
         assert isinstance(fact, SRFact)
         assert len(fact.levels) == 0
 
-    def test_single_swing_strength_one(self) -> None:
+    def test_single_swing_strength_one_filtered_by_default(self) -> None:
+        """A single-touch (strength-1) level is dropped with default min_touches=2."""
         candles = [(100.0, 101.0, 99.0, 100.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
@@ -121,9 +122,40 @@ class TestSupportResistanceAnalyzer:
         result = analyzer.analyze(view, _keyed_facts(sf, _atr_series_fact(2.0)))
         fact = result.facts[0]
         assert isinstance(fact, SRFact)
+        assert len(fact.levels) == 0
+
+    def test_single_swing_included_when_min_touches_one(self) -> None:
+        candles = [(100.0, 101.0, 99.0, 100.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        analyzer = SupportResistanceAnalyzer(min_touches=1)
+        sf = _swings_fact(_make_swings([(95.0, SwingType.LOW)]))
+        result = analyzer.analyze(view, _keyed_facts(sf, _atr_series_fact(2.0)))
+        fact = result.facts[0]
+        assert isinstance(fact, SRFact)
         assert len(fact.levels) == 1
         assert fact.levels[0].strength == 1
         assert fact.levels[0].type == "support"
+
+    def test_two_touch_cluster_kept_with_default_min(self) -> None:
+        """Two clustered touches survive the default min_touches=2 filter."""
+        candles = [(100.0, 101.0, 99.0, 100.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        analyzer = SupportResistanceAnalyzer()
+        sf = _swings_fact(
+            _make_swings(
+                [
+                    (100.0, SwingType.HIGH),
+                    (100.5, SwingType.HIGH),
+                ]
+            )
+        )
+        result = analyzer.analyze(view, _keyed_facts(sf, _atr_series_fact(2.0)))
+        fact = result.facts[0]
+        assert isinstance(fact, SRFact)
+        assert len(fact.levels) == 1
+        assert fact.levels[0].strength == 2
 
     def test_clustered_swings_merge(self) -> None:
         """Swings within tolerance cluster into one level."""
@@ -132,7 +164,7 @@ class TestSupportResistanceAnalyzer:
         view = MarketView(store, cursor=4, window_size=4)
         # tolerance = 0.5 * ATR = 0.5 * 2.0 = 1.0
         # Two swings at 100.0 and 100.5 → within tolerance → cluster
-        analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5)
+        analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5, min_touches=1)
         sf = _swings_fact(
             _make_swings(
                 [
@@ -204,7 +236,7 @@ class TestSupportResistanceAnalyzer:
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
         # current close = 100.0
-        analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5)
+        analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5, min_touches=1)
         sf = _swings_fact(
             _make_swings(
                 [
@@ -227,7 +259,7 @@ class TestSupportResistanceAnalyzer:
         candles = [(100.0, 101.0, 99.0, 100.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
-        analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5)
+        analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5, min_touches=1)
         sf = _swings_fact(
             _make_swings(
                 [
@@ -248,7 +280,7 @@ class TestSupportResistanceAnalyzer:
         candles = [(100.0, 101.0, 99.0, 100.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
-        analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5)
+        analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5, min_touches=1)
         sf = _swings_fact(
             _make_swings(
                 [
@@ -264,7 +296,7 @@ class TestSupportResistanceAnalyzer:
         candles = [(100.0, 101.0, 99.0, 100.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
-        analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5)
+        analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5, min_touches=1)
         sf = _swings_fact(
             _make_swings(
                 [
@@ -281,7 +313,7 @@ class TestSupportResistanceAnalyzer:
         candles = [(100.0, 101.0, 99.0, 100.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
-        analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5)
+        analyzer = SupportResistanceAnalyzer(level_tolerance_atr=0.5, min_touches=1)
         sf = _swings_fact(
             _make_swings(
                 [
@@ -307,7 +339,7 @@ class TestSupportResistanceAnalyzer:
         candles = [(100.0, 101.0, 99.0, 100.0)] * 5
         store = _make_store(candles)
         view = MarketView(store, cursor=4, window_size=4)
-        analyzer = SupportResistanceAnalyzer(swing_key="swing_custom", atr_series_key="atr_custom")
+        analyzer = SupportResistanceAnalyzer(swing_key="swing_custom", atr_series_key="atr_custom", min_touches=1)
         sf = _swings_fact(_make_swings([(95.0, SwingType.LOW)]))
         atr = _atr_series_fact(2.0)
         facts: dict[FactKey, Fact] = {FactKey("swing_custom"): sf, FactKey("atr_custom"): atr}

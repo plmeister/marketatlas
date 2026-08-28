@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 
 from marketatlas.data.types import Candle
-from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.structural import TrendDirection
 from marketatlas.strategy.signals import TradeSignal
 from marketatlas.strategy.trade import TradeCandidate
@@ -148,7 +147,15 @@ class TradeBook:
         self._pending_instrument = instrument
         self._pending_timestamp = signal_timestamp
 
-    def fill_order(self, open_price: float, timestamp: datetime) -> None:
+    def fill_order(self, candle: Candle) -> None:
+        """Fill a pending order once the candle trades through its entry.
+
+        On a bullish entry the order fills when price rises to the entry
+        (``candle.high >= entry``); on bearish, when price falls to it
+        (``candle.low <= entry``). Until price crosses the entry the order
+        stays pending — a gap that never returns to the entry never fills. The
+        fill price is the submitted entry; stop/target/size/risk are untouched.
+        """
         if self._pending_order is None:
             return
         candidate = self._pending_order
@@ -157,18 +164,16 @@ class TradeBook:
         instrument = self._pending_instrument
         if candidate is None or signal is None:
             return
-        filled = self._reprice_at_fill(candidate, open_price)
-        if filled is None:
-            self._pending_order = None
-            self._pending_signal = None
-            self._pending_source = ""
-            self._pending_instrument = ""
-            self._pending_timestamp = None
-            return
+        if candidate.direction == TrendDirection.BULLISH:
+            if candle.high < candidate.entry:
+                return
+        else:
+            if candle.low > candidate.entry:
+                return
         self._open_trade = TradeOutcome(
-            entry_timestamp=timestamp,
+            entry_timestamp=candle.timestamp,
             exit_timestamp=None,
-            candidate=filled,
+            candidate=candidate,
             signal=signal,
             source_strategy=source,
             instrument=instrument,
@@ -180,49 +185,6 @@ class TradeBook:
         self._pending_source = ""
         self._pending_instrument = ""
         self._pending_timestamp = None
-
-    @staticmethod
-    def _reprice_at_fill(
-        candidate: TradeCandidate, fill_price: float
-    ) -> TradeCandidate | None:
-        """Rebase a pending candidate onto its actual fill price.
-
-        The order fills at the next candle's open while the planned entry was
-        derived from the signal candle's open, so using the planned entry
-        would pair an entry price from one date with an entry timestamp from
-        another. Re-pricing here keeps both on the same candle, re-sizes to
-        hold the planned dollar risk fixed, and cancels the order when the
-        move between the signal open and the fill open pushes the actual
-        reward/risk below the planned minimum.
-        """
-        if candidate.direction == TrendDirection.BULLISH:
-            entry = fill_price * (1 + candidate.slippage_pct / 100)
-        else:
-            entry = fill_price * (1 - candidate.slippage_pct / 100)
-
-        stop_distance = abs(entry - candidate.stop)
-        if stop_distance <= 0:
-            return None
-
-        distance = abs(candidate.target - entry)
-        rr_ratio = distance / stop_distance
-        if candidate.min_rr > 0 and rr_ratio < candidate.min_rr:
-            return None
-
-        size = candidate.risk_amount / stop_distance
-        note = (
-            f"Filled at {entry:.2f} (open {fill_price:.2f}); "
-            f"re-sized {size:.4f} to hold fixed risk"
-        )
-        return replace(
-            candidate,
-            entry=entry,
-            size=size,
-            rr_ratio=rr_ratio,
-            reward_amount=size * distance,
-            evidence=candidate.evidence
-            + (EvidenceEntry(text=note, level=EvidenceLevel.INFO, source="TradeBook"),),
-        )
 
     def close_trade(self, exit_price: float, timestamp: datetime) -> None:
         if self._open_trade is None:
@@ -258,6 +220,11 @@ class TradeBook:
         self._open_trade = None
 
     def resolve_at_cursor(self, candle: Candle, max_hold_days: int = 10) -> None:
+        if self._pending_order is not None:
+            if self._pending_timestamp is not None:
+                pending_days = (candle.timestamp - self._pending_timestamp).days
+                if pending_days >= max_hold_days:
+                    self._cancel_pending(candle)
         if self._open_trade is None:
             return
         c = self._open_trade.candidate
@@ -265,10 +232,6 @@ class TradeBook:
         if days_held >= max_hold_days:
             self.close_trade(candle.close, candle.timestamp)
             return
-
-        if candle.timestamp == self._open_trade.entry_timestamp:
-            if self._resolve_fill_candle_gap(candle):
-                return
 
         if c.direction == TrendDirection.BULLISH:
             if candle.low <= c.stop:
@@ -281,26 +244,32 @@ class TradeBook:
             elif candle.low <= c.target:
                 self.close_trade(c.target, candle.timestamp)
 
-    def _resolve_fill_candle_gap(self, candle: Candle) -> bool:
-        """Close at the open when the fill candle gapped through stop/target.
+    def _cancel_pending(self, candle: Candle) -> None:
+        """Drop a pending order that never reached its entry within max_hold_days.
 
-        A position filled at the candle's open cannot capture a move that
-        happened before entry; if the open already breached a level, exit at
-        that open rather than at a stop/target that sits on the wrong side of
-        the fill price. Returns True when the trade was closed.
+        Records the cancellation so the rejected order is visible and frees the
+        book to consider later signals.
         """
-        if self._open_trade is None:
-            return False
-        c = self._open_trade.candidate
-        if c.direction == TrendDirection.BULLISH:
-            if candle.open >= c.target or candle.open <= c.stop:
-                self.close_trade(candle.open, candle.timestamp)
-                return True
-        else:
-            if candle.open <= c.target or candle.open >= c.stop:
-                self.close_trade(candle.open, candle.timestamp)
-                return True
-        return False
+        pending = self._pending_order
+        signal = self._pending_signal
+        if pending is None or signal is None:
+            return
+        cancelled = TradeOutcome(
+            entry_timestamp=self._pending_timestamp or candle.timestamp,
+            exit_timestamp=candle.timestamp,
+            candidate=pending,
+            signal=signal,
+            source_strategy=self._pending_source,
+            instrument=self._pending_instrument,
+            pnl=0.0,
+            result="cancelled",
+        )
+        self._trades.append(cancelled)
+        self._pending_order = None
+        self._pending_signal = None
+        self._pending_source = ""
+        self._pending_instrument = ""
+        self._pending_timestamp = None
 
     def filtered_by_instrument(self, canonical: str) -> TradeBook:
         """A copy of the book holding only ``canonical``'s closed trades.
@@ -350,6 +319,31 @@ class TradeBook:
             "by_strategy": self._strategy_breakdown(),
             "by_instrument": self._instrument_breakdown(),
         }
+
+    def monthly_summary(self) -> dict[str, dict[str, object]]:
+        """Closed trades grouped by entry month (``YYYY-MM``), sorted chronologically."""
+        months: dict[str, dict[str, object]] = {}
+        for trade in self._trades:
+            key = trade.entry_timestamp.strftime("%Y-%m")
+            if key not in months:
+                months[key] = {
+                    "trades": 0,
+                    "wins": 0,
+                    "losses": 0,
+                    "breakevens": 0,
+                    "total_pnl": 0.0,
+                }
+            row = months[key]
+            row["trades"] = row["trades"] + 1  # type: ignore[operator]
+            if trade.result == "win":
+                row["wins"] = row["wins"] + 1  # type: ignore[operator]
+            elif trade.result == "loss":
+                row["losses"] = row["losses"] + 1  # type: ignore[operator]
+            elif trade.result == "breakeven":
+                row["breakevens"] = row["breakevens"] + 1  # type: ignore[operator]
+            if trade.pnl is not None:
+                row["total_pnl"] = row["total_pnl"] + trade.pnl  # type: ignore[operator]
+        return dict(sorted(months.items()))
 
     def _instrument_breakdown(self) -> dict[str, dict[str, object]]:
         return self._breakdown_by("instrument")

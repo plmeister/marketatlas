@@ -88,7 +88,7 @@ class Backtester:
                 e for _, sig in signal_rejections for e in sig.rejections
             )
 
-            tradebook.fill_order(view.current.open, view.current.timestamp)
+            tradebook.fill_order(view.current)
             tradebook.resolve_at_cursor(view.current, self._max_hold_days)
 
             risk_evidence: tuple[EvidenceEntry, ...] = ()

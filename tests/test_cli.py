@@ -1354,6 +1354,10 @@ class TestRunPortfolio:
                 "by_strategy": {"test": {"wins": 2, "losses": 1, "total_pnl": 100.0}},
             }
             mock_tradebook.trades = []
+            mock_tradebook.monthly_summary.return_value = {
+                "2024-01": {"trades": 2, "wins": 1, "losses": 1, "total_pnl": 60.0},
+                "2024-02": {"trades": 1, "wins": 1, "losses": 0, "total_pnl": 40.0},
+            }
             mock_result = MagicMock()
             mock_result.tradebook = mock_tradebook
 
@@ -1405,6 +1409,9 @@ class TestRunPortfolio:
         assert "BTCUSD" in captured.out
         assert "By instrument:" in captured.out
         assert "By strategy:" in captured.out
+        assert "Monthly breakdown" in captured.out
+        assert "2024-01" in captured.out
+        assert "2024-02" in captured.out
 
 
 class TestParserValidation:

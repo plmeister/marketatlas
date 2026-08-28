@@ -432,7 +432,7 @@ class TestEndToEnd:
             signals=(SignalConfig(type="PullbackSignal", rules={}),),
             risk=RiskConfig(
                 algorithm="default",
-                params={"risk_pct": 1.0, "min_rr": 0.0, "max_rr": 4.0, "sr_buffer_atr": 0.0},
+                params={"risk_pct": 1.0, "min_rr": 0.0, "max_rr": 4.0, "sr_buffer_atr": 0.0, "max_stop_atr": 5.0},
             ),
         )
 
@@ -442,6 +442,11 @@ class TestEndToEnd:
             price = 100.0 + i * 0.1
             data.append((price, price + 0.5, price - 0.5, price + 0.2))
         data += _bullish_zigzag()
+        data += [
+            (103.0, 104.0, 102.0, 103.5),  # mild pullback dips into the entry zone
+            (103.5, 105.0, 103.0, 104.5),  # price recovers through the target
+            (104.5, 106.0, 104.0, 105.5),
+        ]
         return _store(data)
 
     def test_confirmed_pullback_reaches_risk_engine(self) -> None:
@@ -453,19 +458,27 @@ class TestEndToEnd:
         assert len(signals) == 1
         assert signals[0].direction == TrendDirection.BULLISH
 
-        candidate, _ = strategy.risk_engine.evaluate(signals[0], facts, view)
-        assert candidate is not None
-        assert candidate.size > 0
-        assert candidate.entry > 0
-        assert candidate.target > candidate.entry
+        candidate, evidence = strategy.risk_engine.evaluate(signals[0], facts, view)
+        # New risk model: the last-but-one swing-low stop (98.14) sits below the
+        # support level (99.0) the breakout rejected -> the stop crosses an S/R
+        # level, so the candidate is rejected rather than clamped.
+        assert candidate is None
+        assert any("breaks through support" in e.text for e in evidence)
 
-    def test_backtester_records_trade_from_confirmed_pullback(self) -> None:
+    def test_backtester_skips_trade_when_stop_crosses_support(self) -> None:
+        """Backlog 067 continuation: SR-cross rejection yields no fill.
+
+        The confirmed pullback now reaches the risk engine but is rejected
+        because the last-but-one-anchored stop crosses the support level, so
+        no trade is submitted or recorded. This documents the conservative
+        stop-guard behaviour introduced with entry-buffer + last-but-one stop
+        anchoring.
+        """
         store = self._rising_store()
         strategy = Strategy("pullback_e2e", self._strategy_config())
         bundle = StrategyBundle([strategy])
         tradebook = Backtester(store, bundle, window_size=60).run().tradebook
-        assert len(tradebook.trades) >= 1
-        assert all(t.candidate.size > 0 for t in tradebook.trades)
+        assert len(tradebook.trades) == 0
 
 
 class TestRejectionEvidenceOnFrame:
