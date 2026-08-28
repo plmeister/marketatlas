@@ -43,6 +43,15 @@ function updateMarkers(cv, idx) {
   });
 
   cv.model.trades.forEach((t) => {
+    if (t.entry_time !== null && t.entry_time <= frameTime) {
+      markers.push({
+        time: t.entry_time,
+        position: t.direction === "bearish" ? "belowBar" : "aboveBar",
+        color: "#a855f7",
+        shape: "square",
+        text: "",
+      });
+    }
     if (t.exit_time !== null && t.exit_time <= frameTime) {
       const isWin = t.result === "win";
       markers.push({

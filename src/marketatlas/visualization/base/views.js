@@ -40,6 +40,7 @@ class ChartView {
     this.tradeBoxPrimitive = null;
     this._tooltipEl = null;
     this._lastSeriesLen = 0;
+    this.onDblClick = null;
   }
 
   // --- Chart lifecycle ---
@@ -73,6 +74,9 @@ class ChartView {
     _overlays.createAnnotationSeries(this, tf);
     this.containers.main.style.position = "relative";
     this.chart.subscribeCrosshairMove((param) => _crosshair.onCrosshairMove(this, param));
+    this.chart.subscribeDblClick((param) => {
+      if (this.onDblClick) this.onDblClick(param.time);
+    });
   }
 
   // --- Frame-level updates ---

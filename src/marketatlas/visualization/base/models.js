@@ -273,6 +273,19 @@ class AppModel {
     return this.currentFrame;
   }
 
+  // Nearest frame whose time is at or after `time` (string candle time).
+  goToTime(time) {
+    if (time === null || time === undefined) return;
+    for (let i = 0; i < this.frames.length; i++) {
+      const t = this.frameTime(i);
+      if (t !== null && _t(t) >= _t(time)) {
+        this.currentFrame = this._clamp(i);
+        return;
+      }
+    }
+    this.currentFrame = this._clamp(this.frames.length - 1);
+  }
+
   // --- Step sizing ---
   // Frames advance on the primary TF (e.g. 1d) while the chart may show a
   // coarser TF (e.g. 1w). Stepping one frame then lands mid-candle and no new

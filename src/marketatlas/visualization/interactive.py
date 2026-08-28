@@ -228,6 +228,7 @@ def _extract_trades_json(tradebook: TradeBook) -> list[dict[str, Any]]:
         result.append(
             {
                 "entry_time": trade.entry_timestamp.strftime("%Y-%m-%d"),
+                "submit_time": trade.submit_time.strftime("%Y-%m-%d"),
                 "exit_time": (
                     trade.exit_timestamp.strftime("%Y-%m-%d")
                     if trade.exit_timestamp is not None

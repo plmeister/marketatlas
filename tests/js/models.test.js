@@ -337,6 +337,16 @@ test("goTo sets specific frame", () => {
   assert.strictEqual(model.currentFrame, 0);
 });
 
+test("goToTime jumps to the frame for a clicked candle time", () => {
+  const target = model.frameTime(4);
+  model.goToTime(target);
+  assert.ok(model.currentFrame >= 4);
+  assert.strictEqual(model.frameTime(model.currentFrame), target);
+  model.goTo(0);
+  model.goToTime("1900-01-01"); // before all data → earliest frame
+  assert.strictEqual(model.currentFrame, 0);
+});
+
 // --- Step sizing (coarser view TF) ---
 test("nextStepIndex advances 1 frame when view TF matches frame TF", () => {
   assert.strictEqual(model.nextStepIndex(0), 1);

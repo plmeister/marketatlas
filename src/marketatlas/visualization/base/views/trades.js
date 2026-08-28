@@ -53,21 +53,40 @@ class TradeBoxPrimitive {
 function tradeBoxesAt(cv, frameTime) {
   const candles = cv.model.activeCandles;
   const lastTime = candles.length ? candles[candles.length - 1].time : null;
-  const hideFuture = cv.model.futureVisibility === "hide";
+
+  // Snap a calendar date down to the latest candle time that actually exists on
+  // the axis (a hold end can land on a non-trading day with no coordinate, which
+  // would drop the whole box from the renderer).
+  function snapToCandle(target) {
+    if (!lastTime) return target;
+    if (_t(target) >= _t(lastTime)) return lastTime;
+    let best = null;
+    for (const c of candles) {
+      if (_t(c.time) > _t(target)) break;
+      best = c.time;
+    }
+    return best || target;
+  }
+
   const boxes = [];
   cv.model.trades.forEach((t) => {
-    if (t.entry_time > frameTime) return;
     if (t.entry === undefined || t.stop === undefined || t.target === undefined) return;
-    let toTime = _addDays(t.entry_time, cv.model.maxHoldDays);
+    // The broker hold window differs by state: a filled trade holds from the
+    // entry trigger (entry + maxHold); a pending order that has not yet
+    // reached its entry previews from submit (submit + maxHold). Fall back to
+    // the entry date for older payloads without submit_time.
+    const from = _fromTime(t, frameTime);
+    if (from > frameTime) return;
+    // Always show the full intended hold window, even past the current cursor.
+    let toTime = snapToCandle(_addDays(from, cv.model.maxHoldDays));
     if (lastTime && _t(toTime) > _t(lastTime)) toTime = lastTime;
-    if (hideFuture && _t(toTime) > _t(frameTime)) toTime = frameTime;
-    if (_t(toTime) <= _t(t.entry_time)) {
+    if (_t(toTime) <= _t(from)) {
       const nextFrame = cv.model.frames.find((f) => _t(f.time) > _t(frameTime));
       if (!nextFrame) return;
       toTime = nextFrame.time;
     }
     boxes.push({
-      fromTime: t.entry_time,
+      fromTime: from,
       toTime,
       entry: t.entry,
       stop: t.stop,
@@ -104,7 +123,22 @@ function hitTradeBox(cv, point) {
     }
   }
   if (!hit) return null;
-  return cv.model.trades.find((t) => t.entry_time === hit.fromTime) || null;
+  const frameTime = cv.model.frameTime(cv.model.currentFrame);
+  return (
+    cv.model.trades.find((t) => _fromTime(t, frameTime) === hit.fromTime) || null
+  );
+}
+
+function _fromTime(t, frameTime) {
+  const submit = t.submit_time || t.entry_time;
+  if (frameTime) {
+    const filled =
+      t.entry_time !== null &&
+      t.entry_time !== undefined &&
+      _t(t.entry_time) <= _t(frameTime);
+    return filled ? t.entry_time : submit;
+  }
+  return submit;
 }
 
 function attachTradeBoxes(cv) {
@@ -127,6 +161,7 @@ if (typeof module !== "undefined" && module.exports) {
   };
 } else if (typeof window !== "undefined") {
   window._mav = window._mav || {};
+  window._addDays = _addDays;
   window._mav.trades = {
     TradeBoxPrimitive,
     tradeBoxesAt,

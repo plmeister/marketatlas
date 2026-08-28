@@ -135,6 +135,10 @@ class MockChart {
     this.crosshairHandlers = this.crosshairHandlers || [];
     this.crosshairHandlers.push(cb);
   }
+  subscribeDblClick(cb) {
+    this.dblClickHandlers = this.dblClickHandlers || [];
+    this.dblClickHandlers.push(cb);
+  }
   timeToCoordinate(t) {
     const s = this.series[0];
     const d = s && s.data ? s.data() : [];
@@ -194,6 +198,8 @@ function createDocumentMock() {
 
 function installBrowserMocks() {
   global._t = (t) => Date.parse(t);
+  global._addDays = (iso, days) =>
+    new Date(Date.parse(iso) + days * 86400000).toISOString().slice(0, 10);
   global._fmtP = (x) => {
     if (x === null || x === undefined || !isFinite(x)) return "";
     const ax = Math.abs(x);

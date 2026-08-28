@@ -118,6 +118,12 @@ const MAX_HOLD_DAYS = null; // @data:MAX_HOLD_DAYS
       render();
     }),
   );
+  chartView.onDblClick = (time) => {
+    withAutoScroll(() => {
+      model.goToTime(time);
+      render();
+    })();
+  };
   document.getElementById("btn-last").addEventListener(
     "click",
     withAutoScroll(() => {

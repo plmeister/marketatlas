@@ -1,4 +1,5 @@
 "use strict";
+/* global _t, _addDays */
 
 function _updateAutoBtn(active) {
   const btn = document.getElementById("btn-autoscroll");
@@ -125,6 +126,30 @@ function destroyCharts(cv) {
   }
 }
 
+function holdHorizon(cv, frameTime) {
+  // Latest time the current frame's trade hold windows extend to, so the axis
+  // covers the full box span and the box can render ahead of the cursor.
+  let max = null;
+  for (const t of cv.model.trades) {
+    const from = t.submit_time || t.entry_time;
+    if (from > frameTime) continue;
+    const end = _addDays(from, cv.model.maxHoldDays);
+    if (max === null || _t(end) > _t(max)) max = end;
+  }
+  return max;
+}
+
+function _transparent(c) {
+  return {
+    ...c,
+    color: "rgba(0,0,0,0)",
+    borderColor: "rgba(0,0,0,0)",
+    wickColor: "rgba(0,0,0,0)",
+    upColor: "rgba(0,0,0,0)",
+    downColor: "rgba(0,0,0,0)",
+  };
+}
+
 function updateCandles(cv, idx) {
   const frameTime = cv.model.frameTime(idx);
   if (!frameTime) return;
@@ -132,7 +157,16 @@ function updateCandles(cv, idx) {
   const mode = cv.model.futureVisibility;
   let data;
   if (mode === "hide") {
+    // Candles are truncated at the cursor; the trade hold window past the
+    // cursor is kept only as invisible axis anchors so the box still draws.
+    const horizon = holdHorizon(cv, frameTime);
     data = all.filter((c) => c.time <= frameTime);
+    if (horizon && _t(horizon) > _t(frameTime)) {
+      const invisible = all
+        .filter((c) => c.time > frameTime && c.time <= horizon)
+        .map(_transparent);
+      data = data.concat(invisible).sort((a, b) => _t(a.time) - _t(b.time));
+    }
   } else if (mode === "dim") {
     data = all.map((c) =>
       c.time > frameTime

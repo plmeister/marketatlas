@@ -214,6 +214,56 @@ test("updateTrades excludes trades not yet placed at the frame time", () => {
   assert.deepStrictEqual(cv.tradeBoxes, []);
 });
 
+test("trade box starts at the submit (posted) date, not the entry trigger", () => {
+  const model = makeModel({ MAX_HOLD_DAYS: 5 });
+  model.futureVisibility = "show";
+  // trade submitted 2024-01-02, entry trigger not met until 2024-01-08
+  model.trades = [
+    {
+      submit_time: "2024-01-02",
+      entry_time: "2024-01-08",
+      entry: 120,
+      stop: 115,
+      target: 135,
+      direction: "bullish",
+      result: null,
+      pnl: null,
+    },
+  ];
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateTrades(2); // frame time 2024-01-04, posted but not yet entered
+  const b = cv.tradeBoxes[0];
+  assert.ok(b, "posted-but-pending trade still shows its hold window");
+  assert.strictEqual(b.fromTime, "2024-01-02");
+  assert.strictEqual(b.toTime, "2024-01-07"); // submit + maxHold=5
+});
+
+test("filled trade box runs entry to entry+maxHold, not submit", () => {
+  const model = makeModel({ MAX_HOLD_DAYS: 5 });
+  model.futureVisibility = "show";
+  // submitted 2024-01-02, entry trigger met 2024-01-08
+  model.trades = [
+    {
+      submit_time: "2024-01-02",
+      entry_time: "2024-01-08",
+      entry: 120,
+      stop: 115,
+      target: 135,
+      direction: "bullish",
+      result: null,
+      pnl: null,
+    },
+  ];
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateTrades(4); // frame time 2024-01-08, now filled
+  const b = cv.tradeBoxes[0];
+  assert.ok(b, "filled trade draws its hold window");
+  assert.strictEqual(b.fromTime, "2024-01-08"); // entry, not submit
+  assert.strictEqual(b.toTime, "2024-01-10"); // entry + maxHold=5, clamped to data end
+});
+
 test("trade box spans entry to entry+maxHold clamped to last candle", () => {
   const model = makeModel({ MAX_HOLD_DAYS: 5 });
   const cv = new ChartView(model, makeContainers());
@@ -229,16 +279,17 @@ test("trade box spans entry to entry+maxHold clamped to last candle", () => {
   });
 });
 
-test("hide mode clamps trade box end to the current frame (grows from entry)", () => {
+test("full hold window always shown even past the current frame", () => {
   const model = makeModel(); // futureVisibility defaults to "hide"
   const cv = new ChartView(model, makeContainers());
   cv.build("1d");
   cv.updateTrades(3); // frame time 2024-01-05
   const t1 = cv.tradeBoxes.find((b) => b.fromTime === "2024-01-02");
-  assert.strictEqual(t1.toTime, "2024-01-05"); // clamped, not entry+maxHold
+  // not clamped to the frame; full entry+maxHold span (clamped only to data end)
+  assert.strictEqual(t1.toTime, "2024-01-10");
   const t2 = cv.tradeBoxes.find((b) => b.fromTime === "2024-01-05");
   assert.ok(t2, "trade entered on the current frame still draws a box");
-  assert.strictEqual(t2.toTime, "2024-01-08"); // widened to the next frame
+  assert.strictEqual(t2.toTime, "2024-01-10"); // full span, not widened-to-next-frame
 });
 
 test("show mode keeps the full trade box span from entry", () => {
@@ -303,6 +354,21 @@ test("trade tooltip appears on hover over a trade box and hides on leave", () =>
   assert.strictEqual(tooltip.style.display, "none");
 });
 
+test("double-click on the chart routes the clicked time to onDblClick", () => {
+  const model = makeModel();
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  let got = null;
+  cv.onDblClick = (time) => {
+    got = time;
+  };
+  const chart = global.LightweightCharts.createdCharts[0];
+  chart.dblClickHandlers[0]({ time: "2024-01-06" });
+  assert.strictEqual(got, "2024-01-06");
+  chart.dblClickHandlers[0]({ time: "2024-01-10" });
+  assert.strictEqual(got, "2024-01-10");
+});
+
 test("trade tooltip hides when hovering off any box", () => {
   const model = makeModel();
   const cv = new ChartView(model, makeContainers());
@@ -310,8 +376,7 @@ test("trade tooltip hides when hovering off any box", () => {
   cv.updateTrades(5);
   const chart = global.LightweightCharts.createdCharts[0];
   chart.crosshairHandlers[0]({ point: { x: 60, y: 118 } });
-  const tooltip = cv._tooltipEl;
-  assert.notStrictEqual(tooltip.style.display, "none");
+  const tooltip = cv._tooltipEl;  assert.notStrictEqual(tooltip.style.display, "none");
   chart.crosshairHandlers[0]({ point: { x: 5, y: 5 } }); // outside all boxes
   assert.strictEqual(tooltip.style.display, "none");
 });
@@ -475,8 +540,25 @@ test("trade box primitive draws green reward and red risk rectangles", () => {
     assert.ok(o.w > 0 && o.h > 0, "positive width/height");
   }
 });
-test("updateCandles hides future candles in hide mode", () => {
+test("updateCandles in hide mode keeps candles visible only to the cursor", () => {
   const model = makeModel();
+  const cv = new ChartView(model, makeContainers());
+  cv.build("1d");
+  cv.updateCandles(3); // frame time 2024-01-05
+  const data = cv.candleSeries.data();
+  const visible = data.filter((c) => !String(c.color).includes("rgba(0,0,0,0)"));
+  // candles are truncated at the cursor (5); the hold-window anchors past the
+  // cursor are present but fully transparent (not rendered as candles)
+  assert.strictEqual(visible.length, 5);
+  assert.strictEqual(visible[visible.length - 1].time, "2024-01-05");
+  const anchors = data.filter((c) => String(c.color).includes("rgba(0,0,0,0)"));
+  assert.ok(anchors.length > 0, "hold-window candles past cursor are axis anchors");
+  assert.ok(anchors.every((c) => Date.parse(c.time) > Date.parse("2024-01-05")));
+});
+
+test("updateCandles with no trades still hides future past the cursor", () => {
+  const model = makeModel();
+  model.trades = [];
   const cv = new ChartView(model, makeContainers());
   cv.build("1d");
   cv.updateCandles(3); // frame time 2024-01-05 -> 5 candles visible
