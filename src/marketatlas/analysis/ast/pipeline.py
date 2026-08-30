@@ -27,7 +27,6 @@ from marketatlas.analysis.ast.expansion import (  # noqa: E402
 from marketatlas.analysis.ast.expressions import (
     ChoiceExpression,
     LiteralExpression,
-    ReferenceExpression,
     choice_leaves,
 )
 from marketatlas.analysis.ast.instrument import TemplateGraph

@@ -22,6 +22,8 @@ from marketatlas.data.types import Timeframe
 
 __all__ = [
     "ATR",
+    "Breakout",
+    "Channel",
     "Choice",
     "PullbackPattern",
     "EMA",
@@ -234,11 +236,25 @@ def PullbackPattern(  # noqa: N802
     return construct("pullbackpattern", name, **params)
 
 
+def Channel(  # noqa: N802
+    name: str | None = None, **params: Any
+) -> Definition:
+    """Definition for the ``channel`` provider (default period 20)."""
+    return construct("channel", name, **params)
+
+
 def GenerateSignal(  # noqa: N802
     name: str | None = None, **params: Any
 ) -> Definition:
     """Definition for the ``generate_signal`` provider (category ``signal``)."""
     return construct("generate_signal", name, **params)
+
+
+def Breakout(  # noqa: N802
+    name: str | None = None, **params: Any
+) -> Definition:
+    """Definition for the ``breakout`` provider (category ``signal``)."""
+    return construct("breakout", name, **params)
 
 
 def ManageRisk(  # noqa: N802

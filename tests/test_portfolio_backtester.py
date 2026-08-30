@@ -382,7 +382,7 @@ class TestTradeAttribution:
         assert len(result.tradebook.trades) == 1
         assert result.tradebook.trades[0].instrument == "A"
 
-    def test_no_overlap_between_trades(self) -> None:
+    def test_trades_run_concurrently_per_instrument(self) -> None:
         result = self._run_two_instrument(
             [
                 _signal_entry("strat", "A", (60,), _signal()),
@@ -390,12 +390,13 @@ class TestTradeAttribution:
             ]
         )
         trades = result.tradebook.trades
-        assert trades[0].exit_timestamp is not None
-        assert trades[0].exit_timestamp <= trades[1].entry_timestamp
+        assert len(trades) == 2
+        assert [t.instrument for t in trades] == ["A", "B"]
+        assert all(t.entry_timestamp is not None for t in trades)
 
 
-class TestSingleOpenTrade:
-    def test_concurrent_signals_single_trade(self) -> None:
+class TestPerInstrumentConcurrency:
+    def test_concurrent_signals_fill_both_instruments(self) -> None:
         start = datetime(2024, 1, 1, tzinfo=UTC)
         a = _store("A", _fill_candles(100, start))
         b = _store("B", _fill_candles(100, start))
@@ -413,11 +414,35 @@ class TestSingleOpenTrade:
             window_size=50,
             max_hold_days=1,
         ).run()
-        # Both instruments signal at the same cursor; only the first (A) fills
-        assert len(result.tradebook.trades) == 1
-        assert result.tradebook.trades[0].instrument == "A"
+        # Both instruments signal at the same cursor; each lane fills — no
+        # portfolio-wide one-trade gate.
+        assert [t.instrument for t in result.tradebook.trades] == ["A", "B"]
 
-    def test_second_instrument_trades_after_close(self) -> None:
+    def test_busy_lane_blocks_only_that_instrument(self) -> None:
+        start = datetime(2024, 1, 1, tzinfo=UTC)
+        a = _store("A", _fill_candles(100, start))
+        b = _store("B", _fill_candles(100, start))
+        bundle = _PortfolioBundle(
+            signals=[
+                _signal_entry("strat", "A", (60,), _signal()),
+                _signal_entry("strat", "A", (61,), _signal()),
+                _signal_entry("strat", "B", (61,), _signal()),
+            ],
+            strategies=["strat"],
+            engines={"strat": _default_engine(_candidate())},
+        )
+        result = PortfolioBacktester(
+            bundle,
+            [(_instrument("A"), a), (_instrument("B"), b)],
+            window_size=50,
+            max_hold_days=1,
+        ).run()
+        trades = result.tradebook.trades
+        # A's lane ignores the second signal while busy; B trades freely
+        # despite A being engaged that same day.
+        assert [t.instrument for t in trades] == ["A", "B"]
+
+    def test_second_instrument_trades_after_first_closes(self) -> None:
         start = datetime(2024, 1, 1, tzinfo=UTC)
         a = _store("A", _fill_candles(100, start))
         b = _store("B", _fill_candles(100, start))
@@ -438,9 +463,6 @@ class TestSingleOpenTrade:
         trades = result.tradebook.trades
         assert len(trades) == 2
         assert [t.instrument for t in trades] == ["A", "B"]
-        # A's trade closes before B's opens: never two open at once
-        assert trades[0].exit_timestamp is not None
-        assert trades[0].exit_timestamp <= trades[1].entry_timestamp
 
 
 class TestOwnInstrumentResolution:
@@ -476,7 +498,7 @@ class TestSharedBalance:
         start = datetime(2024, 1, 1, tzinfo=UTC)
         a = _store("A", _fill_candles(100, start))
         b = _store("B", _fill_candles(100, start))
-        engine = _default_engine(_candidate())
+        engine = _default_engine(_candidate(target=102.0))
         bundle = _PortfolioBundle(
             signals=[
                 _signal_entry("strat", "A", (60,), _signal()),
@@ -496,9 +518,9 @@ class TestSharedBalance:
         assert book.closed_count == 2
         pnls = [float(t.pnl) if t.pnl is not None else 0.0 for t in book.trades]
         assert book.balance == pytest.approx(book.initial_balance + sum(pnls))
-        # risk sizing saw the grown shared balance on the second signal
+        # A's win lands before B's signal; B sizes off the grown shared balance.
         first_pnl = book.trades[0].pnl
-        assert first_pnl is not None
+        assert first_pnl is not None and first_pnl > 0
         assert engine.balances_seen == pytest.approx([1000.0, 1000.0 + first_pnl])
 
         by_instrument = book.summary["by_instrument"]
@@ -530,19 +552,25 @@ class TestDeterministicOrdering:
         )
         return bundle, bt
 
-    def test_strategy_priority_beats_instrument_order(self) -> None:
+    def test_concurrent_strategies_fill_independent_lanes(self) -> None:
         _, bt = self._bundle(primary_reject=False)
         result = bt.run()
-        assert len(result.tradebook.trades) == 1
-        assert result.tradebook.trades[0].instrument == "B"
-        assert result.tradebook.trades[0].source_strategy == "primary"
+        trades = result.tradebook.trades
+        # Both lanes trade: B via the primary strategy, A via secondary (the
+        # strategies target different instruments, so no arbitration).
+        assert len(trades) == 2
+        by_inst = {t.instrument: t.source_strategy for t in trades}
+        assert by_inst == {"A": "secondary", "B": "primary"}
 
-    def test_rejected_primary_falls_to_secondary(self) -> None:
+    def test_rejected_primary_falls_to_secondary_same_instrument(self) -> None:
+        # When the primary rejects on B, B holds no position; A still trades
+        # through its own lane with the secondary strategy.
         _, bt = self._bundle(primary_reject=True)
         result = bt.run()
-        assert len(result.tradebook.trades) == 1
-        assert result.tradebook.trades[0].instrument == "A"
-        assert result.tradebook.trades[0].source_strategy == "secondary"
+        trades = result.tradebook.trades
+        assert len(trades) == 1
+        assert trades[0].instrument == "A"
+        assert trades[0].source_strategy == "secondary"
 
         # B's frame records the primary rejection evidence
         b_frames = result.frames["B"]

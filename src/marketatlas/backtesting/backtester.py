@@ -74,6 +74,7 @@ class Backtester:
     ) -> BacktestResult:
         frame_store = FrameStore()
         tradebook = self._bundle.tradebook
+        symbol = str(self._store.symbol)
         total = self.frame_count
         for i, cursor in enumerate(range(self._window_size, len(self._store))):
             view = MarketView(self._store, cursor, self._window_size)
@@ -88,8 +89,8 @@ class Backtester:
                 e for _, sig in signal_rejections for e in sig.rejections
             )
 
-            tradebook.fill_order(view.current)
-            tradebook.resolve_at_cursor(view.current, self._max_hold_days)
+            tradebook.fill_order(view.current, symbol)
+            tradebook.resolve_at_cursor(view.current, self._max_hold_days, symbol)
 
             risk_evidence: tuple[EvidenceEntry, ...] = ()
             if tradebook.has_no_open_trade and not tradebook.has_pending_order:
@@ -108,7 +109,7 @@ class Backtester:
                             signal,
                             name,
                             view.current.timestamp,
-                            instrument=str(self._store.symbol),
+                            instrument=symbol,
                         )
                         break
                     # Signal passed the signal layer but the risk engine
@@ -136,6 +137,7 @@ class Backtester:
             tradebook.close_trade(
                 self._store[last_cursor].close,
                 self._store[last_cursor].timestamp,
+                symbol,
             )
 
         return BacktestResult(

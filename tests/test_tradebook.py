@@ -275,7 +275,7 @@ class TestFillCandleResolution:
             evidence=(),
         )
         self._fill(tb, t0 + timedelta(days=1), cand=cand)
-        open_trade = tb._open_trade
+        open_trade = tb._open_trades[""]
         assert open_trade is not None
         assert open_trade.candidate is cand
         assert open_trade.candidate.entry == 100.0
@@ -364,8 +364,8 @@ class TestFillCandleResolution:
         self._fill(tb, t0 + timedelta(days=1), fill_price=106.0, cand=cand)
         assert tb.has_pending_order is False
         assert tb.has_no_open_trade is False
-        assert tb._open_trade is not None
-        assert tb._open_trade.candidate is cand
+        assert tb._open_trades[""] is not None
+        assert tb._open_trades[""].candidate is cand
 
 
 class TestSummary:
@@ -457,14 +457,14 @@ class TestStrategyBreakdown:
 
         c1 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
         tb.submit_order(c1, _signal(), "strat_a", t0, instrument="GBPUSD")
-        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
-        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=99.0))
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0), "GBPUSD")
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=2), h=116.0, lo=99.0), instrument="GBPUSD")
 
         t1 = t0 + timedelta(days=5)
         c2 = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
         tb.submit_order(c2, _signal(), "strat_a", t1, instrument="BTCUSD")
-        tb.fill_order(_candle(t1, h=110.0, lo=90.0))
-        tb.resolve_at_cursor(_candle(t1 + timedelta(days=1), lo=94.0, h=101.0))
+        tb.fill_order(_candle(t1 + timedelta(days=1), h=110.0, lo=90.0), "BTCUSD")
+        tb.resolve_at_cursor(_candle(t1 + timedelta(days=2), lo=94.0, h=101.0), instrument="BTCUSD")
 
         trades = tb.trades
         assert trades[0].instrument == "GBPUSD"

@@ -4,7 +4,6 @@ import pytest
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.graph import (
-
     AnalysisGraph,
     AnalyzerRegistry,
     CyclicDependencyError,
@@ -615,3 +614,90 @@ class TestCrossResolutionGraph:
         facts = graph.run(view)
         assert FactKey("ema_20") in facts
         assert FactKey("weekly_signal", timeframe=Timeframe.W1) in facts
+
+
+class TestChannelAnalyzer:
+    def _rising_candles(self, n: int = 25, spark_last: float = 0.0) -> MarketStore:
+        from datetime import timedelta
+
+        candles: list[Candle] = []
+        for i in range(n):
+            open_, high, low, close = 100.0 + i, 102.0 + i, 98.0 + i, 101.0 + i
+            if i == n - 1:
+                close += spark_last
+                high = max(high, close)
+            candles.append(
+                Candle(
+                    timestamp=BASE + timedelta(days=i),
+                    open=open_,
+                    high=high,
+                    low=low,
+                    close=close,
+                    volume=1000.0,
+                )
+            )
+        data = MarketData(symbol=Symbol("TEST"), timeframe=Timeframe.D1, candles=tuple(candles))
+        return MarketStore(data)
+
+    def test_produces_channel_fact_with_trailing_bounds(self) -> None:
+        from marketatlas.analysis.analyzers.channel import ChannelAnalyzer
+        from marketatlas.facts.channel import ChannelFact
+
+        store = self._rising_candles()
+        view = MarketView(store, cursor=24, window_size=25)
+        analyzer = ChannelAnalyzer(period=20)
+        result = analyzer.analyze(view, {})
+        fact = result.facts[0]
+        assert isinstance(fact, ChannelFact)
+        assert fact.period == 20
+        assert fact.high == 125.0
+        assert fact.low == 102.0
+
+    def test_fresh_breakout_reports_zero_age(self) -> None:
+        from marketatlas.analysis.analyzers.channel import ChannelAnalyzer
+        from marketatlas.facts.channel import ChannelFact
+
+        store = self._rising_candles(spark_last=30.0)
+        view = MarketView(store, cursor=24, window_size=25)
+        analyzer = ChannelAnalyzer(period=20)
+        fact = analyzer.analyze(view, {}).facts[0]
+        assert isinstance(fact, ChannelFact)
+        assert fact.breakout_days == 0
+
+    def test_yesterday_breakout_reports_age_one(self) -> None:
+        from marketatlas.analysis.analyzers.channel import ChannelAnalyzer
+        from marketatlas.facts.channel import ChannelFact
+
+        store = self._rising_candles()
+        last = store[24]
+        prior = store[23]
+        broke_high = max(
+            c.high for i in range(len(store)) if (c := store[i]).timestamp != last.timestamp
+        ) + 4.0
+        changed = [store[i] for i in range(len(store))]
+        changed[23] = Candle(
+            timestamp=prior.timestamp,
+            open=prior.open,
+            high=broke_high,
+            low=prior.low,
+            close=broke_high,
+            volume=prior.volume,
+        )
+        data = MarketData(
+            symbol=Symbol("TEST"),
+            timeframe=Timeframe.D1,
+            candles=tuple(changed),
+        )
+        store2 = MarketStore(data)
+        view = MarketView(store2, cursor=24, window_size=25)
+        analyzer = ChannelAnalyzer(period=20)
+        fact = analyzer.analyze(view, {}).facts[0]
+        assert isinstance(fact, ChannelFact)
+        assert fact.breakout_days == 1
+
+    def test_requires_and_produces(self) -> None:
+        from marketatlas.analysis.analyzers.channel import ChannelAnalyzer
+
+        analyzer = ChannelAnalyzer(period=20)
+        assert analyzer.requires() == ()
+        assert analyzer.produces() == (FactKey("channel_20"),)

@@ -203,6 +203,7 @@ def _register_timeframe(registry: ProviderRegistry) -> None:
 def create_default_registry() -> ProviderRegistry:
     from marketatlas.analysis.analyzers.atr import ATRAnalyzer
     from marketatlas.analysis.analyzers.atr_series import ATRSeriesAnalyzer
+    from marketatlas.analysis.analyzers.channel import ChannelAnalyzer
     from marketatlas.analysis.analyzers.ema import EMAAnalyzer
     from marketatlas.analysis.analyzers.sr import SupportResistanceAnalyzer
     from marketatlas.analysis.analyzers.swing_basic import BasicSwingAnalyzer
@@ -218,6 +219,7 @@ def create_default_registry() -> ProviderRegistry:
     registry.register("atr", ATRAnalyzer, default_params={"period": 14})
     registry.register("atr_series", ATRSeriesAnalyzer, default_params={"period": 14, "lookback": 50})
     registry.register("trend", TrendAnalyzer)
+    registry.register("channel", ChannelAnalyzer, default_params={"period": 20})
     registry.register("swingstructure", SwingStructureAnalyzer, default_params={"window": 50})
     registry.register("swings", BasicSwingAnalyzer, default_params={"lookback": 50})
     registry.register("sr", SupportResistanceAnalyzer)
@@ -225,5 +227,8 @@ def create_default_registry() -> ProviderRegistry:
     _pullback_signal = SIGNAL_TYPES.get("PullbackSignal")
     if _pullback_signal is not None:
         registry.register("generate_signal", _pullback_signal, category="signal")
+    _breakout_signal = SIGNAL_TYPES.get("BreakoutSignal")
+    if _breakout_signal is not None:
+        registry.register("breakout", _breakout_signal, category="signal")
     registry.register("manage_risk", RiskEngine, category="risk")
     return registry

@@ -1,14 +1,16 @@
-import pytest
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from marketatlas.analysis.factkey import FactKey
+from marketatlas.analysis.signals.breakout_signal import BreakoutSignal
 from marketatlas.analysis.signals.pullback_signal import PullbackSignal
 from marketatlas.data.store import MarketStore
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
+from marketatlas.facts.channel import ChannelFact
 from marketatlas.facts.pattern import PullbackFact
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
@@ -16,7 +18,6 @@ from marketatlas.strategy.config import AnalyzerConfig, SignalConfig, StrategyCo
 from marketatlas.strategy.loader import load_strategy, validate_config
 from marketatlas.strategy.signals import TradeSignal
 from marketatlas.strategy.strategy import Strategy
-
 
 pytestmark = pytest.mark.tier1
 BASE = datetime(2024, 1, 1, tzinfo=UTC)
@@ -626,3 +627,146 @@ signals:
         assert len(signals) == 1
         assert signals[0].direction == TrendDirection.BULLISH
         assert signals[0].confidence > 0
+
+
+class TestBreakoutSignal:
+    def _breakout_store(self, bearish: bool = False) -> MarketStore:
+        candles: list[CandleTuple] = [(100.0, 101.0, 99.0, 100.0, 1000.0)] * 49
+        if bearish:
+            candles.append((100.0, 101.0, 50.0, 49.0, 1000.0))
+        else:
+            candles.append((100.0, 151.0, 99.0, 150.0, 1000.0))
+        return _make_store(candles)
+
+    def _channel_fact(self, breakout_days: int = 0) -> ChannelFact:
+        return ChannelFact(
+            timestamp=BASE,
+            evidence=(),
+            period=20,
+            high=101.0,
+            low=99.0,
+            breakout_days=breakout_days,
+        )
+
+    def _facts(
+        self,
+        channel: ChannelFact | None = None,
+        trend: TrendFact | None = None,
+        atr: ATRFact | None = None,
+    ) -> dict[FactKey, Fact]:
+        facts: dict[FactKey, Fact] = {}
+        if channel is not None:
+            facts[FactKey("channel_20")] = channel
+        if trend is not None:
+            facts[FactKey("trend")] = trend
+        if atr is not None:
+            facts[FactKey("atr_14")] = atr
+        return facts
+
+    def test_bullish_breakout_returns_signal(self) -> None:
+        store = self._breakout_store()
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = BreakoutSignal()
+        result = signal.evaluate(
+            view,
+            self._facts(self._channel_fact(), _bullish_trend_fact(), _atr_fact(50.0)),
+        )
+        assert result is not None
+        assert result.direction == TrendDirection.BULLISH
+        assert result.confidence > 0
+        assert result.source == "BreakoutSignal"
+        assert result.entry_zone == (125.0, 175.0)
+
+    def test_bearish_breakout_returns_signal(self) -> None:
+        store = self._breakout_store(bearish=True)
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = BreakoutSignal()
+        result = signal.evaluate(
+            view,
+            self._facts(self._channel_fact(), _bearish_trend_fact(), _atr_fact(50.0)),
+        )
+        assert result is not None
+        assert result.direction == TrendDirection.BEARISH
+
+    def test_close_inside_channel_returns_none(self) -> None:
+        store = _make_store(_flat_candles())
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = BreakoutSignal()
+        result = signal.evaluate(
+            view,
+            self._facts(self._channel_fact(), _bullish_trend_fact(), _atr_fact(50.0)),
+        )
+        assert result is None
+
+    def test_opposing_trend_returns_rejection(self) -> None:
+        store = self._breakout_store()
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = BreakoutSignal()
+        result = signal.evaluate(
+            view,
+            self._facts(self._channel_fact(), _bearish_trend_fact(), _atr_fact(50.0)),
+        )
+        assert result is not None
+        assert result.direction == TrendDirection.NEUTRAL
+        assert result.rejections
+
+    def test_opposing_trend_ignored_when_not_required(self) -> None:
+        store = self._breakout_store()
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = BreakoutSignal(require_trend=False)
+        result = signal.evaluate(
+            view,
+            self._facts(self._channel_fact(), _bearish_trend_fact(), _atr_fact(50.0)),
+        )
+        assert result is not None
+        assert result.direction == TrendDirection.BULLISH
+
+    def test_stale_breakout_returns_rejection(self) -> None:
+        store = self._breakout_store()
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = BreakoutSignal(min_breakout_days=0)
+        result = signal.evaluate(
+            view,
+            self._facts(
+                self._channel_fact(breakout_days=5), _bullish_trend_fact(), _atr_fact(50.0)
+            ),
+        )
+        assert result is not None
+        assert result.rejections
+
+    def test_uncompressed_range_returns_rejection(self) -> None:
+        store = self._breakout_store()
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = BreakoutSignal(compression_atr=0.01)
+        result = signal.evaluate(
+            view,
+            self._facts(self._channel_fact(), _bullish_trend_fact(), _atr_fact(50.0)),
+        )
+        assert result is not None
+        assert result.rejections
+
+    def test_missing_facts_return_none(self) -> None:
+        store = self._breakout_store()
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = BreakoutSignal()
+        assert (
+            signal.evaluate(view, self._facts(trend=_bullish_trend_fact(), atr=_atr_fact()))
+            is None
+        )
+        assert signal.evaluate(view, self._facts(self._channel_fact(), atr=_atr_fact())) is None
+        assert (
+            signal.evaluate(view, self._facts(self._channel_fact(), _bullish_trend_fact()))
+            is None
+        )
+
+    def test_custom_keys(self) -> None:
+        store = self._breakout_store()
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = BreakoutSignal(channel_key="my_channel")
+        facts: dict[FactKey, Fact] = {}
+        facts[FactKey("my_channel")] = self._channel_fact()
+        facts[FactKey("trend")] = _bullish_trend_fact()
+        facts[FactKey("atr_14")] = _atr_fact(50.0)
+        result = signal.evaluate(view, facts)
+        assert result is not None
+        assert result.direction == TrendDirection.BULLISH

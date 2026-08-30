@@ -62,7 +62,7 @@ class _CursorEvaluation:
 
 
 class PortfolioBacktester:
-    """Run a strategy bundle across a portfolio with one shared tradebook (075).
+    """Run a strategy bundle across a portfolio with per-instrument book lanes.
 
     The primary-timeframe timestamps of every instrument are unioned into one
     ascending calendar; ``window_size`` applies to that merged axis. At each
@@ -72,13 +72,11 @@ class PortfolioBacktester:
     so each instrument records one frame per candle — mirroring the
     single-instrument replay semantics while riding the merged timeline.
 
-    Exactly one open trade is allowed across the whole portfolio. When the book
-    is free the first eligible signal in deterministic order — strategy
-    priority, then instrument order — fills; all others are skipped while the
-    book is busy. Open-trade fill/resolution always uses the position's own
-    instrument candles; exit prices and stops never come from another
-    instrument. Nothing after the cursor's aligned candle per instrument is ever
-    consulted.
+    One shared ``TradeBook`` holds the compounding balance, but its pending and
+    open slots are keyed per instrument: each instrument may hold one pending
+    and one open trade simultaneously, and no fill/resolution ever reads
+    another instrument's candles. Signals from every free instrument submit in
+    the same cursor; sizing always uses the shared book balance.
     """
 
     def __init__(
@@ -96,8 +94,6 @@ class PortfolioBacktester:
         self._max_hold_days = max_hold_days
         self._store_by = {inst.canonical: store for inst, store in self._pairs}
         self._merged = self._merge_calendars()
-        self._position: Instrument | None = None
-        self._pending_ts: datetime | None = None
 
     def _merge_calendars(self) -> tuple[datetime, ...]:
         """Union of primary-timeframe timestamps, sorted ascending."""
@@ -118,15 +114,12 @@ class PortfolioBacktester:
     ) -> PortfolioBacktestResult:
         frame_stores = {inst.canonical: FrameStore() for inst, _ in self._pairs}
         tradebook = self._bundle.tradebook
-        self._position = None
-        self._pending_ts = None
         aligned_at: dict[str, int] = {}
         total = self.frame_count
 
         for i, cursor_ts in enumerate(self._merged[self._window_size :]):
             self._fill_and_resolve(cursor_ts, tradebook)
 
-            free = tradebook.has_no_open_trade and not tradebook.has_pending_order
             evaluations: list[_CursorEvaluation] = []
             for instrument, store in self._pairs:
                 aligned = store.timestamp_index(cursor_ts)
@@ -155,8 +148,7 @@ class PortfolioBacktester:
                     )
                 )
 
-            if free:
-                self._try_submit(tradebook, evaluations)
+            self._try_submit(tradebook, evaluations)
 
             for ev in evaluations:
                 frame_stores[ev.instrument.canonical].append(
@@ -174,11 +166,9 @@ class PortfolioBacktester:
             if callback is not None:
                 callback(i + 1, total)
 
-        if not tradebook.has_no_open_trade:
-            position = self._position
-            if position is not None:
-                store = self._store_by[position.canonical]
-                tradebook.close_trade(store[-1].close, store[-1].timestamp)
+        for canonical in tradebook.open_instruments:
+            store = self._store_by[canonical]
+            tradebook.close_trade(store[-1].close, store[-1].timestamp, canonical)
 
         return PortfolioBacktestResult(
             instruments=tuple(inst for inst, _ in self._pairs),
@@ -189,7 +179,7 @@ class PortfolioBacktester:
         )
 
     def _fill_and_resolve(self, cursor_ts: datetime, tradebook: TradeBook) -> None:
-        """Fill/resolve the position against its own instrument's candle.
+        """Fill/resolve every busy lane against its own instrument's candle.
 
         A pending order fills at the first candle of the position's instrument
         strictly newer than the signal candle (next-bar entry, matching the
@@ -197,31 +187,33 @@ class PortfolioBacktester:
         aligned candle each cursor. Repeated resolution on a non-advancing
         candle is a no-op — a stop/target/hold close can only fire once.
         """
-        position = self._position
-        if position is None:
-            return
-        store = self._store_by[position.canonical]
-        aligned = store.timestamp_index(cursor_ts)
-        if aligned < 0:
-            return
-        candle = store[aligned]
-        if tradebook.has_pending_order:
-            pending_ts = self._pending_ts
+        for canonical in tradebook.busy_instruments:
+            store = self._store_by[canonical]
+            aligned = store.timestamp_index(cursor_ts)
+            if aligned < 0:
+                continue
+            candle = store[aligned]
+            pending_ts = tradebook.pending_ts(canonical)
             if pending_ts is not None and candle.timestamp > pending_ts:
-                tradebook.fill_order(candle)
-        if not tradebook.has_no_open_trade:
-            tradebook.resolve_at_cursor(candle, self._max_hold_days)
-        if tradebook.has_no_open_trade and not tradebook.has_pending_order:
-            self._position = None
+                tradebook.fill_order(candle, canonical)
+            tradebook.resolve_at_cursor(candle, self._max_hold_days, canonical)
 
     def _try_submit(
         self,
         tradebook: TradeBook,
         evaluations: list[_CursorEvaluation],
     ) -> None:
-        """Submit the first eligible signal: strategy priority, then instrument."""
+        """Submit the first eligible signal per instrument, strategy priority.
+
+        Every instrument with a free lane may submit in the same cursor, sized
+        off the shared balance; within an instrument the first accepted signal
+        (strategy priority, then emission order) takes the lane.
+        """
         for strategy in self._bundle.strategies:
             for ev in evaluations:
+                canonical = ev.instrument.canonical
+                if tradebook.lane_busy(canonical):
+                    continue
                 for name, signal in ev.emitted:
                     if name != strategy:
                         continue
@@ -238,11 +230,9 @@ class PortfolioBacktester:
                             signal,
                             name,
                             ev.view.current.timestamp,
-                            instrument=ev.instrument.canonical,
+                            instrument=canonical,
                         )
-                        self._position = ev.instrument
-                        self._pending_ts = ev.view.current.timestamp
-                        return
+                        break
 
     @staticmethod
     def _collect_evidence(facts: dict[FactKey, Fact]) -> tuple[EvidenceEntry, ...]:

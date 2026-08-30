@@ -7,6 +7,7 @@ import yaml
 
 from marketatlas.analysis.analyzers.atr import ATRAnalyzer
 from marketatlas.analysis.analyzers.atr_series import ATRSeriesAnalyzer
+from marketatlas.analysis.analyzers.channel import ChannelAnalyzer
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.analyzers.sr import SupportResistanceAnalyzer
 from marketatlas.analysis.analyzers.swing_basic import BasicSwingAnalyzer
@@ -23,6 +24,7 @@ ANALYZER_TYPES: dict[str, type[Analyzer]] = {
     "ATRAnalyzer": ATRAnalyzer,
     "ATRSeriesAnalyzer": ATRSeriesAnalyzer,
     "TrendAnalyzer": TrendAnalyzer,
+    "ChannelAnalyzer": ChannelAnalyzer,
     "SwingStructureAnalyzer": SwingStructureAnalyzer,
     "BasicSwingAnalyzer": BasicSwingAnalyzer,
     "SupportResistanceAnalyzer": SupportResistanceAnalyzer,

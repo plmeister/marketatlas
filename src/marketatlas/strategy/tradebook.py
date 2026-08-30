@@ -10,6 +10,15 @@ from marketatlas.strategy.trade import TradeCandidate
 
 
 @dataclass(frozen=True)
+class _PendingOrder:
+    candidate: TradeCandidate
+    signal: TradeSignal
+    source: str
+    instrument: str
+    timestamp: datetime
+
+
+@dataclass(frozen=True)
 class TradeOutcome:
     submit_time: datetime
     entry_timestamp: datetime
@@ -27,12 +36,8 @@ class TradeBook:
         self._initial_balance = initial_balance
         self._balance = initial_balance
         self._trades: list[TradeOutcome] = []
-        self._open_trade: TradeOutcome | None = None
-        self._pending_order: TradeCandidate | None = None
-        self._pending_signal: TradeSignal | None = None
-        self._pending_source: str = ""
-        self._pending_instrument: str = ""
-        self._pending_timestamp: datetime | None = None
+        self._open_trades: dict[str, TradeOutcome] = {}
+        self._pending: dict[str, _PendingOrder] = {}
         self._peak_balance = initial_balance
 
     @property
@@ -128,11 +133,32 @@ class TradeBook:
 
     @property
     def has_no_open_trade(self) -> bool:
-        return self._open_trade is None
+        return not self._open_trades
 
     @property
     def has_pending_order(self) -> bool:
-        return self._pending_order is not None
+        return bool(self._pending)
+
+    @property
+    def open_instruments(self) -> tuple[str, ...]:
+        return tuple(self._open_trades)
+
+    @property
+    def busy_instruments(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys([*self._open_trades, *self._pending]))
+
+    def lane_has_open(self, instrument: str) -> bool:
+        return instrument in self._open_trades
+
+    def lane_has_pending(self, instrument: str) -> bool:
+        return instrument in self._pending
+
+    def lane_busy(self, instrument: str) -> bool:
+        return instrument in self._open_trades or instrument in self._pending
+
+    def pending_ts(self, instrument: str) -> datetime | None:
+        pending = self._pending.get(instrument)
+        return pending.timestamp if pending is not None else None
 
     def submit_order(
         self,
@@ -142,13 +168,15 @@ class TradeBook:
         signal_timestamp: datetime,
         instrument: str = "",
     ) -> None:
-        self._pending_order = candidate
-        self._pending_signal = signal
-        self._pending_source = source
-        self._pending_instrument = instrument
-        self._pending_timestamp = signal_timestamp
+        self._pending[instrument] = _PendingOrder(
+            candidate=candidate,
+            signal=signal,
+            source=source,
+            instrument=instrument,
+            timestamp=signal_timestamp,
+        )
 
-    def fill_order(self, candle: Candle) -> None:
+    def fill_order(self, candle: Candle, instrument: str = "") -> None:
         """Fill a pending order once the candle trades through its entry.
 
         On a bullish entry the order fills when price rises to the entry
@@ -157,13 +185,11 @@ class TradeBook:
         stays pending — a gap that never returns to the entry never fills. The
         fill price is the submitted entry; stop/target/size/risk are untouched.
         """
-        if self._pending_order is None:
+        pending = self._pending.get(instrument)
+        if pending is None or pending.candidate is None:
             return
-        candidate = self._pending_order
-        signal = self._pending_signal
-        source = self._pending_source
-        instrument = self._pending_instrument
-        if candidate is None or signal is None:
+        candidate = pending.candidate
+        if pending.signal is None:
             return
         if candidate.direction == TrendDirection.BULLISH:
             if candle.high < candidate.entry:
@@ -171,27 +197,25 @@ class TradeBook:
         else:
             if candle.low > candidate.entry:
                 return
-        self._open_trade = TradeOutcome(
-            submit_time=self._pending_timestamp or candle.timestamp,
+        self._open_trades[instrument] = TradeOutcome(
+            submit_time=pending.timestamp or candle.timestamp,
             entry_timestamp=candle.timestamp,
             exit_timestamp=None,
             candidate=candidate,
-            signal=signal,
-            source_strategy=source,
-            instrument=instrument,
+            signal=pending.signal,
+            source_strategy=pending.source,
+            instrument=pending.instrument,
             pnl=None,
             result=None,
         )
-        self._pending_order = None
-        self._pending_signal = None
-        self._pending_source = ""
-        self._pending_instrument = ""
-        self._pending_timestamp = None
+        del self._pending[instrument]
 
-    def close_trade(self, exit_price: float, timestamp: datetime) -> None:
-        if self._open_trade is None:
+    def close_trade(
+        self, exit_price: float, timestamp: datetime, instrument: str = ""
+    ) -> None:
+        trade = self._open_trades.get(instrument)
+        if trade is None:
             return
-        trade = self._open_trade
         c = trade.candidate
         if c.direction == TrendDirection.BULLISH:
             pnl = (exit_price - c.entry) * c.size
@@ -220,69 +244,67 @@ class TradeBook:
         self._balance += pnl
         if self._balance > self._peak_balance:
             self._peak_balance = self._balance
-        self._open_trade = None
+        del self._open_trades[instrument]
 
-    def resolve_at_cursor(self, candle: Candle, max_hold_days: int = 10) -> None:
-        if self._pending_order is not None:
-            if self._pending_timestamp is not None:
-                pending_days = (candle.timestamp - self._pending_timestamp).days
-                if pending_days >= max_hold_days:
-                    self._cancel_pending(candle)
-        if self._open_trade is None:
+    def resolve_at_cursor(
+        self, candle: Candle, max_hold_days: int = 10, instrument: str = ""
+    ) -> None:
+        pending = self._pending.get(instrument)
+        if pending is not None and pending.timestamp is not None:
+            pending_days = (candle.timestamp - pending.timestamp).days
+            if pending_days >= max_hold_days:
+                self._cancel_pending(candle, instrument)
+        open_trade = self._open_trades.get(instrument)
+        if open_trade is None:
             return
-        c = self._open_trade.candidate
-        days_held = (candle.timestamp - self._open_trade.entry_timestamp).days
+        c = open_trade.candidate
+        days_held = (candle.timestamp - open_trade.entry_timestamp).days
         if days_held >= max_hold_days:
-            self._cancel_open(candle.timestamp)
+            self._cancel_open(timestamp=candle.timestamp, instrument=instrument)
             return
 
         if c.direction == TrendDirection.BULLISH:
             if candle.low <= c.stop:
-                self.close_trade(c.stop, candle.timestamp)
+                self.close_trade(c.stop, candle.timestamp, instrument)
             elif candle.high >= c.target:
-                self.close_trade(c.target, candle.timestamp)
+                self.close_trade(c.target, candle.timestamp, instrument)
         else:
             if candle.high >= c.stop:
-                self.close_trade(c.stop, candle.timestamp)
+                self.close_trade(c.stop, candle.timestamp, instrument)
             elif candle.low <= c.target:
-                self.close_trade(c.target, candle.timestamp)
+                self.close_trade(c.target, candle.timestamp, instrument)
 
-    def _cancel_pending(self, candle: Candle) -> None:
+    def _cancel_pending(self, candle: Candle, instrument: str = "") -> None:
         """Drop a pending order that never reached its entry within max_hold_days.
 
         Records the cancellation so the rejected order is visible and frees the
         book to consider later signals.
         """
-        pending = self._pending_order
-        signal = self._pending_signal
-        if pending is None or signal is None:
+        pending = self._pending.get(instrument)
+        if pending is None:
             return
         cancelled = TradeOutcome(
-            submit_time=self._pending_timestamp or candle.timestamp,
-            entry_timestamp=self._pending_timestamp or candle.timestamp,
+            submit_time=pending.timestamp or candle.timestamp,
+            entry_timestamp=pending.timestamp or candle.timestamp,
             exit_timestamp=candle.timestamp,
-            candidate=pending,
-            signal=signal,
-            source_strategy=self._pending_source,
-            instrument=self._pending_instrument,
+            candidate=pending.candidate,
+            signal=pending.signal,
+            source_strategy=pending.source,
+            instrument=pending.instrument,
             pnl=0.0,
             result="cancelled",
         )
         self._trades.append(cancelled)
-        self._pending_order = None
-        self._pending_signal = None
-        self._pending_source = ""
-        self._pending_instrument = ""
-        self._pending_timestamp = None
+        del self._pending[instrument]
 
-    def _cancel_open(self, timestamp: datetime) -> None:
+    def _cancel_open(self, timestamp: datetime, instrument: str = "") -> None:
         """Cancel a filled trade that never hit stop or target within max_hold_days.
 
         The broker cancels the open position at no cost, so the trade is
         recorded as cancelled with ``pnl=0`` and frees the book for later
         signals — no market close (backlog: broker cancels, no partial fill).
         """
-        trade = self._open_trade
+        trade = self._open_trades.get(instrument)
         if trade is None:
             return
         cancelled = TradeOutcome(
@@ -297,7 +319,7 @@ class TradeBook:
             result="cancelled",
         )
         self._trades.append(cancelled)
-        self._open_trade = None
+        del self._open_trades[instrument]
 
     def filtered_by_instrument(self, canonical: str) -> TradeBook:
         """A copy of the book holding only ``canonical``'s closed trades.
