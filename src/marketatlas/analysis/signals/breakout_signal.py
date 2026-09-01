@@ -7,7 +7,12 @@ from marketatlas.facts.base import Fact
 from marketatlas.facts.channel import ChannelFact
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
-from marketatlas.strategy.signals import Signal, TradeSignal, resolve_fact_key
+from marketatlas.strategy.signals import (
+    Signal,
+    SignalEvaluation,
+    TradeSignal,
+    resolve_fact_key,
+)
 
 
 class BreakoutSignal(Signal):
@@ -44,6 +49,14 @@ class BreakoutSignal(Signal):
         return (FactKey(self._channel_key), FactKey(self._trend_key), FactKey(self._atr_key))
 
     def evaluate(self, view: MarketView, facts: dict[FactKey, Fact]) -> TradeSignal | None:
+        return self._evaluate(view, facts).signal
+
+    def evaluate_with_rejections(
+        self, view: MarketView, facts: dict[FactKey, Fact]
+    ) -> SignalEvaluation:
+        return self._evaluate(view, facts)
+
+    def _evaluate(self, view: MarketView, facts: dict[FactKey, Fact]) -> SignalEvaluation:
         channel_key = resolve_fact_key(facts, self._bindings.get("channel_20", self._channel_key))
         trend_key = resolve_fact_key(facts, self._bindings.get("trend", self._trend_key))
         atr_key = resolve_fact_key(facts, self._bindings.get("atr_14", self._atr_key))
@@ -53,11 +66,11 @@ class BreakoutSignal(Signal):
         atr = facts.get(atr_key) if atr_key is not None else None
 
         if not isinstance(channel, ChannelFact):
-            return None
+            return SignalEvaluation()
         if not isinstance(trend, TrendFact):
-            return None
+            return SignalEvaluation()
         if not isinstance(atr, ATRFact):
-            return None
+            return SignalEvaluation()
 
         current = view.current
         close = current.close
@@ -69,7 +82,7 @@ class BreakoutSignal(Signal):
             direction = TrendDirection.BEARISH
             bound = channel.low
         else:
-            return None
+            return SignalEvaluation()
 
         if not self._recent_break(channel):
             return self._rejected("breakout too old to act on")
@@ -102,12 +115,14 @@ class BreakoutSignal(Signal):
                 source="BreakoutSignal",
             ),
         )
-        return TradeSignal(
-            direction=direction,
-            entry_zone=entry_zone,
-            confidence=1.0,
-            source="BreakoutSignal",
-            evidence=evidence,
+        return SignalEvaluation(
+            signal=TradeSignal(
+                direction=direction,
+                entry_zone=entry_zone,
+                confidence=1.0,
+                source="BreakoutSignal",
+                evidence=evidence,
+            )
         )
 
     def _recent_break(self, channel: ChannelFact) -> bool:
@@ -132,18 +147,13 @@ class BreakoutSignal(Signal):
         span = max(recent_highs) - min(recent_lows)
         return span <= self._compression_atr * atr_val
 
-    def _rejected(self, reason: str) -> TradeSignal:
-        return TradeSignal(
-            direction=TrendDirection.NEUTRAL,
-            entry_zone=(0.0, 0.0),
-            confidence=0.0,
-            source="BreakoutSignal",
-            evidence=(),
+    def _rejected(self, reason: str) -> SignalEvaluation:
+        return SignalEvaluation(
             rejections=(
                 EvidenceEntry(
                     text=f"Rejected: {reason}",
                     level=EvidenceLevel.WARNING,
                     source="BreakoutSignal",
                 ),
-            ),
+            )
         )

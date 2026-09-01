@@ -6,7 +6,7 @@ from marketatlas.facts.base import Fact
 from marketatlas.strategy.config import StrategyConfig
 from marketatlas.strategy.loader import build_analyzers
 from marketatlas.strategy.risk import RiskEngine
-from marketatlas.strategy.signals import Signal, TradeSignal
+from marketatlas.strategy.signals import Signal, SignalEvaluation, TradeSignal
 
 
 class Strategy:
@@ -36,24 +36,21 @@ class Strategy:
     def evaluate(
         self, view: MarketView, facts: dict[FactKey, Fact]
     ) -> list[TradeSignal]:
-        results: list[TradeSignal] = []
-        for signal in self._signals:
-            ts = signal.evaluate(view, facts)
-            if ts is not None and ts.confidence > 0:
-                results.append(ts)
-        return results
+        signals, _ = self.evaluate_with_rejections(view, facts)
+        return signals
 
     def evaluate_with_rejections(
         self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> tuple[list[TradeSignal], list[TradeSignal]]:
+    ) -> tuple[list[TradeSignal], list[SignalEvaluation]]:
         signals: list[TradeSignal] = []
-        rejections: list[TradeSignal] = []
+        rejections: list[SignalEvaluation] = []
         for signal in self._signals:
-            ts = signal.evaluate(view, facts)
+            result = signal.evaluate_with_rejections(view, facts)
+            ts = result.signal
             if ts is not None and ts.confidence > 0:
                 signals.append(ts)
-            elif ts is not None and ts.rejections:
-                rejections.append(ts)
+            elif result.rejections:
+                rejections.append(result)
         return signals, rejections
 
     def _build_graph(self) -> AnalysisGraph:

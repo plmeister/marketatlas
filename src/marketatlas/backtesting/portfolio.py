@@ -9,7 +9,7 @@ from marketatlas.analysis.ast.instrument import InstrumentBacktestResult
 from marketatlas.data.instrument import Instrument
 from marketatlas.data.store import MarketStore
 from marketatlas.data.view import MarketView
-from marketatlas.evidence.collector import EvidenceCollector
+from marketatlas.evidence.collector import collect_fact_evidence
 from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.frames.store import FrameStore
@@ -130,7 +130,7 @@ class PortfolioBacktester:
                 aligned_at[instrument.canonical] = aligned
                 view = MarketView(store, aligned, self._window_size)
                 facts, loose = self._bundle.graph.run_with_evidence(view)
-                evidence = self._collect_evidence(facts) + loose
+                evidence = collect_fact_evidence(facts) + loose
                 emitted, signal_rejections = self._bundle.evaluate_all_with_rejections(
                     view, facts
                 )
@@ -233,16 +233,3 @@ class PortfolioBacktester:
                             instrument=canonical,
                         )
                         break
-
-    @staticmethod
-    def _collect_evidence(facts: dict[FactKey, Fact]) -> tuple[EvidenceEntry, ...]:
-        collector = EvidenceCollector()
-        for fact in facts.values():
-            for entry in fact.evidence:
-                collector.add(
-                    text=entry.text,
-                    level=entry.level,
-                    source=entry.source,
-                    annotation_hint=entry.annotation_hint,
-                )
-        return collector.entries()

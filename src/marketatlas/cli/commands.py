@@ -126,8 +126,6 @@ def run_command(args: argparse.Namespace) -> None:
     from marketatlas.strategy.bundle import StrategyBundle
     from marketatlas.strategy.loader import load_strategy
     from marketatlas.strategy.strategy import Strategy
-    from marketatlas.visualization.context import RenderContext
-    from marketatlas.visualization.interactive import InteractiveRenderer
 
     if getattr(args, "instruments", ""):
         if getattr(args, "ab", False):
@@ -197,7 +195,7 @@ def run_command(args: argparse.Namespace) -> None:
         print(f"\r  Frame {cur}/{total}", end="", flush=True)
 
     result = bt.run_with_progress(progress)
-    frame_store, tradebook = result.frames, result.tradebook
+    tradebook = result.tradebook
     print("\n")
 
     summary = tradebook.summary
@@ -259,14 +257,11 @@ def run_command(args: argparse.Namespace) -> None:
 
     output_path = Path(args.output)
     if output_path:
-        ctx = RenderContext(
-            frames=frame_store,
-            store=store,
-            tradebook=tradebook,
-            max_hold_days=bt._max_hold_days,
-            window_size=bt._window_size,
-        )
-        renderer = InteractiveRenderer(ctx)
+        from marketatlas.frames.output import AnalysisOutput
+        from marketatlas.visualization.interactive import InteractiveRenderer
+
+        output = AnalysisOutput.from_backtest_result(result)
+        renderer = InteractiveRenderer(output)
         renderer.render(output_path)
         print(f"\nHTML chart: {output_path}")
 
@@ -338,7 +333,6 @@ def _render_ab_variants(
 ) -> list[Path]:
     """Write the A/B output tree: one directory per variant slug (backlog 080)."""
     from marketatlas.analysis.ast.variant import variant_identity, variant_slugs
-    from marketatlas.visualization.context import RenderContext
     from marketatlas.visualization.interactive import InteractiveRenderer
     from marketatlas.visualization.portfolio import (
         render_ab_index,
@@ -351,16 +345,11 @@ def _render_ab_variants(
     for (_, result), slug in zip(rows, variant_slugs(templates)):
         variant_dir = root / slug
         if single_canonical is not None:
-            ctx = RenderContext(
-                frames=result.frames,
-                store=stores[single_canonical],
-                tradebook=result.tradebook,
-                title=single_canonical,
-                window_size=result.window_size,
-                max_hold_days=result.max_hold_days,
-            )
+            from marketatlas.frames.output import AnalysisOutput
+
+            output = AnalysisOutput.from_backtest_result(result)
             chart = variant_dir / f"{output_path.stem}.html"
-            InteractiveRenderer(ctx).render(chart)
+            InteractiveRenderer(output).render(chart)
             written.append(chart)
         else:
             written.extend(

@@ -5,7 +5,6 @@ import pickle
 from pathlib import Path
 from typing import Any
 
-from marketatlas.backtesting.backtester import BacktestResult
 from marketatlas.facts.pattern import PullbackFact
 from marketatlas.facts.primitive import ATRFact, EMAFact
 from marketatlas.facts.structural import (
@@ -16,8 +15,7 @@ from marketatlas.facts.structural import (
     TrendFact,
 )
 from marketatlas.frames.frame import AnalysisFrame
-from marketatlas.strategy.tradebook import TradeBook
-from marketatlas.visualization.context import RenderContext
+from marketatlas.frames.output import AnalysisOutput
 from marketatlas.visualization.html_renderer import _candle_to_dict, _ts_to_time
 
 
@@ -221,9 +219,9 @@ def _extract_facts_per_frame(
     return result, swing_points
 
 
-def _extract_trades_json(tradebook: TradeBook) -> list[dict[str, Any]]:
+def _extract_trades_json(trades: tuple) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
-    for trade in tradebook.trades:
+    for trade in trades:
         c = trade.candidate
         result.append(
             {
@@ -427,12 +425,20 @@ _INTERACTIVE_TEMPLATE = """\
 
 
 class InteractiveRenderer:
-    def __init__(self, context: RenderContext) -> None:
-        self._context = context
+    """Build the interactive HTML chart from a store-independent ``AnalysisOutput``.
+
+    This is a pure consumer: it reads only the typed output (series, frames,
+    trades, summary) and never reaches into a live ``MarketStore`` or
+    ``TradeBook``. ``min_touches`` is a rendering preference, not analysis data.
+    """
+
+    def __init__(self, output: AnalysisOutput, min_touches: int = 2) -> None:
+        self._output = output
+        self._min_touches = min_touches
 
     def render(self, output_path: Path) -> None:
-        ctx = self._context
-        frames = list(ctx.frames)
+        out = self._output
+        frames = list(out.frames)
 
         frames_json = _extract_frames_json(frames)
         ema_json = _extract_ema_per_frame(frames)
@@ -440,34 +446,34 @@ class InteractiveRenderer:
         sr_json = _extract_sr_per_frame(frames)
         pullbacks_json = _extract_pullbacks_per_frame(frames)
         facts_json, swing_points = _extract_facts_per_frame(frames)
-        trades_json = _extract_trades_json(ctx.tradebook)
+        trades_json = _extract_trades_json(out.trades)
 
         candles_by_tf: dict[str, list[dict[str, Any]]] = {}
-        for tf in ctx.store.available_timeframes:
-            tf_candles = ctx.store.get_candles(tf)
-            if tf_candles:
-                candles_by_tf[tf.value] = [_candle_to_dict(c) for c in tf_candles]
+        for tf, tf_candles in out.candles.items():
+            candles_by_tf[tf] = [_candle_to_dict(c) for c in tf_candles]
 
-        available_tfs = [tf.value for tf in ctx.store.available_timeframes]
-        primary_candle_count = len(candles_by_tf.get(available_tfs[0], [])) if available_tfs else 0
+        available_tfs = list(out.timeframes)
+        primary_candle_count = (
+            len(candles_by_tf.get(available_tfs[0], [])) if available_tfs else 0
+        )
 
-        summary = ctx.tradebook.summary
+        summary = out.summary
         summary_json = {
-            "initial_balance": summary["initial_balance"],
-            "final_balance": summary["final_balance"],
-            "total_pnl": summary["total_pnl"],
-            "total_return_pct": summary["total_return_pct"],
-            "wins": summary["wins"],
-            "losses": summary["losses"],
-            "win_rate": summary["win_rate"],
-            "max_drawdown": summary["max_drawdown"],
-            "expectancy": summary["expectancy"],
+            "initial_balance": summary.initial_balance,
+            "final_balance": summary.final_balance,
+            "total_pnl": summary.total_pnl,
+            "total_return_pct": summary.total_return_pct,
+            "wins": summary.wins,
+            "losses": summary.losses,
+            "win_rate": summary.win_rate,
+            "max_drawdown": summary.max_drawdown,
+            "expectancy": summary.expectancy,
         }
 
-        title = ctx.title or f"{ctx.store.symbol.name} — {ctx.store.timeframe.value}"
+        title = out.title or f"{out.symbol} — {out.timeframe}"
         meta = (
             f"{primary_candle_count} candles | {len(frames)} frames | "
-            f"{len(ctx.tradebook.trades)} trades"
+            f"{len(out.trades)} trades"
         )
 
         js_modules = "".join(
@@ -475,7 +481,7 @@ class InteractiveRenderer:
         )
         js_entry = _JS_TEMPLATE_PATH.read_text(encoding="utf-8")
         js_template = js_modules + js_entry
-        primary_tf = ctx.store.timeframe.value
+        primary_tf = out.timeframe
         tf_options = "".join(
             f'<option value="{tf}"{" selected" if tf == primary_tf else ""}>{tf}</option>'
             for tf in available_tfs
@@ -492,9 +498,9 @@ class InteractiveRenderer:
             "FACTS_DATA": json.dumps(facts_json),
             "SWING_POINTS": json.dumps(swing_points),
             "SUMMARY": json.dumps(summary_json),
-            "INITIAL_BALANCE": json.dumps(ctx.tradebook.initial_balance),
-            "MIN_TOUCHES": json.dumps(ctx.min_touches),
-            "MAX_HOLD_DAYS": json.dumps(ctx.max_hold_days),
+            "INITIAL_BALANCE": json.dumps(out.summary.initial_balance),
+            "MIN_TOUCHES": json.dumps(self._min_touches),
+            "MAX_HOLD_DAYS": json.dumps(out.max_hold_days),
         }
         for name in sorted(_JS_PLACEHOLDERS, key=len, reverse=True):
             js_template = js_template.replace(f"null; // @data:{name}", data_map[name] + ";")
@@ -502,7 +508,7 @@ class InteractiveRenderer:
         html = _INTERACTIVE_TEMPLATE.format(
             title=title,
             meta=meta,
-            initial_balance=ctx.tradebook.initial_balance,
+            initial_balance=out.summary.initial_balance,
             tf_options=tf_options,
             js_content="<script>\n" + js_template + "\n</script>",
         )
@@ -510,11 +516,4 @@ class InteractiveRenderer:
         output_path.write_text(html, encoding="utf-8")
 
         debug_path = output_path.with_suffix(".pkl")
-        result = BacktestResult(
-            store=ctx.store,
-            frames=ctx.frames,
-            tradebook=ctx.tradebook,
-            window_size=ctx.window_size,
-            max_hold_days=ctx.max_hold_days,
-        )
-        debug_path.write_bytes(pickle.dumps(result))
+        debug_path.write_bytes(pickle.dumps(out))

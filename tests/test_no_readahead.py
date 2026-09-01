@@ -283,7 +283,7 @@ class TestTradeBookResolution:
         assert not tb.has_pending_order
         assert not tb.has_no_open_trade
 
-        open_trade = tb._open_trade
+        open_trade = tb._open_trades.get("")
         assert open_trade is not None
         assert open_trade.entry_timestamp == fill_time
         assert open_trade.candidate.entry == 100.5

@@ -226,7 +226,7 @@ class TestPullbackSignal:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)
         signal = PullbackSignal()
-        result = signal.evaluate(
+        result = signal.evaluate_with_rejections(
             view,
             _keyed_facts(
                 _neutral_pullback_fact(),
@@ -234,8 +234,7 @@ class TestPullbackSignal:
                 _atr_fact(50.0),
             ),
         )
-        assert result is not None
-        assert result.confidence == 0.0
+        assert result.signal is None
         assert len(result.rejections) == 1
         assert "neutral" in result.rejections[0].text.lower()
 
@@ -243,7 +242,7 @@ class TestPullbackSignal:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)
         signal = PullbackSignal()
-        result = signal.evaluate(
+        result = signal.evaluate_with_rejections(
             view,
             _keyed_facts(
                 _weak_pullback_fact(),
@@ -251,8 +250,7 @@ class TestPullbackSignal:
                 _atr_fact(50.0),
             ),
         )
-        assert result is not None
-        assert result.confidence == 0.0
+        assert result.signal is None
         assert len(result.rejections) == 1
         assert "strength" in result.rejections[0].text.lower()
 
@@ -331,7 +329,7 @@ class TestPullbackSignal:
         store = _make_store(_flat_candles())
         view = MarketView(store, cursor=49, window_size=50)
         signal = PullbackSignal(min_strength=0.9)
-        result = signal.evaluate(
+        result = signal.evaluate_with_rejections(
             view,
             _keyed_facts(
                 _bullish_pullback_fact(),  # strength=0.72
@@ -339,8 +337,7 @@ class TestPullbackSignal:
                 _atr_fact(50.0),
             ),
         )
-        assert result is not None
-        assert result.confidence == 0.0
+        assert result.signal is None
         assert len(result.rejections) == 1
         assert "strength" in result.rejections[0].text.lower()
         assert "0.90" in result.rejections[0].text
@@ -375,12 +372,11 @@ class TestPullbackSignal:
             swing_pattern=(),
             strength=0.2,
         )
-        result = signal.evaluate(
+        result = signal.evaluate_with_rejections(
             view,
             _keyed_facts(fact, _bullish_trend_fact(), _atr_fact(50.0)),
         )
-        assert result is not None
-        assert result.confidence == 0.0
+        assert result.signal is None
         assert len(result.rejections) == 1
         assert "strength" in result.rejections[0].text.lower()
         assert "0.20" in result.rejections[0].text
@@ -702,12 +698,11 @@ class TestBreakoutSignal:
         store = self._breakout_store()
         view = MarketView(store, cursor=49, window_size=50)
         signal = BreakoutSignal()
-        result = signal.evaluate(
+        result = signal.evaluate_with_rejections(
             view,
             self._facts(self._channel_fact(), _bearish_trend_fact(), _atr_fact(50.0)),
         )
-        assert result is not None
-        assert result.direction == TrendDirection.NEUTRAL
+        assert result.signal is None
         assert result.rejections
 
     def test_opposing_trend_ignored_when_not_required(self) -> None:
@@ -725,24 +720,24 @@ class TestBreakoutSignal:
         store = self._breakout_store()
         view = MarketView(store, cursor=49, window_size=50)
         signal = BreakoutSignal(min_breakout_days=0)
-        result = signal.evaluate(
+        result = signal.evaluate_with_rejections(
             view,
             self._facts(
                 self._channel_fact(breakout_days=5), _bullish_trend_fact(), _atr_fact(50.0)
             ),
         )
-        assert result is not None
+        assert result.signal is None
         assert result.rejections
 
     def test_uncompressed_range_returns_rejection(self) -> None:
         store = self._breakout_store()
         view = MarketView(store, cursor=49, window_size=50)
         signal = BreakoutSignal(compression_atr=0.01)
-        result = signal.evaluate(
+        result = signal.evaluate_with_rejections(
             view,
             self._facts(self._channel_fact(), _bullish_trend_fact(), _atr_fact(50.0)),
         )
-        assert result is not None
+        assert result.signal is None
         assert result.rejections
 
     def test_missing_facts_return_none(self) -> None:

@@ -4,7 +4,7 @@ from marketatlas.analysis.graph import AnalysisGraph, FactKey
 from marketatlas.data.view import MarketView
 from marketatlas.facts.base import Fact
 from marketatlas.strategy.risk import RiskEngine
-from marketatlas.strategy.signals import TradeSignal
+from marketatlas.strategy.signals import SignalEvaluation, TradeSignal
 from marketatlas.strategy.strategy import Strategy
 from marketatlas.strategy.tradebook import TradeBook
 
@@ -44,9 +44,11 @@ class StrategyBundle:
 
     def evaluate_all_with_rejections(
         self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> tuple[list[tuple[str, TradeSignal]], list[tuple[str, TradeSignal]]]:
+    ) -> tuple[
+        list[tuple[str, TradeSignal]], list[tuple[str, SignalEvaluation]]
+    ]:
         signals: list[tuple[str, TradeSignal]] = []
-        rejections: list[tuple[str, TradeSignal]] = []
+        rejections: list[tuple[str, SignalEvaluation]] = []
         for name, strategy in self._strategies.items():
             strat_signals, strat_rejections = strategy.evaluate_with_rejections(view, facts)
             for s in strat_signals:

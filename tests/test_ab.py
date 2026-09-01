@@ -44,7 +44,7 @@ PULLBACK_AB_DSL = "\n".join(
         "signal := generate_signal { pullback_pattern: pullback, trend: trend,",
         "atr_14: atr_14, min_strength: <0.1 | 0.99> }",
         "risk := manage_risk { risk_pct: 1.0, min_rr: 0.0,",
-        "max_rr: 4.0, sr_buffer_atr: 0.0 }",
+        "max_rr: 4.0, sr_buffer_atr: 0.0, max_stop_atr: 5.0 }",
         "",
     ]
 )
@@ -625,11 +625,12 @@ class TestPortfolioABRunner:
 
         captured = capsys.readouterr()
         assert "A/B TEST (PORTFOLIO) — 2 variant(s)" in captured.out
-        # Variant 0: low min_strength fires the confirmed pullback; variant 1
+        # Variant 0: low min_strength fires the confirmed pullback on both
+        # instruments (per-instrument book lanes, 075/086); variant 1
         # (min_strength 0.99) rejects it. Labels name the chosen values.
         assert "min_strength=0.1" in captured.out
         assert "min_strength=0.99" in captured.out
-        assert "1 trades" in captured.out
+        assert "2 trades" in captured.out
         assert "0 trades" in captured.out
 
         # Each variant runs on a fresh StrategyBundle and its own TradeBook:

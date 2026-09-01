@@ -19,7 +19,7 @@ class ASTCompiler:
     @staticmethod
     def _pipeline(registry: ProviderRegistry, source_map: SourceMap | None = None) -> Pipeline:
         return (
-            Pipeline(source_map)
+            Pipeline(source_map, registry=registry)
             .add_pass(ValidationPass(source_map))
             .add_pass(RegistryResolutionPass(registry))
             .add_pass(CompletenessPass(registry))

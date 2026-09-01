@@ -18,7 +18,24 @@ class TradeSignal:
     confidence: float
     source: str
     evidence: tuple[EvidenceEntry, ...]
+
+
+@dataclass(frozen=True)
+class SignalEvaluation:
+    """Outcome of running a ``Signal``.
+
+    Carries either a real, actionable ``TradeSignal`` or the rejection reasons
+    the signal produced. Rejection reasons live here (the evaluation), never
+    on ``TradeSignal``, so a signal object does not double as a rejection
+    carrier.
+    """
+
+    signal: TradeSignal | None = None
     rejections: tuple[EvidenceEntry, ...] = ()
+
+    @property
+    def is_signal(self) -> bool:
+        return self.signal is not None
 
 
 class Signal(ABC):
@@ -32,6 +49,16 @@ class Signal(ABC):
     def evaluate(
         self, view: MarketView, facts: dict[FactKey, Fact]
     ) -> TradeSignal | None: ...
+
+    def evaluate_with_rejections(
+        self, view: MarketView, facts: dict[FactKey, Fact]
+    ) -> SignalEvaluation:
+        """Single-pass evaluation including rejection reasons.
+
+        The default delegates to :meth:`evaluate`; signals that need to
+        surface *why* they declined may override both to run one shared pass.
+        """
+        return SignalEvaluation(signal=self.evaluate(view, facts))
 
     @staticmethod
     def _fact_key(key: str) -> FactKey:

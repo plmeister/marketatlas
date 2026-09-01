@@ -148,11 +148,13 @@ class TestDefaultRegistry:
             "atr",
             "atr_series",
             "trend",
+            "channel",
             "swingstructure",
             "swings",
             "sr",
             "pullbackpattern",
             "generate_signal",
+            "breakout",
             "manage_risk",
             "timeframe",
         ]
@@ -163,7 +165,7 @@ class TestDefaultRegistry:
     def test_list_providers_count(self) -> None:
         r = create_default_registry()
         providers = r.list_providers()
-        assert len(providers) == 11
+        assert len(providers) == 13
 
     def test_default_params_present(self) -> None:
         r = create_default_registry()

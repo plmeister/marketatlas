@@ -1,35 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from marketatlas.analysis.analyzers.atr import ATRAnalyzer
-from marketatlas.analysis.analyzers.atr_series import ATRSeriesAnalyzer
-from marketatlas.analysis.analyzers.channel import ChannelAnalyzer
-from marketatlas.analysis.analyzers.ema import EMAAnalyzer
-from marketatlas.analysis.analyzers.sr import SupportResistanceAnalyzer
-from marketatlas.analysis.analyzers.swing_basic import BasicSwingAnalyzer
-from marketatlas.analysis.analyzers.swing_structure import SwingStructureAnalyzer
-from marketatlas.analysis.analyzers.trend import TrendAnalyzer
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
-from marketatlas.analysis.patterns import PullbackPatternAnalyzer
 
 from .config import AnalyzerConfig, RiskConfig, SignalConfig, StrategyConfig
 
-ANALYZER_TYPES: dict[str, type[Analyzer]] = {
-    "EMAAnalyzer": EMAAnalyzer,
-    "ATRAnalyzer": ATRAnalyzer,
-    "ATRSeriesAnalyzer": ATRSeriesAnalyzer,
-    "TrendAnalyzer": TrendAnalyzer,
-    "ChannelAnalyzer": ChannelAnalyzer,
-    "SwingStructureAnalyzer": SwingStructureAnalyzer,
-    "BasicSwingAnalyzer": BasicSwingAnalyzer,
-    "SupportResistanceAnalyzer": SupportResistanceAnalyzer,
-    "PullbackPatternAnalyzer": PullbackPatternAnalyzer,
-}
+if TYPE_CHECKING:
+    from marketatlas.analysis.ast.registry import ProviderRegistry
 
 
 class ConfigError(Exception):
@@ -80,17 +62,21 @@ def _load_dsl(path: Path) -> StrategyConfig:
     return template.config
 
 
-def validate_config(config: StrategyConfig) -> list[str]:
+def validate_config(
+    config: StrategyConfig,
+    registry: ProviderRegistry | None = None,
+) -> list[str]:
+    classes = _analyzer_classes(registry)
     errors: list[str] = []
     for i, ac in enumerate(config.analyzers):
-        if ac.type not in ANALYZER_TYPES:
+        if ac.type not in classes:
             errors.append(f"Unknown analyzer type '{ac.type}' at index {i}")
 
     # Build analyzers to check what they produce
     base_tf = config.timeframes[0] if config.timeframes else "1d"
     analyzers: list[Analyzer] = []
     for ac in config.analyzers:
-        cls = ANALYZER_TYPES.get(ac.type)
+        cls = classes.get(ac.type)
         if cls is not None:
             kwargs = dict(ac.params)
             kwargs["timeframe"] = ac.timeframe if ac.timeframe is not None else base_tf
@@ -174,14 +160,31 @@ def _parse_risk(raw: Any) -> RiskConfig:
     return RiskConfig(algorithm=algorithm, params=params)
 
 
-def build_analyzers(config: StrategyConfig) -> list[Analyzer]:
+def build_analyzers(
+    config: StrategyConfig,
+    registry: ProviderRegistry | None = None,
+) -> list[Analyzer]:
+    classes = _analyzer_classes(registry)
     base_tf = config.timeframes[0] if config.timeframes else "1d"
     analyzers: list[Analyzer] = []
     for ac in config.analyzers:
-        cls = ANALYZER_TYPES.get(ac.type)
+        cls = classes.get(ac.type)
         if cls is None:
             raise ConfigError(f"Unknown analyzer type '{ac.type}'")
         kwargs = dict(ac.params)
         kwargs["timeframe"] = ac.timeframe if ac.timeframe is not None else base_tf
         analyzers.append(cls(**kwargs))
     return analyzers
+
+
+def _analyzer_classes(registry: ProviderRegistry | None) -> dict[str, type[Analyzer]]:
+    """Impl-name → analyzer class, from the (default) provider registry.
+
+    The registry is the single source of truth for analyzer type resolution;
+    ``ProviderRegistry.analyzer_classes()`` replaces the retired, separately
+    maintained ``ANALYZER_TYPES`` map.
+    """
+    from marketatlas.analysis.ast.registry import create_default_registry
+
+    reg = registry if registry is not None else create_default_registry()
+    return reg.analyzer_classes()

@@ -35,6 +35,8 @@ class ProviderRegistry:
         self._providers: dict[str, list[Provider]] = {}
         self._param_schemas: dict[str, tuple[ParamSpec, ...]] = {}
         self._contracts: dict[str, ProviderContract] = {}
+        self._impl_classes: dict[str, type] = {}
+        self._impl_categories: dict[str, str] = {}
 
     def register_param_schema(self, key: str, schema: tuple[ParamSpec, ...]) -> None:
         """Attach a parameter schema to a provider name or capability key."""
@@ -68,6 +70,25 @@ class ProviderRegistry:
         contract = _derive_contract(cls)
         self.register_contract(provider.name, contract)
         self.register_contract(provider.capability, contract)
+        self._impl_classes[cls.__name__] = cls
+        self._impl_categories[cls.__name__] = provider.category
+
+    def impl_class(self, name: str) -> type | None:
+        """The provider class registered under impl-name ``name``, or ``None``."""
+        return self._impl_classes.get(name)
+
+    def analyzer_classes(self) -> dict[str, type]:
+        """Impl-name → class for analyzer-category providers.
+
+        The single source of truth for analyzer type resolution (formerly the
+        parallel ``ANALYZER_TYPES`` dict in ``strategy/loader.py``). Keyed by
+        the class's ``__name__`` (the ``Provider.impl`` / ``AnalyzerConfig.type``).
+        """
+        return {
+            name: cls
+            for name, cls in self._impl_classes.items()
+            if self._impl_categories.get(name) == "analyzer"
+        }
 
     def register_provider(self, provider: Provider) -> None:
         cap = provider.capability

@@ -5,6 +5,7 @@ from datetime import datetime
 
 from marketatlas.data.types import Candle
 from marketatlas.facts.structural import TrendDirection
+from marketatlas.strategy.ledger import TradeLedger
 from marketatlas.strategy.signals import TradeSignal
 from marketatlas.strategy.trade import TradeCandidate
 
@@ -32,21 +33,32 @@ class TradeOutcome:
 
 
 class TradeBook:
+    """Trade lifecycle + reporting facade over a shared ``TradeLedger``.
+
+    Owns order state (pending/open/closed per instrument lane) and the
+    position lifecycle — submit → fill → close/cancel. Equity accounting (the
+    compounding cash balance, peak, total P&L, drawdown) is delegated to a
+    ``TradeLedger``; win/loss aggregation and monthly breakdowns are pure reads
+    over the closed trades. No position math lives here.
+    """
+
     def __init__(self, initial_balance: float = 1000.0) -> None:
-        self._initial_balance = initial_balance
-        self._balance = initial_balance
+        self._ledger = TradeLedger(initial_balance)
         self._trades: list[TradeOutcome] = []
         self._open_trades: dict[str, TradeOutcome] = {}
         self._pending: dict[str, _PendingOrder] = {}
-        self._peak_balance = initial_balance
 
     @property
     def balance(self) -> float:
-        return self._balance
+        return self._ledger.balance
 
     @property
     def initial_balance(self) -> float:
-        return self._initial_balance
+        return self._ledger.initial_balance
+
+    @property
+    def peak_balance(self) -> float:
+        return self._ledger.peak_balance
 
     @property
     def trades(self) -> tuple[TradeOutcome, ...]:
@@ -77,7 +89,7 @@ class TradeBook:
 
     @property
     def total_pnl(self) -> float:
-        return self._balance - self._initial_balance
+        return self._ledger.total_pnl
 
     @property
     def gross_profit(self) -> float:
@@ -112,24 +124,8 @@ class TradeBook:
 
     @property
     def max_drawdown(self) -> float:
-        if not self._trades:
-            return 0.0
-        peak = self._initial_balance
-        worst = 0.0
-        bal = self._initial_balance
-        for trade in self._trades:
-            if trade.pnl is not None:
-                bal += trade.pnl
-            if bal > peak:
-                peak = bal
-            drawdown = (peak - bal) / peak if peak > 0 else 0.0
-            if drawdown > worst:
-                worst = drawdown
-        return worst
-
-    @property
-    def peak_balance(self) -> float:
-        return self._peak_balance
+        pnls = tuple(float(t.pnl) for t in self._trades if t.pnl is not None)
+        return TradeLedger.max_drawdown(pnls, self._ledger.initial_balance)
 
     @property
     def has_no_open_trade(self) -> bool:
@@ -241,9 +237,7 @@ class TradeBook:
             result=result,
         )
         self._trades.append(closed)
-        self._balance += pnl
-        if self._balance > self._peak_balance:
-            self._peak_balance = self._balance
+        self._ledger.apply(pnl)
         del self._open_trades[instrument]
 
     def resolve_at_cursor(
@@ -328,20 +322,12 @@ class TradeBook:
         from the subset so per-instrument charts and summaries stay internally
         consistent (backlog 077).
         """
-        book = TradeBook(self._initial_balance)
+        book = TradeBook(self._ledger.initial_balance)
         subset = [t for t in self._trades if t.instrument == canonical]
         book._trades = subset
-        book._balance = self._initial_balance + sum(
-            float(t.pnl) for t in subset if t.pnl is not None
-        )
-        peak = self._initial_balance
-        balance = self._initial_balance
         for trade in subset:
             if trade.pnl is not None:
-                balance += trade.pnl
-            if balance > peak:
-                peak = balance
-        book._peak_balance = peak
+                book._ledger.apply(trade.pnl)
         return book
 
     @property
@@ -406,7 +392,7 @@ class TradeBook:
         keys = sorted(months)
         cursor = datetime.strptime(keys[0], "%Y-%m").replace(day=1)
         end = datetime.strptime(keys[-1], "%Y-%m").replace(day=1)
-        balance = self._initial_balance
+        balance = self._ledger.initial_balance
         result: dict[str, dict[str, object]] = {}
         while cursor <= end:
             key = cursor.strftime("%Y-%m")

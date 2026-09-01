@@ -9,7 +9,6 @@ reference with a trailing ``*``; ``TemplateGraph.instantiate_group``
 materializes N per-instrument graphs plus 1 group node graph.
 """
 
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
@@ -82,15 +81,6 @@ class DollarStrengthAnalyzer(Analyzer):
             facts=(NumericFact(total, view.current.timestamp),),
             evidence=(),
         )
-
-
-@pytest.fixture(autouse=True)
-def _register_group_provider() -> Iterator[None]:
-    from marketatlas.strategy.loader import ANALYZER_TYPES
-
-    ANALYZER_TYPES["DollarStrengthAnalyzer"] = DollarStrengthAnalyzer
-    yield
-    ANALYZER_TYPES.pop("DollarStrengthAnalyzer", None)
 
 
 def _registry():

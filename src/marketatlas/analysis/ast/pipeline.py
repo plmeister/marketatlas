@@ -423,9 +423,12 @@ class ParamValidationPass(CompilerPass):
 class GraphGenerationPass(CompilerPass):
     """Stage 4: Convert a concrete AST to an AnalysisGraph."""
 
+    def __init__(self, registry: ProviderRegistry | None = None) -> None:
+        self._registry = registry
+
     def run(self, analysis: Analysis) -> Analysis:
         config = _ast_to_config(analysis)
-        analyzers = build_analyzers(config)
+        analyzers = build_analyzers(config, self._registry)
         return AnalysisGraph(analyzers)  # type: ignore[return-value]
 
 
@@ -445,9 +448,14 @@ class Pipeline:
     errors stay located.
     """
 
-    def __init__(self, source_map: SourceMap | None = None) -> None:
+    def __init__(
+        self,
+        source_map: SourceMap | None = None,
+        registry: ProviderRegistry | None = None,
+    ) -> None:
         self._passes: list[CompilerPass] = []
         self._source_map = source_map
+        self._registry = registry
 
     def add_pass(self, pass_: CompilerPass) -> Pipeline:
         self._passes.append(pass_)
@@ -500,6 +508,7 @@ class Pipeline:
             concrete,
             _ast_to_config(concrete, scopes=frozenset({SCOPE_INSTRUMENT})),
             group_config=_ast_to_config(concrete, scopes=frozenset({SCOPE_GROUP})),
+            registry=self._registry,
         )
 
     def compile_templates(self, analysis: Analysis) -> tuple[TemplateGraph, ...]:
@@ -514,6 +523,7 @@ class Pipeline:
                 v,
                 _ast_to_config(v, scopes=frozenset({SCOPE_INSTRUMENT})),
                 group_config=_ast_to_config(v, scopes=frozenset({SCOPE_GROUP})),
+                registry=self._registry,
             )
             for v in self.expand(analysis)
         )
@@ -537,7 +547,7 @@ class Pipeline:
         return self._graph(variants[0])
 
     def _graph(self, analysis: Analysis) -> AnalysisGraph:
-        result = GraphGenerationPass().run(analysis)
+        result = GraphGenerationPass(self._registry).run(analysis)
         if not isinstance(result, AnalysisGraph):
             raise CompilationError(
                 f"GraphGenerationPass returned unexpected type: {type(result).__name__}"

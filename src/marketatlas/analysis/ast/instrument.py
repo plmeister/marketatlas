@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from marketatlas.analysis.ast.models import Analysis
+from marketatlas.analysis.ast.registry import ProviderRegistry, create_default_registry
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.graph import AnalysisGraph, CyclicDependencyError
@@ -70,10 +71,12 @@ class TemplateGraph:
         analysis: Analysis,
         config: StrategyConfig,
         group_config: StrategyConfig | None = None,
+        registry: ProviderRegistry | None = None,
     ) -> None:
         self._analysis = analysis
         self._config = config
         self._group_config = group_config
+        self._registry = registry
         self._graph = self._build_graph()
 
     @property
@@ -101,7 +104,6 @@ class TemplateGraph:
     def instantiate(self, instrument: Instrument) -> InstrumentGraph:
         """Materialize a fresh, isolated graph for ``instrument``."""
         return InstrumentGraph(instrument=instrument, graph=self._build_graph())
-
     def instantiate_all(self, instruments: Sequence[Instrument]) -> tuple[InstrumentGraph, ...]:
         """Materialize one isolated graph per instrument, in order.
 
@@ -131,7 +133,11 @@ class TemplateGraph:
             )
         member_graphs = self.instantiate_all(members)
         group_graph = GroupNodeGraph(
-            _build_group_analyzers(self._group_config, [m.canonical for m in members])
+            _build_group_analyzers(
+                self._group_config,
+                [m.canonical for m in members],
+                self._registry,
+            )
         )
         return GroupGraph(
             group=group,
@@ -173,7 +179,7 @@ class TemplateGraph:
     def _build_graph(self) -> AnalysisGraph:
         from marketatlas.strategy.loader import build_analyzers
 
-        return AnalysisGraph(build_analyzers(self._config))
+        return AnalysisGraph(build_analyzers(self._config, self._registry))
 
 
 class GroupNodeGraph:
@@ -292,18 +298,24 @@ class GroupGraph:
         return self.group_graph.run(views[0], member_facts, canonicals)
 
 
-def _build_group_analyzers(config: StrategyConfig, members: Sequence[str]) -> list[Analyzer]:
+def _build_group_analyzers(
+    config: StrategyConfig,
+    members: Sequence[str],
+    registry: ProviderRegistry | None = None,
+) -> list[Analyzer]:
     """Build group analyzers with the runtime member list injected.
 
     The group ``StrategyConfig`` is member-agnostic (compile time); each group
     analyzer must know its group membership to name its spanning inputs, so the
     ``members`` parameter is injected here, at instantiation.
     """
-    from marketatlas.strategy.loader import ANALYZER_TYPES, build_analyzers
+    from marketatlas.strategy.loader import build_analyzers
 
+    reg = registry if registry is not None else create_default_registry()
+    classes = reg.analyzer_classes()
     analyzer_configs: list[AnalyzerConfig] = []
     for ac in config.analyzers:
-        if ac.type not in ANALYZER_TYPES:
+        if ac.type not in classes:
             raise ValueError(f"Unknown group analyzer type '{ac.type}'")
         params = dict(ac.params)
         params["members"] = tuple(members)
@@ -316,7 +328,8 @@ def _build_group_analyzers(config: StrategyConfig, members: Sequence[str]) -> li
             analyzers=tuple(analyzer_configs),
             signals=config.signals,
             risk=config.risk,
-        )
+        ),
+        registry=reg,
     )
 
 

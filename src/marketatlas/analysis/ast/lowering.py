@@ -26,6 +26,7 @@ from marketatlas.analysis.ast.models import (
     Provider,
     is_timeframe_definition,
 )
+from marketatlas.analysis.ast.registry import create_default_registry
 from marketatlas.data.types import Timeframe
 from marketatlas.strategy.config import (
     AnalyzerConfig,
@@ -33,7 +34,6 @@ from marketatlas.strategy.config import (
     SignalConfig,
     StrategyConfig,
 )
-from marketatlas.strategy.loader import ANALYZER_TYPES
 
 
 @dataclass(frozen=True)
@@ -176,7 +176,7 @@ def _check_fact_declared(
     provider = providers.get(target.provider)
     if provider is None:
         return
-    cls = ANALYZER_TYPES.get(provider.impl)
+    cls = create_default_registry().analyzer_classes().get(provider.impl)
     if cls is None:
         return
     params: dict[str, Any] = {}

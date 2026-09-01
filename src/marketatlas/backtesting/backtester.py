@@ -8,7 +8,7 @@ from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.graph import AnalysisGraph
 from marketatlas.data.store import MarketStore
 from marketatlas.data.view import MarketView
-from marketatlas.evidence.collector import EvidenceCollector
+from marketatlas.evidence.collector import collect_fact_evidence
 from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.frames.store import FrameStore
@@ -17,7 +17,7 @@ from marketatlas.strategy.tradebook import TradeBook
 
 if TYPE_CHECKING:
     from marketatlas.facts.base import Fact
-    from marketatlas.strategy.signals import TradeSignal
+    from marketatlas.strategy.signals import SignalEvaluation, TradeSignal
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,9 @@ class BundleProtocol(Protocol):
     ) -> list[tuple[str, TradeSignal]]: ...
     def evaluate_all_with_rejections(
         self, view: MarketView, facts: dict[FactKey, Fact]
-    ) -> tuple[list[tuple[str, TradeSignal]], list[tuple[str, TradeSignal]]]: ...
+    ) -> tuple[
+        list[tuple[str, TradeSignal]], list[tuple[str, SignalEvaluation]]
+    ]: ...
     def get_risk_engine(self, strategy_name: str) -> RiskEngine: ...
 
 
@@ -79,7 +81,7 @@ class Backtester:
         for i, cursor in enumerate(range(self._window_size, len(self._store))):
             view = MarketView(self._store, cursor, self._window_size)
             facts, loose_evidence = self._bundle.graph.run_with_evidence(view)
-            evidence = self._collect_evidence(facts) + loose_evidence
+            evidence = collect_fact_evidence(facts) + loose_evidence
 
             emitted, signal_rejections = self._bundle.evaluate_all_with_rejections(
                 view, facts
@@ -147,16 +149,3 @@ class Backtester:
             window_size=self._window_size,
             max_hold_days=self._max_hold_days,
         )
-
-    @staticmethod
-    def _collect_evidence(facts: dict[FactKey, Fact]) -> tuple[EvidenceEntry, ...]:
-        collector = EvidenceCollector()
-        for fact in facts.values():
-            for entry in fact.evidence:
-                collector.add(
-                    text=entry.text,
-                    level=entry.level,
-                    source=entry.source,
-                    annotation_hint=entry.annotation_hint,
-                )
-        return collector.entries()

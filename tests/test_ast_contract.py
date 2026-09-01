@@ -123,6 +123,8 @@ class TestCapabilities:
         assert registry.capabilities() == (
             "atr",
             "atr_series",
+            "breakout",
+            "channel",
             "ema",
             "generate_signal",
             "manage_risk",

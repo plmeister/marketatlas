@@ -5,7 +5,12 @@ from marketatlas.facts.base import Fact
 from marketatlas.facts.pattern import PullbackFact
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import TrendDirection, TrendFact
-from marketatlas.strategy.signals import Signal, TradeSignal, resolve_fact_key
+from marketatlas.strategy.signals import (
+    Signal,
+    SignalEvaluation,
+    TradeSignal,
+    resolve_fact_key,
+)
 
 
 def _pullback_strength(pattern: tuple[float, ...]) -> float:
@@ -44,6 +49,14 @@ class PullbackSignal(Signal):
         return (FactKey("pullback_pattern"), FactKey("trend"), FactKey("atr_14"))
 
     def evaluate(self, view: MarketView, facts: dict[FactKey, Fact]) -> TradeSignal | None:
+        return self._evaluate(view, facts).signal
+
+    def evaluate_with_rejections(
+        self, view: MarketView, facts: dict[FactKey, Fact]
+    ) -> SignalEvaluation:
+        return self._evaluate(view, facts)
+
+    def _evaluate(self, view: MarketView, facts: dict[FactKey, Fact]) -> SignalEvaluation:
         pullback_key = resolve_fact_key(facts, self._bindings.get("pullback_pattern", self._pullback_key))
         trend_key = resolve_fact_key(facts, self._bindings.get("trend", self._trend_key))
         atr_key = resolve_fact_key(facts, self._bindings.get("atr_14", self._atr_key))
@@ -53,21 +66,22 @@ class PullbackSignal(Signal):
         atr = facts.get(atr_key) if atr_key is not None else None
 
         if not isinstance(pullback, PullbackFact):
-            return None
+            return SignalEvaluation()
         if not isinstance(trend, TrendFact):
-            return None
+            return SignalEvaluation()
         if not isinstance(atr, ATRFact):
-            return None
+            return SignalEvaluation()
 
         if pullback.direction == TrendDirection.NEUTRAL:
-            rejections = (
-                EvidenceEntry(
-                    text="Rejected: pullback direction is neutral",
-                    level=EvidenceLevel.WARNING,
-                    source="PullbackSignal",
-                ),
+            return SignalEvaluation(
+                rejections=(
+                    EvidenceEntry(
+                        text="Rejected: pullback direction is neutral",
+                        level=EvidenceLevel.WARNING,
+                        source="PullbackSignal",
+                    ),
+                )
             )
-            return self._rejected_signal(rejections)
 
         strength = (
             pullback.strength
@@ -75,17 +89,18 @@ class PullbackSignal(Signal):
             else _pullback_strength(pullback.swing_pattern)
         )
         if strength < self._min_strength:
-            rejections = (
-                EvidenceEntry(
-                    text=(
-                        f"Rejected: pullback strength {strength:.2f} "
-                        f"< min {self._min_strength:.2f}"
+            return SignalEvaluation(
+                rejections=(
+                    EvidenceEntry(
+                        text=(
+                            f"Rejected: pullback strength {strength:.2f} "
+                            f"< min {self._min_strength:.2f}"
+                        ),
+                        level=EvidenceLevel.WARNING,
+                        source="PullbackSignal",
                     ),
-                    level=EvidenceLevel.WARNING,
-                    source="PullbackSignal",
-                ),
+                )
             )
-            return self._rejected_signal(rejections)
 
         current = view.current
         atr_val = atr.value if atr.value > 0 else 0.0
@@ -111,22 +126,12 @@ class PullbackSignal(Signal):
             ),
         )
 
-        return TradeSignal(
-            direction=pullback.direction,
-            entry_zone=entry_zone,
-            confidence=round(confidence, 4),
-            source="PullbackSignal",
-            evidence=evidence,
-        )
-
-    def _rejected_signal(
-        self, rejections: tuple[EvidenceEntry, ...]
-    ) -> TradeSignal:
-        return TradeSignal(
-            direction=TrendDirection.NEUTRAL,
-            entry_zone=(0.0, 0.0),
-            confidence=0.0,
-            source="PullbackSignal",
-            evidence=(),
-            rejections=rejections,
+        return SignalEvaluation(
+            signal=TradeSignal(
+                direction=pullback.direction,
+                entry_zone=entry_zone,
+                confidence=round(confidence, 4),
+                source="PullbackSignal",
+                evidence=evidence,
+            )
         )

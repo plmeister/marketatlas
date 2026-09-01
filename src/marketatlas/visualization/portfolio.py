@@ -8,7 +8,7 @@ from typing import Any
 
 from marketatlas.backtesting.portfolio import PortfolioBacktestResult
 from marketatlas.data.store import MarketStore
-from marketatlas.visualization.context import RenderContext
+from marketatlas.frames.output import from_portfolio_instrument
 from marketatlas.visualization.interactive import InteractiveRenderer
 
 
@@ -20,8 +20,8 @@ def render_per_instrument_charts(
 ) -> tuple[Path, ...]:
     """Render one interactive chart per instrument (backlog 077).
 
-    ``InteractiveRenderer`` is reused as-is; each chart gets the shared book
-    filtered to that instrument's trades (``TradeBook.filtered_by_instrument``)
+    ``InteractiveRenderer`` is reused as-is; each chart gets a per-instrument
+    ``AnalysisOutput`` (that instrument's candles, frames and filtered trades)
     so trade markers and the summary bar reflect only that instrument. The
     canonical name drives the chart title and the ``{stem}.{canonical}.html``
     filename.
@@ -30,15 +30,8 @@ def render_per_instrument_charts(
     paths: list[Path] = []
     for inst in result.instruments:
         chart_path = output_dir / f"{stem}.{inst.canonical}.html"
-        ctx = RenderContext(
-            frames=result.frames[inst.canonical],
-            store=stores[inst.canonical],
-            tradebook=result.tradebook.filtered_by_instrument(inst.canonical),
-            title=inst.canonical,
-            window_size=result.window_size,
-            max_hold_days=result.max_hold_days,
-        )
-        InteractiveRenderer(ctx).render(chart_path)
+        out = from_portfolio_instrument(result, inst.canonical, stores[inst.canonical])
+        InteractiveRenderer(out).render(chart_path)
         paths.append(chart_path)
     return tuple(paths)
 

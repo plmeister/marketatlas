@@ -1,4 +1,30 @@
+from typing import TYPE_CHECKING
+
 from .model import EvidenceEntry, EvidenceLevel
+
+if TYPE_CHECKING:
+    from marketatlas.analysis.factkey import FactKey
+    from marketatlas.facts.base import Fact
+
+
+def collect_fact_evidence(
+    facts: "dict[FactKey, Fact]",
+) -> tuple[EvidenceEntry, ...]:
+    """Gather every fact's evidence entries into one ordered tuple.
+
+    Used by both the single-instrument and portfolio backtesters when building
+    an analysis frame, so the evidence-flattening logic lives in one place.
+    """
+    collector = EvidenceCollector()
+    for fact in facts.values():
+        for entry in fact.evidence:
+            collector.add(
+                text=entry.text,
+                level=entry.level,
+                source=entry.source,
+                annotation_hint=entry.annotation_hint,
+            )
+    return collector.entries()
 
 
 class EvidenceCollector:

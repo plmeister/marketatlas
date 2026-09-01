@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from marketatlas.analysis.ast.registry import create_default_registry
 from marketatlas.analysis.analyzers.atr import ATRAnalyzer
 from marketatlas.analysis.analyzers.ema import EMAAnalyzer
 from marketatlas.analysis.analyzers.trend import TrendAnalyzer
@@ -11,7 +12,6 @@ from marketatlas.strategy.config import (
     StrategyConfig,
 )
 from marketatlas.strategy.loader import (
-    ANALYZER_TYPES,
     ConfigError,
     build_analyzers,
     load_strategy,
@@ -264,9 +264,10 @@ class TestBuildAnalyzers:
 
 class TestAnalyzerRegistry:
     def test_registry_contains_known_types(self) -> None:
-        assert "EMAAnalyzer" in ANALYZER_TYPES
-        assert "ATRAnalyzer" in ANALYZER_TYPES
-        assert "TrendAnalyzer" in ANALYZER_TYPES
+        classes = create_default_registry().analyzer_classes()
+        assert "EMAAnalyzer" in classes
+        assert "ATRAnalyzer" in classes
+        assert "TrendAnalyzer" in classes
 
 
 class TestParseEdgeCases:
