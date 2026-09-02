@@ -6,93 +6,83 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from marketatlas.backtesting.portfolio import PortfolioBacktestResult
-from marketatlas.data.store import MarketStore
-from marketatlas.frames.output import from_portfolio_instrument
+from marketatlas.frames.output import AnalysisSummary, PortfolioOutput
 from marketatlas.visualization.interactive import InteractiveRenderer
 
 
 def render_per_instrument_charts(
-    result: PortfolioBacktestResult,
-    stores: Mapping[str, MarketStore],
+    output: PortfolioOutput,
     output_dir: Path,
     stem: str = "portfolio",
 ) -> tuple[Path, ...]:
     """Render one interactive chart per instrument (backlog 077).
 
-    ``InteractiveRenderer`` is reused as-is; each chart gets a per-instrument
-    ``AnalysisOutput`` (that instrument's candles, frames and filtered trades)
+    ``InteractiveRenderer`` is reused as-is; each chart gets that instrument's
+    per-instrument ``AnalysisOutput`` (its candles, frames and filtered trades)
     so trade markers and the summary bar reflect only that instrument. The
     canonical name drives the chart title and the ``{stem}.{canonical}.html``
     filename.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
-    for inst in result.instruments:
-        chart_path = output_dir / f"{stem}.{inst.canonical}.html"
-        out = from_portfolio_instrument(result, inst.canonical, stores[inst.canonical])
-        InteractiveRenderer(out).render(chart_path)
+    for canonical in output.instruments:
+        chart_path = output_dir / f"{stem}.{canonical}.html"
+        InteractiveRenderer(output.outputs[canonical]).render(chart_path)
         paths.append(chart_path)
     return tuple(paths)
 
 
 def render_portfolio_index(
-    result: PortfolioBacktestResult,
+    output: PortfolioOutput,
     output_dir: Path,
     stem: str = "portfolio",
 ) -> Path:
     """Render the lightweight portfolio index page (backlog 077).
 
-    The summary bar and every per-instrument row come straight from the shared
-    ``TradeBook.summary`` — no recompute. Each row links to its
+    The summary bar and every per-instrument row come straight from the typed
+    ``PortfolioOutput`` — no recompute. Each row links to its
     ``{stem}.{canonical}.html`` chart via a relative href, so the page works
     from disk without a server.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    summary: Any = result.tradebook.summary
-    by_instrument = summary.get("by_instrument")
-    by_instrument = by_instrument if isinstance(by_instrument, dict) else {}
-    by_strategy = summary.get("by_strategy")
-    by_strategy = by_strategy if isinstance(by_strategy, dict) else {}
-    monthly = result.tradebook.monthly_summary()
+    summary = output.summary
+    by_instrument = output.by_instrument
+    by_strategy = summary.to_dict().get("by_strategy", {})
+    if not isinstance(by_strategy, dict):
+        by_strategy = {}
+    monthly = output.monthly
 
-    total_pnl = float(summary.get("total_pnl", 0.0))
-    pnl_class = _sign_class(total_pnl)
-    expectancy = float(summary.get("expectancy", 0.0))
-    exp_class = _sign_class(expectancy)
+    pnl_class = _sign_class(summary.total_pnl)
+    exp_class = _sign_class(summary.expectancy)
 
     instrument_rows = "\n".join(
-        _instrument_row(
-            inst.canonical,
-            by_instrument.get(inst.canonical, {}),
-            href=f"{stem}.{inst.canonical}.html",
-        )
-        for inst in result.instruments
+        _instrument_row(canonical, by_instrument[canonical], href=f"{stem}.{canonical}.html")
+        for canonical in output.instruments
     )
     strategy_rows = _strategy_rows_html(by_strategy)
 
-    title = f"Portfolio: {', '.join(i.canonical for i in result.instruments)}"
+    title = f"Portfolio: {output.title}"
     meta = (
-        f"{len(result.instruments)} instrument(s) | "
-        f"{int(summary.get('total_trades', 0))} trades | "
-        f"window {result.window_size} | hold {result.max_hold_days}d"
+        f"{len(output.instruments)} instrument(s) | "
+        f"{summary.total_trades} trades | "
+        f"window {output.window_size} | hold {output.max_hold_days}d"
     )
 
     html = _INDEX_TEMPLATE.format(
         css=_INDEX_CSS,
         title=title,
         meta=meta,
-        final_balance=_fmt_money(float(summary.get("final_balance", 0.0))),
-        total_pnl=_fmt_pnl(total_pnl),
+        final_balance=_fmt_money(summary.final_balance),
+        total_pnl=_fmt_pnl(summary.total_pnl),
         pnl_class=pnl_class,
-        total_return=_fmt_pct(float(summary.get("total_return_pct", 0.0))),
-        max_drawdown=_fmt_pct(float(summary.get("max_drawdown", 0.0))),
-        total_trades=int(summary.get("total_trades", 0)),
-        wins=int(summary.get("wins", 0)),
-        losses=int(summary.get("losses", 0)),
-        win_rate=_fmt_rate(float(summary.get("win_rate", 0.0))),
-        profit_factor=_fmt_pf(float(summary.get("profit_factor", 0.0))),
-        expectancy=_fmt_pnl(expectancy),
+        total_return=_fmt_pct(summary.total_return_pct),
+        max_drawdown=_fmt_pct(summary.max_drawdown),
+        total_trades=summary.total_trades,
+        wins=summary.wins,
+        losses=summary.losses,
+        win_rate=_fmt_rate(summary.win_rate),
+        profit_factor=_fmt_pf(summary.profit_factor),
+        expectancy=_fmt_pnl(summary.expectancy),
         exp_class=exp_class,
         instrument_rows=instrument_rows,
         strategy_rows=strategy_rows,
@@ -105,24 +95,22 @@ def render_portfolio_index(
 
 
 def render_portfolio(
-    result: PortfolioBacktestResult,
-    stores: Mapping[str, MarketStore],
+    output: PortfolioOutput,
     output_dir: Path,
     stem: str = "portfolio",
 ) -> tuple[Path, tuple[Path, ...]]:
     """Render the full portfolio visualization suite (backlog 077).
 
     Writes one interactive chart per instrument plus the index page; returns
-    the index path and the chart paths. ``stores`` maps each canonical name to
-    its ``MarketStore``.
+    the index path and the chart paths.
     """
-    charts = render_per_instrument_charts(result, stores, output_dir, stem)
-    index = render_portfolio_index(result, output_dir, stem)
+    charts = render_per_instrument_charts(output, output_dir, stem)
+    index = render_portfolio_index(output, output_dir, stem)
     return index, charts
 
 
 def render_ab_index(
-    rows: Sequence[tuple[Mapping[str, object], PortfolioBacktestResult]],
+    rows: Sequence[tuple[Mapping[str, object], PortfolioOutput]],
     output_dir: Path,
     stem: str = "ab",
     *,
@@ -131,18 +119,18 @@ def render_ab_index(
 ) -> Path:
     """Render the A/B comparison index page (backlog 081).
 
-    ``rows`` pairs each variant's choice identity (079) with its backtest
-    result. The page shows a summary grid — one row per variant whose columns
-    are the varying choice dimensions plus the shared-book metrics straight
-    from ``TradeBook.summary`` — then per-variant by-instrument and
-    by-strategy tables reusing the ``render_portfolio_index`` markup. Each
+    ``rows`` pairs each variant's choice identity (079) with its typed
+    ``PortfolioOutput``. The page shows a summary grid — one row per variant
+    whose columns are the varying choice dimensions plus the shared-book metrics
+    straight from ``PortfolioOutput.summary`` — then per-variant by-instrument
+    and by-strategy tables reusing the ``render_portfolio_index`` markup. Each
     instrument row links to its 080 per-variant chart via a relative href, so
     the page works from disk without a server.
 
     ``chart_name`` names the chart file inside each variant directory (a
     ``{canonical}`` format string; the single-symbol path passes a fixed
     filename). ``instruments`` gives the canonical instrument names when the
-    results are not ``PortfolioBacktestResult``.
+    results are not portfolio outputs.
 
     Backlog 082: the page is progressively enhanced with a control bar — one
     ``<select>`` per choice dimension — driven by a single embedded JSON blob
@@ -161,17 +149,17 @@ def render_ab_index(
 
     first = rows[0][1] if rows else None
     if instruments is None:
-        instruments = [i.canonical for i in first.instruments] if first is not None else []
+        instruments = list(first.instruments) if first is not None else []
 
     grid_rows: list[str] = []
     sections: list[str] = []
     variants: list[dict[str, Any]] = []
     for (ident, result), slug in zip(rows, slugs):
-        summary: Any = result.tradebook.summary
-        by_instrument = summary.get("by_instrument")
-        by_instrument = by_instrument if isinstance(by_instrument, dict) else {}
-        by_strategy = summary.get("by_strategy")
-        by_strategy = by_strategy if isinstance(by_strategy, dict) else {}
+        summary = result.summary
+        by_instrument = result.by_instrument
+        by_strategy = summary.to_dict().get("by_strategy", {})
+        if not isinstance(by_strategy, dict):
+            by_strategy = {}
         grid_rows.append(_ab_grid_row(ident, varying, summary))
         sections.append(
             _ab_variant_section(
@@ -215,22 +203,22 @@ def render_ab_index(
 def _ab_grid_row(
     ident: Mapping[str, object],
     varying: Sequence[str],
-    summary: Mapping[str, Any],
+    summary: AnalysisSummary,
 ) -> str:
     choice_cells = "".join(f"<td>{ident[k]}</td>" for k in varying)
-    total_pnl = float(summary.get("total_pnl", 0.0))
-    wins = int(summary.get("wins", 0))
-    losses = int(summary.get("losses", 0))
-    expectancy = float(summary.get("expectancy", 0.0))
+    total_pnl = summary.total_pnl
+    wins = summary.wins
+    losses = summary.losses
+    expectancy = summary.expectancy
     return (
         f"<tr>{choice_cells}"
-        f"<td>{int(summary.get('total_trades', 0))}</td>"
+        f"<td>{summary.total_trades}</td>"
         f"<td>{wins}-{losses}</td>"
-        f"<td>{_fmt_rate(float(summary.get('win_rate', 0.0)))}</td>"
+        f"<td>{_fmt_rate(summary.win_rate)}</td>"
         f'<td class="{_sign_class(total_pnl)}">{_fmt_pnl(total_pnl)}</td>'
-        f"<td>{_fmt_pct(float(summary.get('total_return_pct', 0.0)))}</td>"
-        f"<td>{_fmt_pct(float(summary.get('max_drawdown', 0.0)))}</td>"
-        f"<td>{_fmt_pf(float(summary.get('profit_factor', 0.0)))}</td>"
+        f"<td>{_fmt_pct(summary.total_return_pct)}</td>"
+        f"<td>{_fmt_pct(summary.max_drawdown)}</td>"
+        f"<td>{_fmt_pf(summary.profit_factor)}</td>"
         f'<td class="{_sign_class(expectancy)}">{_fmt_pnl(expectancy)}</td></tr>'
     )
 
@@ -238,7 +226,7 @@ def _ab_grid_row(
 def _ab_variant_json(
     ident: Mapping[str, object],
     varying: Sequence[str],
-    summary: Mapping[str, Any],
+    summary: AnalysisSummary,
     slug: str,
 ) -> dict[str, Any]:
     """Variant data for the embedded JSON (backlog 082).
@@ -252,15 +240,15 @@ def _ab_variant_json(
         "slug": slug,
         "ident": {k: str(ident[k]) for k in varying},
         "metrics": {
-            "total_trades": int(summary.get("total_trades", 0)),
-            "wins": int(summary.get("wins", 0)),
-            "losses": int(summary.get("losses", 0)),
-            "win_rate": float(summary.get("win_rate", 0.0)),
-            "total_pnl": float(summary.get("total_pnl", 0.0)),
-            "total_return_pct": float(summary.get("total_return_pct", 0.0)),
-            "max_drawdown": float(summary.get("max_drawdown", 0.0)),
-            "profit_factor": float(summary.get("profit_factor", 0.0)),
-            "expectancy": float(summary.get("expectancy", 0.0)),
+            "total_trades": summary.total_trades,
+            "wins": summary.wins,
+            "losses": summary.losses,
+            "win_rate": summary.win_rate,
+            "total_pnl": summary.total_pnl,
+            "total_return_pct": summary.total_return_pct,
+            "max_drawdown": summary.max_drawdown,
+            "profit_factor": summary.profit_factor,
+            "expectancy": summary.expectancy,
         },
     }
 
@@ -291,7 +279,7 @@ def _ab_variant_section(
     ident: Mapping[str, object],
     varying: Sequence[str],
     headers: Sequence[str],
-    by_instrument: Mapping[str, Any],
+    by_instrument: Mapping[str, AnalysisSummary],
     by_strategy: Mapping[str, Any],
     instruments: Sequence[str],
     slug: str,
@@ -301,7 +289,7 @@ def _ab_variant_section(
     instrument_rows = "\n".join(
         _instrument_row(
             canonical,
-            by_instrument.get(canonical, {}),
+            by_instrument.get(canonical, _empty_summary()),
             href=f"{slug}/{chart_name.format(canonical=canonical)}",
         )
         for canonical in instruments
@@ -322,13 +310,13 @@ def _ab_variant_section(
     )
 
 
-def _instrument_row(canonical: str, entry: Mapping[str, Any], href: str) -> str:
-    total_pnl = float(entry.get("total_pnl", 0.0))
-    trades = int(entry.get("trades", 0))
-    wins = int(entry.get("wins", 0))
-    losses = int(entry.get("losses", 0))
-    win_rate = float(entry.get("win_rate", 0.0))
-    pf = float(entry.get("profit_factor", 0.0))
+def _instrument_row(canonical: str, entry: AnalysisSummary, href: str) -> str:
+    total_pnl = entry.total_pnl
+    trades = entry.total_trades
+    wins = entry.wins
+    losses = entry.losses
+    win_rate = entry.win_rate
+    pf = entry.profit_factor
     return (
         f'<tr><td><a href="{href}">{canonical}</a></td>'
         f'<td class="{_sign_class(total_pnl)}">{_fmt_pnl(total_pnl)}</td>'
@@ -336,6 +324,31 @@ def _instrument_row(canonical: str, entry: Mapping[str, Any], href: str) -> str:
         f"<td>{wins}-{losses}</td>"
         f"<td>{_fmt_rate(win_rate)}</td>"
         f"<td>{_fmt_pf(pf)}</td></tr>"
+    )
+
+
+def _empty_summary() -> AnalysisSummary:
+    """A zeroed per-instrument summary for instruments without a backtest row."""
+    return AnalysisSummary(
+        initial_balance=0.0,
+        final_balance=0.0,
+        total_pnl=0.0,
+        total_return_pct=0.0,
+        total_trades=0,
+        wins=0,
+        losses=0,
+        breakevens=0,
+        win_rate=0.0,
+        peak_balance=0.0,
+        max_drawdown=0.0,
+        gross_profit=0.0,
+        gross_loss=0.0,
+        profit_factor=0.0,
+        avg_win=0.0,
+        avg_loss=0.0,
+        expectancy=0.0,
+        by_strategy={},
+        by_instrument={},
     )
 
 

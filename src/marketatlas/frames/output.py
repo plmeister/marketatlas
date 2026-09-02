@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -12,8 +13,11 @@ if TYPE_CHECKING:
     from marketatlas.frames.frame import AnalysisFrame
     from marketatlas.strategy.tradebook import TradeOutcome
 
+    InstrumentOutputs = dict[str, "AnalysisOutput"]
+    InstrumentSummaries = dict[str, "AnalysisSummary"]
 
-def _summary(tradebook: "Any") -> dict[str, Any]:
+
+def _summary(tradebook: Any) -> dict[str, Any]:
     s = tradebook.summary
     assert isinstance(s, dict)
     return s
@@ -48,7 +52,7 @@ class AnalysisSummary:
     by_instrument: dict[str, dict[str, Any]]
 
     @classmethod
-    def from_tradebook(cls, tradebook: "Any") -> "AnalysisSummary":
+    def from_tradebook(cls, tradebook: Any) -> AnalysisSummary:
         s = _summary(tradebook)
         return cls(
             initial_balance=s["initial_balance"],
@@ -111,15 +115,15 @@ class AnalysisOutput:
     timeframe: str
     timeframes: tuple[str, ...]
     candles: dict[str, tuple[Candle, ...]]
-    frames: tuple["AnalysisFrame", ...]
-    trades: tuple["TradeOutcome", ...]
+    frames: tuple[AnalysisFrame, ...]
+    trades: tuple[TradeOutcome, ...]
     summary: AnalysisSummary
     window_size: int
     max_hold_days: int
     title: str = ""
 
     @classmethod
-    def from_backtest_result(cls, result: "BacktestResult") -> "AnalysisOutput":
+    def from_backtest_result(cls, result: BacktestResult) -> AnalysisOutput:
         store = result.store
         symbol = (
             f"{store.symbol.name}"
@@ -154,14 +158,14 @@ class AnalysisOutput:
     @classmethod
     def _from_store_and_book(
         cls,
-        store: "MarketStore",
-        frames: tuple["AnalysisFrame", ...],
-        trades: tuple["TradeOutcome", ...],
-        tradebook: "Any",
+        store: MarketStore,
+        frames: tuple[AnalysisFrame, ...],
+        trades: tuple[TradeOutcome, ...],
+        tradebook: Any,
         window_size: int,
         max_hold_days: int,
         title: str,
-    ) -> "AnalysisOutput":
+    ) -> AnalysisOutput:
         tf_values = [tf.value for tf in store.available_timeframes]
         candles = {
             tf.value: tuple(store.get_candles(tf))
@@ -183,9 +187,9 @@ class AnalysisOutput:
 
 
 def from_portfolio_instrument(
-    result: "PortfolioBacktestResult",
+    result: PortfolioBacktestResult,
     canonical: str,
-    store: "MarketStore",
+    store: MarketStore,
 ) -> AnalysisOutput:
     """Per-instrument output: filtered trades + frames, that instrument's series."""
     from marketatlas.backtesting.portfolio import PortfolioBacktestResult  # noqa
@@ -200,3 +204,52 @@ def from_portfolio_instrument(
         max_hold_days=result.max_hold_days,
         title=canonical,
     )
+
+
+@dataclass(frozen=True)
+class PortfolioOutput:
+    """Store-independent, portfolio-wide result of an analysis run.
+
+    Aggregates a shared ``TradeBook``'s typed ``AnalysisSummary`` alongside one
+    full per-instrument ``AnalysisOutput`` (for charts) and a typed per-instrument
+    summary (for tables). Consumers — index page, per-instrument charts, A/B
+    comparison — read this object only, never a live ``TradeBook`` or
+    ``MarketStore``.
+    """
+
+    summary: AnalysisSummary
+    by_instrument: InstrumentSummaries
+    outputs: InstrumentOutputs
+    monthly: dict[str, dict[str, object]]
+    instruments: tuple[str, ...]
+    window_size: int
+    max_hold_days: int
+    title: str = ""
+
+    @classmethod
+    def from_portfolio_result(
+        cls,
+        result: PortfolioBacktestResult,
+        stores: Mapping[str, MarketStore],
+    ) -> PortfolioOutput:
+        """Materialize from a portfolio backtest, one output per instrument."""
+        from marketatlas.backtesting.portfolio import PortfolioBacktestResult  # noqa
+
+        summary = AnalysisSummary.from_tradebook(result.tradebook)
+        outputs: dict[str, AnalysisOutput] = {}
+        by_instrument: dict[str, AnalysisSummary] = {}
+        for inst in result.instruments:
+            canonical = inst.canonical
+            output = from_portfolio_instrument(result, canonical, stores[canonical])
+            outputs[canonical] = output
+            by_instrument[canonical] = output.summary
+        return cls(
+            summary=summary,
+            by_instrument=by_instrument,
+            outputs=outputs,
+            monthly=result.tradebook.monthly_summary(),
+            instruments=tuple(i.canonical for i in result.instruments),
+            window_size=result.window_size,
+            max_hold_days=result.max_hold_days,
+            title=", ".join(i.canonical for i in result.instruments),
+        )

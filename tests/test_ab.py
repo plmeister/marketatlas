@@ -546,7 +546,7 @@ class TestCLIAbFlagWiring:
                 str(tmp_path / "ab.html"),
             )
 
-        variant_dirs = [c.args[2] for c in render_charts.call_args_list]
+        variant_dirs = [c.args[1] for c in render_charts.call_args_list]
         assert variant_dirs == [
             tmp_path / "ab" / "ms010",
             tmp_path / "ab" / "ms099",

@@ -23,6 +23,7 @@ from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
 from marketatlas.facts.primitive import ATRFact
 from marketatlas.facts.structural import SRFact, TrendDirection
+from marketatlas.frames.store import FrameStore
 from marketatlas.strategy.risk import RiskEngine
 from marketatlas.strategy.signals import TradeSignal
 from marketatlas.strategy.trade import TradeCandidate
@@ -668,20 +669,23 @@ class TestMonthlyIndex:
         tb.resolve_at_cursor(self._candle(t0 + timedelta(days=1), high=116.0, low=108.0))
 
     def test_index_renders_monthly_summary(self, tmp_path: Path) -> None:
+        from marketatlas.frames.output import PortfolioOutput
         from marketatlas.visualization.portfolio import render_portfolio_index
 
         book = TradeBook(initial_balance=1000.0)
         self._closed_trade(book, datetime(2024, 1, 3, tzinfo=UTC))
         self._closed_trade(book, datetime(2024, 2, 5, tzinfo=UTC))
+        store = _store("A", ())
         result = PortfolioBacktestResult(
             instruments=(_instrument("A"),),
-            frames={},
+            frames={"A": FrameStore()},
             tradebook=book,
             window_size=100,
             max_hold_days=10,
         )
+        output = PortfolioOutput.from_portfolio_result(result, {"A": store})
 
-        render_portfolio_index(result, tmp_path, "portfolio")
+        render_portfolio_index(output, tmp_path, "portfolio")
 
         html = (tmp_path / "portfolio.html").read_text(encoding="utf-8")
         assert "<h2>Monthly</h2>" in html
@@ -690,17 +694,20 @@ class TestMonthlyIndex:
         assert "1-0" in html
 
     def test_index_omits_monthly_when_no_trades(self, tmp_path: Path) -> None:
+        from marketatlas.frames.output import PortfolioOutput
         from marketatlas.visualization.portfolio import render_portfolio_index
 
+        store = _store("A", ())
         result = PortfolioBacktestResult(
             instruments=(_instrument("A"),),
-            frames={},
+            frames={"A": FrameStore()},
             tradebook=TradeBook(initial_balance=1000.0),
             window_size=100,
             max_hold_days=10,
         )
+        output = PortfolioOutput.from_portfolio_result(result, {"A": store})
 
-        render_portfolio_index(result, tmp_path, "portfolio")
+        render_portfolio_index(output, tmp_path, "portfolio")
 
         html = (tmp_path / "portfolio.html").read_text(encoding="utf-8")
         assert "<h2>Monthly</h2>" not in html

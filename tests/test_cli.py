@@ -1397,10 +1397,12 @@ class TestRunPortfolio:
             assert bt_kwargs["max_hold_days"] == 7
 
             render_portfolio.assert_called_once()
+            from marketatlas.frames.output import PortfolioOutput
+
             render_args = render_portfolio.call_args.args
-            assert render_args[0] is mock_result
-            assert render_args[2] == output.parent
-            assert render_args[3] == output.stem
+            assert isinstance(render_args[0], PortfolioOutput)
+            assert render_args[1] == output.parent
+            assert render_args[2] == output.stem
 
         captured = capsys.readouterr()
         assert "PORTFOLIO RESULTS" in captured.out

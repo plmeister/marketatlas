@@ -333,6 +333,7 @@ def _render_ab_variants(
 ) -> list[Path]:
     """Write the A/B output tree: one directory per variant slug (backlog 080)."""
     from marketatlas.analysis.ast.variant import variant_identity, variant_slugs
+    from marketatlas.frames.output import AnalysisOutput, PortfolioOutput
     from marketatlas.visualization.interactive import InteractiveRenderer
     from marketatlas.visualization.portfolio import (
         render_ab_index,
@@ -342,18 +343,32 @@ def _render_ab_variants(
     output_path = Path(output_arg)
     root = output_path.parent / output_path.stem if output_path.suffix else output_path
     written: list[Path] = []
-    for (_, result), slug in zip(rows, variant_slugs(templates)):
+    outputs: list[tuple[TemplateGraph, PortfolioOutput]] = []
+    for template, result in rows:
+        if single_canonical is not None:
+            single = AnalysisOutput.from_backtest_result(result)
+            output = PortfolioOutput(
+                summary=single.summary,
+                by_instrument={single_canonical: single.summary},
+                outputs={single_canonical: single},
+                monthly={},
+                instruments=(single_canonical,),
+                window_size=single.window_size,
+                max_hold_days=single.max_hold_days,
+                title=single_canonical,
+            )
+        else:
+            output = PortfolioOutput.from_portfolio_result(result, stores)
+        outputs.append((template, output))
+    for (_, output), slug in zip(outputs, variant_slugs(templates)):
         variant_dir = root / slug
         if single_canonical is not None:
-            from marketatlas.frames.output import AnalysisOutput
-
-            output = AnalysisOutput.from_backtest_result(result)
             chart = variant_dir / f"{output_path.stem}.html"
-            InteractiveRenderer(output).render(chart)
+            InteractiveRenderer(output.outputs[single_canonical]).render(chart)
             written.append(chart)
         else:
             written.extend(
-                render_per_instrument_charts(result, stores, variant_dir, stem="portfolio")
+                render_per_instrument_charts(output, variant_dir, stem="portfolio")
             )
         print(f"HTML chart: {variant_dir}")
 
@@ -364,7 +379,7 @@ def _render_ab_variants(
         chart_name = "portfolio.{canonical}.html"
         instruments = None
     index = render_ab_index(
-        [(variant_identity(template), result) for template, result in rows],
+        [(variant_identity(template), output) for template, output in outputs],
         root,
         stem="ab",
         chart_name=chart_name,
@@ -608,23 +623,24 @@ def run_portfolio_command(args: argparse.Namespace) -> None:
     result = bt.run_with_progress(progress)
     print("\n")
 
-    summary: dict[str, object] = result.tradebook.summary
+    from marketatlas.frames.output import PortfolioOutput
+
+    output = PortfolioOutput.from_portfolio_result(result, stores)
+    summary = output.summary
     print("=" * 60)
     print("PORTFOLIO RESULTS")
     print("=" * 60)
-    print(f"  Initial balance: ${summary['initial_balance']:.2f}")
-    print(f"  Final balance:   ${summary['final_balance']:.2f}")
-    pnl = summary["total_pnl"]
-    pct = summary["total_return_pct"]
-    print(f"  Total P&L:       ${pnl:+.2f} ({pct:+.1f}%)")
-    print(f"  Total trades:    {summary['total_trades']}")
-    print(f"  Wins:            {summary['wins']}")
-    print(f"  Losses:          {summary['losses']}")
-    print(f"  Win rate:        {summary['win_rate']:.1%}")
-    print(f"  Max drawdown:    {summary['max_drawdown']:.1%}")
-    print(f"  Profit factor:   {summary['profit_factor']:.2f}")
+    print(f"  Initial balance: ${summary.initial_balance:.2f}")
+    print(f"  Final balance:   ${summary.final_balance:.2f}")
+    print(f"  Total P&L:       ${summary.total_pnl:+.2f} ({summary.total_return_pct:+.1f}%)")
+    print(f"  Total trades:    {summary.total_trades}")
+    print(f"  Wins:            {summary.wins}")
+    print(f"  Losses:          {summary.losses}")
+    print(f"  Win rate:        {summary.win_rate:.1%}")
+    print(f"  Max drawdown:    {summary.max_drawdown:.1%}")
+    print(f"  Profit factor:   {summary.profit_factor:.2f}")
 
-    by_instrument = summary["by_instrument"]
+    by_instrument = summary.to_dict().get("by_instrument")
     if by_instrument and isinstance(by_instrument, dict):
         print("\n  By instrument:")
         for name, stats in by_instrument.items():
@@ -634,7 +650,7 @@ def run_portfolio_command(args: argparse.Namespace) -> None:
                 f" P&L=${stats['total_pnl']:+.2f}"
             )
 
-    by_strategy = summary["by_strategy"]
+    by_strategy = summary.to_dict().get("by_strategy")
     if by_strategy and isinstance(by_strategy, dict):
         print("\n  By strategy:")
         for name, stats in by_strategy.items():
@@ -644,7 +660,7 @@ def run_portfolio_command(args: argparse.Namespace) -> None:
                 f" P&L=${stats['total_pnl']:+.2f}"
             )
 
-    monthly = result.tradebook.monthly_summary()
+    monthly = output.monthly
     if monthly:
         print("\n  Monthly breakdown (by exit month):")
         for month, stats in monthly.items():
@@ -660,7 +676,7 @@ def run_portfolio_command(args: argparse.Namespace) -> None:
         from marketatlas.visualization.portfolio import render_portfolio
 
         output_path = Path(args.output)
-        index, charts = render_portfolio(result, stores, output_path.parent, output_path.stem)
+        index, charts = render_portfolio(output, output_path.parent, output_path.stem)
         print(f"\nPortfolio HTML: {index}")
         print(f"Per-instrument charts: {', '.join(str(p) for p in charts)}")
 
