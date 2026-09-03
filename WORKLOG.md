@@ -2,6 +2,8 @@
 
 ## Completed
 
+- **095** — Snapshot kind filter on CLI: new `--kinds` flag on both `run --snapshots` and `snapshot` subcommand (comma-separated `trade,rejection,pattern,sr,swing`, `!x` negation). Added `parse_kinds()`/`VALID_SNAPSHOT_KINDS` in `cli/commands.py` (invalid kind → clear error, exit 1). `locate_pois` gains `exclude_kinds` param + `!x` handling; `render_poi_snapshots` threads both through. Tests: `tests/test_snapshot_cli.py` (parse, mock-thread, invalid-kind, missing-json) + renderer include/exclude test. 280 tier1 pass, lint clean.
+
 - **094** — Parallel instrument analysis: `PortfolioBacktester` uses `ThreadPoolExecutor` for per-instrument `graph.run_with_evidence` + `evaluate_all_with_rejections` in inner loop. Module-level `_analyze_instrument` function (pickle-safe). Pool size configurable via `pool_size` param, defaults to `min(instruments, cpu_count)`. Single-instrument path unchanged. Output identical to serial execution. 1315 tests pass, lint clean.
 - **093** — MarketView computed property cache: `history`, `prices`, `highs`, `lows`, `volumes`, `timestamps` now lazy-cache via `object.__setattr__` on frozen dataclass slots. Each property computes once per `MarketView` instance. Eliminates thousands of throwaway tuples per backtest (9554 frames × 9 analyzers). 1315 tests pass, lint clean.
 - **084a** — Signal/Risk requires(): `Signal` ABC gains abstract `requires() -> tuple[FactKey, ...]` and default `produces()` (empty). `PullbackSignal.requires()` returns `("pullback_pattern", "trend", "atr_14")`. `RiskEngine` gains `requires()` returning `("atr_14", "sr", "swing")` and `produces()` (empty). Enables 084b contract derivation. 236 tier1 tests pass, lint clean.

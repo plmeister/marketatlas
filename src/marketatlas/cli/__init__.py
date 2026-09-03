@@ -85,6 +85,12 @@ def main() -> None:
         "requires the 'snapshots' extra (matplotlib)",
     )
     run_parser.add_argument(
+        "--kinds",
+        default="",
+        help="Comma-separated POI kinds to snapshot (trade,rejection,pattern,sr,"
+        "swing); prefix with ! to exclude (e.g. !pattern). Default: all",
+    )
+    run_parser.add_argument(
         "--balance",
         type=float,
         default=1000.0,
@@ -138,6 +144,12 @@ def main() -> None:
         "--no-volume",
         action="store_true",
         help="Skip the volume subplot",
+    )
+    snap_parser.add_argument(
+        "--kinds",
+        default="",
+        help="Comma-separated POI kinds to snapshot (trade,rejection,pattern,sr,"
+        "swing); prefix with ! to exclude (e.g. !pattern). Default: all",
     )
 
     instr_parser = subparsers.add_parser("instruments", help="Manage instrument registry")

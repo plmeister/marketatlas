@@ -28,6 +28,42 @@ from marketatlas.data.types import MarketData, Symbol, Timeframe
 
 DEFAULT_REGISTRY_PATH = Path("data/instruments.yaml")
 
+VALID_SNAPSHOT_KINDS = frozenset({"trade", "rejection", "pattern", "sr", "swing"})
+
+
+def parse_kinds(raw: str) -> tuple[set[str], set[str]]:
+    """Parse comma-separated ``--kinds`` value into (include, exclude) sets.
+
+    Entries prefixed with ``!`` go into the exclude set.  Invalid kind names
+    raise ``SystemExit`` with a clear message.
+    """
+    include: set[str] = set()
+    exclude: set[str] = set()
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if token.startswith("!"):
+            name = token[1:]
+            if name not in VALID_SNAPSHOT_KINDS:
+                print(
+                    f"Error: unknown snapshot kind '{name}'. "
+                    f"Valid kinds: {', '.join(sorted(VALID_SNAPSHOT_KINDS))}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            exclude.add(name)
+        else:
+            if token not in VALID_SNAPSHOT_KINDS:
+                print(
+                    f"Error: unknown snapshot kind '{token}'. "
+                    f"Valid kinds: {', '.join(sorted(VALID_SNAPSHOT_KINDS))}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            include.add(token)
+    return include, exclude
+
 
 def _registry_path(args: argparse.Namespace) -> Path:
     path = getattr(args, "registry", "") or ""
@@ -305,9 +341,12 @@ def _emit_json_and_snapshots(port, args: argparse.Namespace) -> None:
     if args.snapshots:
         from marketatlas.visualization.snapshot import render_poi_snapshots
 
+        include, exclude = parse_kinds(getattr(args, "kinds", "") or "")
         out_dir = Path(args.snapshots)
         out_dir.mkdir(parents=True, exist_ok=True)
-        paths = render_poi_snapshots(port, out_dir)
+        paths = render_poi_snapshots(
+            port, out_dir, kinds=include or None, exclude_kinds=exclude or None
+        )
         print(f"Snapshots: {len(paths)} PNG(s) -> {out_dir}")
 
 
@@ -803,8 +842,10 @@ def snapshot_command(args: argparse.Namespace) -> None:
     overlays = tuple(
         o.strip() for o in args.overlays.split(",") if o.strip()
     ) if args.overlays else ()
+    include, exclude = parse_kinds(getattr(args, "kinds", "") or "")
     paths = render_poi_snapshots(
         struct, out_dir, timeframe=args.timeframe,
         overlays=overlays, show_volume=not getattr(args, "no_volume", False),
+        kinds=include or None, exclude_kinds=exclude or None,
     )
     print(f"Snapshots: {len(paths)} PNG(s) -> {out_dir}")
