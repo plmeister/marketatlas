@@ -17,6 +17,10 @@ polars = "^1.0"
 pyarrow = ">=17.0"
 yfinance = "^0.2.36"
 pyyaml = "^6.0"
+matplotlib = { version = "^3.10", optional = true }
+
+[tool.poetry.extras]
+snapshots = ["matplotlib"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"

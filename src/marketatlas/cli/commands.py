@@ -255,12 +255,13 @@ def run_command(args: argparse.Namespace) -> None:
     else:
         print("\nNo trades executed.")
 
+    from marketatlas.frames.output import AnalysisOutput
+    output = AnalysisOutput.from_backtest_result(result)
+
     output_path = Path(args.output)
     if output_path:
-        from marketatlas.frames.output import AnalysisOutput
         from marketatlas.visualization.interactive import InteractiveRenderer
 
-        output = AnalysisOutput.from_backtest_result(result)
         renderer = InteractiveRenderer(output)
         renderer.render(output_path)
         print(f"\nHTML chart: {output_path}")
@@ -271,6 +272,43 @@ def run_command(args: argparse.Namespace) -> None:
         with open(args.pickle, "wb") as f:
             pickle.dump(result, f)
         print(f"Pickle: {args.pickle}")
+
+    if args.output_json or args.snapshots:
+        from marketatlas.frames.output import PortfolioOutput
+
+        port = PortfolioOutput(
+            summary=output.summary,
+            by_instrument={output.symbol: output.summary},
+            outputs={output.symbol: output},
+            monthly={},
+            instruments=(output.symbol,),
+            window_size=output.window_size,
+            max_hold_days=output.max_hold_days,
+            title=output.title,
+        )
+        _emit_json_and_snapshots(port, args)
+
+
+def _emit_json_and_snapshots(port, args: argparse.Namespace) -> None:
+    """Write typed structured JSON and/or annotated trade-snapshot PNGs."""
+    if args.output_json:
+        import json
+
+        from marketatlas.frames.jsoncodec import encode_portfolio
+
+        out_path = Path(args.output_json)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_path, "w") as f:
+            json.dump(encode_portfolio(port), f, indent=2)
+        print(f"Structured JSON: {out_path}")
+
+    if args.snapshots:
+        from marketatlas.visualization.snapshot import render_poi_snapshots
+
+        out_dir = Path(args.snapshots)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        paths = render_poi_snapshots(port, out_dir)
+        print(f"Snapshots: {len(paths)} PNG(s) -> {out_dir}")
 
 
 def _load_ab_stores(
@@ -687,6 +725,9 @@ def run_portfolio_command(args: argparse.Namespace) -> None:
             pickle.dump(result, f)
         print(f"Pickle: {args.pickle}")
 
+    if args.output_json or args.snapshots:
+        _emit_json_and_snapshots(output, args)
+
 
 def instruments_list_command(args: argparse.Namespace) -> None:
     registry = _load_registry(args)
@@ -736,3 +777,34 @@ def instruments_add_command(args: argparse.Namespace) -> None:
     registry.add(instr)
     registry.save(path)
     print(f"Added instrument: {instr.canonical} ({instr.asset_class})")
+
+
+def snapshot_command(args: argparse.Namespace) -> None:
+    """Render annotated trade-snapshot PNGs from a structured JSON output."""
+    import json
+
+    from marketatlas.visualization.snapshot import render_poi_snapshots
+
+    src = Path(args.output_json)
+    if not src.exists():
+        print(f"Error: output JSON not found: {src}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(src) as f:
+        doc = json.load(f)
+
+    if "per_instrument" in doc:
+        struct = doc
+    else:
+        struct = {"per_instrument": doc, "instruments": [doc.get("symbol", "")]}
+
+    out_dir = Path(args.outdir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    overlays = tuple(
+        o.strip() for o in args.overlays.split(",") if o.strip()
+    ) if args.overlays else ()
+    paths = render_poi_snapshots(
+        struct, out_dir, timeframe=args.timeframe,
+        overlays=overlays, show_volume=not getattr(args, "no_volume", False),
+    )
+    print(f"Snapshots: {len(paths)} PNG(s) -> {out_dir}")

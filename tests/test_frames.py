@@ -5,7 +5,18 @@ from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.types import Candle
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.primitive import EMAFact
+from marketatlas.facts.structural import (
+    SRFact,
+    SRLevel,
+    SwingFact,
+    SwingPoint,
+    SwingStructureFact,
+    SwingType,
+    TrendDirection,
+    TrendFact,
+)
 from marketatlas.frames.frame import AnalysisFrame
+from marketatlas.frames.jsoncodec import decode_fact, encode_fact
 from marketatlas.frames.store import FrameStore
 
 
@@ -142,3 +153,55 @@ class TestFrameStoreParquet:
         assert loaded[0].evidence[0].level == EvidenceLevel.INFO
         assert loaded[0].annotations == ("mark_ema_cross",)
         assert loaded[0].diagnostics == ("debug info",)
+
+
+class TestFactCodec:
+    def test_ema_roundtrip(self) -> None:
+        fact = EMAFact(
+            timestamp=_make_candle(0).timestamp,
+            evidence=(),
+            value=103.5,
+            period=9,
+        )
+        assert decode_fact(encode_fact(fact)) == fact
+
+    def test_swing_roundtrip_preserves_tuple(self) -> None:
+        ts = _make_candle(0).timestamp
+        fact = SwingFact(
+            timestamp=ts,
+            evidence=(),
+            swings=(
+                SwingPoint(price=1.1, index=3, type=SwingType.HIGH, timestamp=ts),
+                SwingPoint(price=1.0, index=7, type=SwingType.LOW, timestamp=ts),
+            ),
+        )
+        decoded = decode_fact(encode_fact(fact))
+        assert decoded == fact
+        assert isinstance(decoded.swings, tuple)  # type: ignore[attr-defined]
+
+    def test_sr_roundtrip(self) -> None:
+        ts = _make_candle(0).timestamp
+        fact = SRFact(
+            timestamp=ts,
+            evidence=(),
+            levels=(SRLevel(price=1.05, strength=2, type="support"),),
+        )
+        assert decode_fact(encode_fact(fact)) == fact
+
+    def test_trend_roundtrip_enum(self) -> None:
+        ts = _make_candle(0).timestamp
+        fact = TrendFact(
+            timestamp=ts, evidence=(), direction=TrendDirection.BULLISH, strength=0.8
+        )
+        decoded = decode_fact(encode_fact(fact))
+        assert decoded == fact
+        assert decoded.direction is TrendDirection.BULLISH  # type: ignore[attr-defined]
+
+    def test_swingstructure_roundtrip(self) -> None:
+        ts = _make_candle(0).timestamp
+        fact = SwingStructureFact(
+            timestamp=ts,
+            evidence=(),
+            points=(SwingPoint(1.0, 0, SwingType.LOW, ts),),
+        )
+        assert decode_fact(encode_fact(fact)) == fact

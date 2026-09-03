@@ -10,6 +10,7 @@ from marketatlas.cli.commands import (  # noqa: F401 — re-export for test patc
     instruments_list_command,
     run_command,
     run_portfolio_command,
+    snapshot_command,
 )
 from marketatlas.data.providers.dukascopy import DukascopyProvider  # noqa: F401 — re-export
 from marketatlas.data.providers.yahoo import YahooProvider  # noqa: F401 — re-export
@@ -73,6 +74,17 @@ def main() -> None:
         help="Also dump full backtest result (store, frames, tradebook) to this .pkl path",
     )
     run_parser.add_argument(
+        "--output-json",
+        default="",
+        help="Also dump typed structured output (facts + trades) to this .json path",
+    )
+    run_parser.add_argument(
+        "--snapshots",
+        default="",
+        help="Render annotated trade-snapshot PNGs into this directory; "
+        "requires the 'snapshots' extra (matplotlib)",
+    )
+    run_parser.add_argument(
         "--balance",
         type=float,
         default=1000.0,
@@ -94,6 +106,38 @@ def main() -> None:
         "--registry",
         default="",
         help="Path to instruments registry YAML (default: data/instruments.yaml)",
+    )
+
+    snap_parser = subparsers.add_parser(
+        "snapshot",
+        help="Render annotated trade-snapshot PNGs from a structured JSON output "
+        "(requires the 'snapshots' extra: matplotlib)",
+    )
+    snap_parser.add_argument(
+        "output_json",
+        help="Path to structured JSON produced by `run --output-json`",
+    )
+    snap_parser.add_argument(
+        "--outdir",
+        "-o",
+        default=".",
+        help="Directory to write PNGs into (default: current dir)",
+    )
+    snap_parser.add_argument(
+        "--timeframe",
+        default=None,
+        help="Force candle timeframe for rendering (default: each output's own)",
+    )
+    snap_parser.add_argument(
+        "--overlays",
+        default="",
+        help="Comma-separated fact-series to plot on the price axis "
+        "(e.g. ema,sma,atr; default: none)",
+    )
+    snap_parser.add_argument(
+        "--no-volume",
+        action="store_true",
+        help="Skip the volume subplot",
     )
 
     instr_parser = subparsers.add_parser("instruments", help="Manage instrument registry")
@@ -134,6 +178,8 @@ def main() -> None:
             instruments_add_command(args)
         else:
             instr_parser.print_help()
+    elif args.command == "snapshot":
+        snapshot_command(args)
     else:
         parser.print_help()
 
