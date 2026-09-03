@@ -45,6 +45,7 @@ def _args(**kw) -> argparse.Namespace:
         "output_json": "",
         "snapshots": "",
         "kinds": "",
+        "notes": False,
         "outdir": ".",
         "timeframe": None,
         "overlays": "",
@@ -73,6 +74,22 @@ class TestEmitJsonAndSnapshots:
         _, kwargs = mock_render.call_args
         assert kwargs["kinds"] is None
         assert kwargs["exclude_kinds"] is None
+
+    @patch("marketatlas.visualization.snapshot.render_poi_snapshots")
+    def test_notes_off_by_default(self, mock_render: MagicMock) -> None:
+        mock_render.return_value = []
+        args = _args(snapshots="out", kinds="", notes=False)
+        _emit_json_and_snapshots(MagicMock(), args)
+        _, kwargs = mock_render.call_args
+        assert kwargs["write_notes"] is False
+
+    @patch("marketatlas.visualization.snapshot.render_poi_snapshots")
+    def test_notes_flag_threaded(self, mock_render: MagicMock) -> None:
+        mock_render.return_value = []
+        args = _args(snapshots="out", kinds="", notes=True)
+        _emit_json_and_snapshots(MagicMock(), args)
+        _, kwargs = mock_render.call_args
+        assert kwargs["write_notes"] is True
 
 
 class TestSnapshotCommand:

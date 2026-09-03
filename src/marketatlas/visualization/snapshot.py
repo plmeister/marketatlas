@@ -744,13 +744,23 @@ def render_poi_snapshots(
     overlays: tuple[str, ...] = (),
     kinds: str | set[str] | None = None,
     exclude_kinds: str | set[str] | None = None,
+    write_notes: bool = False,
 ) -> list[Path]:
-    """Render a PNG per POI across the whole (typed or JSON) output."""
+    """Render a PNG per POI across the whole (typed or JSON) output.
+
+    When ``write_notes`` is true, an empty ``.txt`` sidecar template is also
+    dropped next to each PNG (backlog 096) so the review-ready state is visible.
+    """
     per = _per_instrument(struct)
-    return [
-        render_poi_snapshot(
+    paths: list[Path] = []
+    for poi in locate_pois(struct, kinds=kinds, exclude_kinds=exclude_kinds):
+        png = render_poi_snapshot(
             struct, poi, out_dir, timeframe=timeframe, pre=pre, post=post,
             show_volume=show_volume, overlays=overlays, per=per,
         )
-        for poi in locate_pois(struct, kinds=kinds, exclude_kinds=exclude_kinds)
-    ]
+        if write_notes:
+            from marketatlas.visualization.notes import write_note
+
+            write_note(png, "")
+        paths.append(png)
+    return paths

@@ -344,10 +344,13 @@ def _emit_json_and_snapshots(port, args: argparse.Namespace) -> None:
         include, exclude = parse_kinds(getattr(args, "kinds", "") or "")
         out_dir = Path(args.snapshots)
         out_dir.mkdir(parents=True, exist_ok=True)
+        write_notes = bool(getattr(args, "notes", False))
         paths = render_poi_snapshots(
-            port, out_dir, kinds=include or None, exclude_kinds=exclude or None
+            port, out_dir, kinds=include or None, exclude_kinds=exclude or None,
+            write_notes=write_notes,
         )
-        print(f"Snapshots: {len(paths)} PNG(s) -> {out_dir}")
+        extra = " (+ note templates)" if write_notes else ""
+        print(f"Snapshots: {len(paths)} PNG(s) -> {out_dir}{extra}")
 
 
 def _load_ab_stores(
@@ -847,5 +850,7 @@ def snapshot_command(args: argparse.Namespace) -> None:
         struct, out_dir, timeframe=args.timeframe,
         overlays=overlays, show_volume=not getattr(args, "no_volume", False),
         kinds=include or None, exclude_kinds=exclude or None,
+        write_notes=bool(getattr(args, "notes", False)),
     )
-    print(f"Snapshots: {len(paths)} PNG(s) -> {out_dir}")
+    extra = " (+ note templates)" if getattr(args, "notes", False) else ""
+    print(f"Snapshots: {len(paths)} PNG(s) -> {out_dir}{extra}")

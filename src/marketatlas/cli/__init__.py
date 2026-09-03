@@ -85,6 +85,12 @@ def main() -> None:
         "requires the 'snapshots' extra (matplotlib)",
     )
     run_parser.add_argument(
+        "--notes",
+        action="store_true",
+        help="With --snapshots, also drop empty .txt note templates beside each "
+        "PNG (backlog 096 manual review)",
+    )
+    run_parser.add_argument(
         "--kinds",
         default="",
         help="Comma-separated POI kinds to snapshot (trade,rejection,pattern,sr,"
@@ -150,6 +156,12 @@ def main() -> None:
         default="",
         help="Comma-separated POI kinds to snapshot (trade,rejection,pattern,sr,"
         "swing); prefix with ! to exclude (e.g. !pattern). Default: all",
+    )
+    snap_parser.add_argument(
+        "--notes",
+        action="store_true",
+        help="Also drop empty .txt note templates beside each PNG (backlog 096 "
+        "manual review)",
     )
 
     instr_parser = subparsers.add_parser("instruments", help="Manage instrument registry")
