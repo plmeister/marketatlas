@@ -1,5 +1,7 @@
 # 095 — Snapshot kind filter on CLI
 
+**Epic:** strategy
+
 ## Context
 
 Snapshot renderer already supports filtering POIs by kind at the library layer

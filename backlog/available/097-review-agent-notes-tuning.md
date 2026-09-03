@@ -1,5 +1,7 @@
 # 097 — Review agent: notes → algorithm-tuning suggestions
 
+**Epic:** strategy
+
 ## Context
 
 Human reviews snapshot PNGs (backlog 095, 096) and records free-text verdicts

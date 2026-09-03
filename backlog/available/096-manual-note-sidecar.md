@@ -1,5 +1,7 @@
 # 096 — Manual annotation sidecar notes (`.txt` beside `.png`)
 
+**Epic:** strategy
+
 ## Context
 
 Backtest → snapshot images are triage-able (backlog 095). The next human step
