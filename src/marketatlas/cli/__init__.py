@@ -8,6 +8,7 @@ from marketatlas.cli.commands import (  # noqa: F401 — re-export for test patc
     fetch_command,
     instruments_add_command,
     instruments_list_command,
+    review_command,
     run_command,
     run_portfolio_command,
     snapshot_command,
@@ -24,6 +25,7 @@ __all__ = [
     "instruments_add_command",
     "instruments_list_command",
     "main",
+    "review_command",
     "run_command",
     "run_portfolio_command",
 ]
@@ -164,6 +166,34 @@ def main() -> None:
         "manual review)",
     )
 
+    review_parser = subparsers.add_parser(
+        "review",
+        help="Review agent: join human .txt note sidecars (096) to the run's "
+        "structured JSON output and suggest algorithm-tuning changes (097)",
+    )
+    review_parser.add_argument(
+        "--snapshots",
+        required=True,
+        help="Directory of snapshot PNGs + .txt note sidecars to review",
+    )
+    review_parser.add_argument(
+        "--output-json",
+        default="",
+        help="Path to structured JSON produced by `run --output-json`. "
+        "Auto-found from --snapshots basename if omitted",
+    )
+    review_parser.add_argument(
+        "--strategy",
+        default="",
+        help="Strategy config / DSL source to reference in suggestions",
+    )
+    review_parser.add_argument(
+        "--json",
+        dest="json_out",
+        default="",
+        help="Also write a machine-readable suggestions report to this .json path",
+    )
+
     instr_parser = subparsers.add_parser("instruments", help="Manage instrument registry")
     instr_sub = instr_parser.add_subparsers(dest="instr_command", help="Instrument command")
 
@@ -204,6 +234,8 @@ def main() -> None:
             instr_parser.print_help()
     elif args.command == "snapshot":
         snapshot_command(args)
+    elif args.command == "review":
+        review_command(args)
     else:
         parser.print_help()
 

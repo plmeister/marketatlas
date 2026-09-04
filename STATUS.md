@@ -49,6 +49,10 @@
 - [x] 068 — CLI unified symbol resolution (`--symbol` canonical, per-instrument provider priority chain, canonical-keyed DataStore; unknown symbol → WARNING passthrough)
 - [x] 087 — Signal registry (decoupled signal registration from Strategy class via `analysis/signals/registry.py` `SIGNAL_TYPES` dict; AST registry derives from same source)
 
+## Review Layer
+
+- [x] 097 — Review agent (`src/marketatlas/review/`: `iter_review` joins `notes` sidecars ↔ `locate_pois` POIs via `snapshot_basename`, trims fact context from JSON, reports orphans/unreviewed; `review/prompt.py` builds tuning-advisor prompts; `marketatlas review` CLI in `cli/commands.py` with `--snapshots/--output-json/--strategy/--json`, auto-finds single JSON beside snapshots dir, `NullProvider` deterministic fallback when `MARKETATLAS_REVIEW_PROVIDER` unset)
+
 ## Portfolio Layer
 
 - [x] 069 — Portfolio instrument file & data loading (`PortfolioSpec`/`load_portfolio`, shared `fetch_instrument_data` helper, `run --instruments <file>` loads all instruments over identical start/end into the canonical-keyed store, per-instrument abort with context)
