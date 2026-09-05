@@ -49,6 +49,10 @@
 - [x] 068 — CLI unified symbol resolution (`--symbol` canonical, per-instrument provider priority chain, canonical-keyed DataStore; unknown symbol → WARNING passthrough)
 - [x] 087 — Signal registry (decoupled signal registration from Strategy class via `analysis/signals/registry.py` `SIGNAL_TYPES` dict; AST registry derives from same source)
 
+## Review Layer
+
+- [x] 097 — Review agent (`src/marketatlas/review/`: `iter_review` joins `notes` sidecars ↔ `locate_pois` POIs via `snapshot_basename`, trims fact context from JSON, reports orphans/unreviewed; `review/prompt.py` builds tuning-advisor prompts; `marketatlas review` CLI in `cli/commands.py` with `--snapshots/--output-json/--strategy/--json`, auto-finds single JSON beside snapshots dir, `NullProvider` deterministic fallback when `MARKETATLAS_REVIEW_PROVIDER` unset)
+
 ## Portfolio Layer
 
 - [x] 069 — Portfolio instrument file & data loading (`PortfolioSpec`/`load_portfolio`, shared `fetch_instrument_data` helper, `run --instruments <file>` loads all instruments over identical start/end into the canonical-keyed store, per-instrument abort with context)
@@ -59,6 +63,7 @@
 - [x] 081 — A/B comparison index (`render_ab_index` in `visualization/portfolio.py`: static `ab.html` at the output-tree root — summary grid one row per choice combination (columns = varying choice dims + Trades/W-L/Win rate/P&L/Return/Max DD/PF/Expectancy from `TradeBook.summary`, no recompute) + per-variant by-instrument/by-strategy tables reusing the 077 `_sign_class`/`_fmt_*` markup, each instrument row linking to its 080 chart via relative href; `variant_columns` derives grid headers/slugs from variant identities alone, shared with the 079/080 label/slug logic)
 - [x] 082 — A/B index page controls (`render_ab_index` progressive enhancement: one `<select>` per choice dimension in a `#ab-controls` bar; variant data embedded once as `AB_VARIANTS`/`AB_DIMS` JSON built from the same `TradeBook.summary` the 081 tables use, re-rendered by a single inline dependency-free `_AB_INDEX_JS` block (JSON-driven `#ab-grid-body` rows with `_fmt_*`-identical formatting + `data-slug`-keyed show/hide of `section.variant` details, `#ab-count` readout); default "All" state identical to the 081 page and full static tables survive JS-disabled, so JSON is purely additive)
 - [x] 094 — Parallel instrument analysis (`ThreadPoolExecutor` for per-instrument `graph.run_with_evidence` + `evaluate_all_with_rejections` in `PortfolioBacktester` inner loop; module-level `_analyze_instrument` for pickling; configurable `pool_size` param, defaults to `min(instruments, cpu_count)`; single-instrument path unchanged)
+- [x] 096 — Manual annotation sidecar notes (`visualization/notes.py`: `note_path`/`read_note`/`iter_notes`/`write_note` pairing each snapshot PNG with a same-name `.txt`; `--notes` template flag on `run --snapshots` and `snapshot` drops empty review-ready `.txt` templates, off by default; notes never git-tracked under ignored `output/`; JSON output untouched)
 
 ## AST Layer
 

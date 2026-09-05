@@ -23,29 +23,29 @@ Expose POI-kind filtering as a CLI flag on both `run --snapshots` and the
 
 ## Requirements
 
-- [ ] Add `--kinds` flag to `snapshot` subparser in `cli/__init__.py`:
+- [x] Add `--kinds` flag to `snapshot` subparser in `cli/__init__.py`:
       comma-separated list, one of `trade`, `rejection`, `pattern`, `sr`,
       `swing`; also accept the negation form `--kinds !pattern` (exclude).
       Default: all kinds.
-- [ ] Add same `--kinds` flag to `run --snapshots` path
+- [x] Add same `--kinds` flag to `run --snapshots` path
       (`run_parser` / handled in `commands.py`).
-- [ ] `_emit_json_and_snapshots` and `snapshot_command` parse `--kinds`
+- [x] `_emit_json_and_snapshots` and `snapshot_command` parse `--kinds`
       into a `set[str]` / exclude handling and pass to
       `render_poi_snapshots(...)`.
-- [ ] Invalid kind name → clear error listing valid kinds, exit non-zero.
-- [ ] `locate_pois` exclude semantics: support `!x` before/with include
+- [x] Invalid kind name → clear error listing valid kinds, exit non-zero.
+- [x] `locate_pois` exclude semantics: support `!x` before/with include
       set (e.g. `--kinds trade,!pattern` = trades minus pattern-tagged, or a
       dedicated `exclude_kinds` param). Document the precedence.
-- [ ] `--help` text documents the flag (both entry points).
+- [x] `--help` text documents the flag (both entry points).
 
 ## Testing
 
-- [ ] `tests/test_snapshot.py` (or new `tests/test_snapshot_cli.py`):
+- [x] `tests/test_snapshot.py` (or new `tests/test_snapshot_cli.py`):
       render same output with all kinds vs each subset; assert output file
       set (via `snapshot_basename`) matches the filter.
-- [ ] `--kinds !pattern` produces zero pattern-named files.
-- [ ] Invalid kind string errors cleanly (subprocess or CLI dispatch).
-- [ ] `mock.patch` `render_poi_snapshots` to assert `kinds` threads through
+- [x] `--kinds !pattern` produces zero pattern-named files.
+- [x] Invalid kind string errors cleanly (subprocess or CLI dispatch).
+- [x] `mock.patch` `render_poi_snapshots` to assert `kinds` threads through
       `_emit_json_and_snapshots` and `snapshot_command`.
 
 Depends on: none (existing `locate_pois`).

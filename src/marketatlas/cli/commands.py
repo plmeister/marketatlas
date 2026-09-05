@@ -28,6 +28,42 @@ from marketatlas.data.types import MarketData, Symbol, Timeframe
 
 DEFAULT_REGISTRY_PATH = Path("data/instruments.yaml")
 
+VALID_SNAPSHOT_KINDS = frozenset({"trade", "rejection", "pattern", "sr", "swing"})
+
+
+def parse_kinds(raw: str) -> tuple[set[str], set[str]]:
+    """Parse comma-separated ``--kinds`` value into (include, exclude) sets.
+
+    Entries prefixed with ``!`` go into the exclude set.  Invalid kind names
+    raise ``SystemExit`` with a clear message.
+    """
+    include: set[str] = set()
+    exclude: set[str] = set()
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if token.startswith("!"):
+            name = token[1:]
+            if name not in VALID_SNAPSHOT_KINDS:
+                print(
+                    f"Error: unknown snapshot kind '{name}'. "
+                    f"Valid kinds: {', '.join(sorted(VALID_SNAPSHOT_KINDS))}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            exclude.add(name)
+        else:
+            if token not in VALID_SNAPSHOT_KINDS:
+                print(
+                    f"Error: unknown snapshot kind '{token}'. "
+                    f"Valid kinds: {', '.join(sorted(VALID_SNAPSHOT_KINDS))}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            include.add(token)
+    return include, exclude
+
 
 def _registry_path(args: argparse.Namespace) -> Path:
     path = getattr(args, "registry", "") or ""
@@ -305,10 +341,16 @@ def _emit_json_and_snapshots(port, args: argparse.Namespace) -> None:
     if args.snapshots:
         from marketatlas.visualization.snapshot import render_poi_snapshots
 
+        include, exclude = parse_kinds(getattr(args, "kinds", "") or "")
         out_dir = Path(args.snapshots)
         out_dir.mkdir(parents=True, exist_ok=True)
-        paths = render_poi_snapshots(port, out_dir)
-        print(f"Snapshots: {len(paths)} PNG(s) -> {out_dir}")
+        write_notes = bool(getattr(args, "notes", False))
+        paths = render_poi_snapshots(
+            port, out_dir, kinds=include or None, exclude_kinds=exclude or None,
+            write_notes=write_notes,
+        )
+        extra = " (+ note templates)" if write_notes else ""
+        print(f"Snapshots: {len(paths)} PNG(s) -> {out_dir}{extra}")
 
 
 def _load_ab_stores(
@@ -803,8 +845,131 @@ def snapshot_command(args: argparse.Namespace) -> None:
     overlays = tuple(
         o.strip() for o in args.overlays.split(",") if o.strip()
     ) if args.overlays else ()
+    include, exclude = parse_kinds(getattr(args, "kinds", "") or "")
     paths = render_poi_snapshots(
         struct, out_dir, timeframe=args.timeframe,
         overlays=overlays, show_volume=not getattr(args, "no_volume", False),
+        kinds=include or None, exclude_kinds=exclude or None,
+        write_notes=bool(getattr(args, "notes", False)),
     )
-    print(f"Snapshots: {len(paths)} PNG(s) -> {out_dir}")
+    extra = " (+ note templates)" if getattr(args, "notes", False) else ""
+    print(f"Snapshots: {len(paths)} PNG(s) -> {out_dir}{extra}")
+
+
+def _auto_find_output_json(snapshots_dir: str | Path) -> Path | None:
+    """Best-effort locate of the run's structured JSON from a snapshots dir.
+
+    Looks beside the snapshots dir (and in it) for a single ``.json`` file. When
+    exactly one exists it is unambiguous, so it is returned; otherwise (missing
+    or ambiguous) the caller requires an explicit ``--output-json``.
+    """
+    d = Path(snapshots_dir)
+    candidates: list[Path] = []
+    for base in (d.parent, d):
+        for f in sorted(base.glob("*.json")):
+            candidates.append(f)
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def review_command(args: argparse.Namespace) -> None:
+    """Join human .txt note sidecars (096) to run JSON and yield tuning
+    suggestions (097)."""
+    import json
+
+    from marketatlas.review import (
+        NullProvider,
+        format_review,
+        iter_review,
+        make_provider,
+    )
+    from marketatlas.strategy.loader import load_strategy
+    from marketatlas.visualization.snapshot import snapshot_basename
+
+    snapshots_dir = Path(args.snapshots)
+    if not snapshots_dir.is_dir():
+        print(f"Error: snapshots directory not found: {snapshots_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    json_path: Path
+    if args.output_json:
+        json_path = Path(args.output_json)
+    else:
+        found = _auto_find_output_json(snapshots_dir)
+        if found is None:
+            print(
+                "Error: could not auto-locate structured JSON for snapshots dir; "
+                "pass --output-json",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        json_path = found
+
+    if not json_path.exists():
+        print(f"Error: output JSON not found: {json_path}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(json_path) as f:
+        doc = json.load(f)
+
+    if "per_instrument" not in doc:
+        doc = {"per_instrument": doc, "instruments": [doc.get("symbol", "")]}
+
+    result = iter_review(snapshots_dir, doc)
+    if not result.has_notes:
+        print("No notes found to review (no .txt sidecars, or all empty).")
+        return
+
+    strategy_source: str | None = None
+    if args.strategy:
+        spath = Path(args.strategy)
+        if not spath.exists():
+            print(f"Error: strategy file not found: {spath}", file=sys.stderr)
+            sys.exit(1)
+        if spath.suffix == ".dsl":
+            strategy_source = spath.read_text(encoding="utf-8")
+        else:
+            try:
+                cfg = load_strategy(spath)
+                strategy_source = str(cfg)
+            except Exception as exc:  # noqa: BLE001 — report and continue
+                strategy_source = f"(unable to load strategy: {exc})"
+
+    provider = make_provider()
+    suggestions = provider.suggest(result.bundles, strategy_source)
+
+    if suggestions:
+        report = format_review(result, suggestions)
+    else:
+        report = "\n".join(
+            [
+                format_review(result),
+                "no provider configured (set MARKETATLAS_REVIEW_PROVIDER to a "
+                "module exporting make_provider()); suggestions omitted",
+            ]
+        )
+    print(report)
+
+    if args.json_out:
+        out_path = Path(args.json_out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "snapshots": str(snapshots_dir),
+            "output_json": str(json_path),
+            "bundles": [
+                {
+                    "basename": b.basename,
+                    "note": b.note_text,
+                    "poi": b.poi,
+                    "facts": b.facts,
+                }
+                for b in result.bundles
+            ],
+            "orphans": [str(p) for p in result.orphans],
+            "unreviewed": [snapshot_basename(p) for p in result.unreviewed],
+            "suggestions": suggestions,
+            "provider_configured": not isinstance(provider, NullProvider),
+        }
+        with open(out_path, "w") as f:
+            json.dump(payload, f, indent=2)
+        print(f"Review report: {out_path}")
+

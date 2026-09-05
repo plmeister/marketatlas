@@ -565,7 +565,12 @@ def render_trade_snapshot(
     return out
 
 
-def locate_pois(struct: Any, *, kinds: str | set[str] | None = None) -> list[dict[str, Any]]:
+def locate_pois(
+    struct: Any,
+    *,
+    kinds: str | set[str] | None = None,
+    exclude_kinds: str | set[str] | None = None,
+) -> list[dict[str, Any]]:
     """Locate points of interest across a portfolio structured doc.
 
     Returns POI records each tagged with a ``kind``:
@@ -575,7 +580,9 @@ def locate_pois(struct: Any, *, kinds: str | set[str] | None = None) -> list[dic
       ``sr``        a support/resistance level
       ``swing``     a swing-structure geometry
 
-    ``kinds`` filters to a subset (default: all). Accepts either a typed
+    ``kinds`` filters to a subset (default: all).  ``exclude_kinds`` removes
+    kinds (applied after ``kinds``); ``!x`` entries in ``kinds`` are equivalent
+    to adding ``x`` to ``exclude_kinds``.  Accepts either a typed
     ``PortfolioOutput`` or the JSON form from ``frames.jsoncodec.encode_portfolio``.
     """
     from marketatlas.frames.jsoncodec import encode_analysis_output
@@ -589,9 +596,17 @@ def locate_pois(struct: Any, *, kinds: str | set[str] | None = None) -> list[dic
         }
 
     if kinds:
-        want: set[str] = kinds if isinstance(kinds, set) else set([kinds])
+        raw: set[str] = kinds if isinstance(kinds, set) else set([kinds])
+        want = {k for k in raw if not k.startswith("!")}
+        exclude = {k[1:] for k in raw if k.startswith("!")}
     else:
         want = {"trade", "rejection", "pattern", "sr", "swing"}
+        exclude = set()
+    if exclude_kinds:
+        exclude |= (
+            exclude_kinds if isinstance(exclude_kinds, set) else set([exclude_kinds])
+        )
+    want -= exclude
 
     pois: list[dict[str, Any]] = []
     for canonical, pin in per.items():
@@ -728,13 +743,24 @@ def render_poi_snapshots(
     show_volume: bool = True,
     overlays: tuple[str, ...] = (),
     kinds: str | set[str] | None = None,
+    exclude_kinds: str | set[str] | None = None,
+    write_notes: bool = False,
 ) -> list[Path]:
-    """Render a PNG per POI across the whole (typed or JSON) output."""
+    """Render a PNG per POI across the whole (typed or JSON) output.
+
+    When ``write_notes`` is true, an empty ``.txt`` sidecar template is also
+    dropped next to each PNG (backlog 096) so the review-ready state is visible.
+    """
     per = _per_instrument(struct)
-    return [
-        render_poi_snapshot(
+    paths: list[Path] = []
+    for poi in locate_pois(struct, kinds=kinds, exclude_kinds=exclude_kinds):
+        png = render_poi_snapshot(
             struct, poi, out_dir, timeframe=timeframe, pre=pre, post=post,
             show_volume=show_volume, overlays=overlays, per=per,
         )
-        for poi in locate_pois(struct, kinds=kinds)
-    ]
+        if write_notes:
+            from marketatlas.visualization.notes import write_note
+
+            write_note(png, "")
+        paths.append(png)
+    return paths

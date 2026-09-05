@@ -227,6 +227,32 @@ class TestSnapshotRenderer:
         rej = next(p for p in pois if p["kind"] == "rejection")
         assert "trend too weak" in rej["reason"].lower()
 
+    def test_locate_pois_kinds_filter_include_exclude(self):
+        from datetime import UTC, datetime, timedelta
+
+        from marketatlas.frames.jsoncodec import encode_analysis_output
+
+        poi = datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=120)
+        out = _with_trades(_sample_output(poi), _mk_trade(poi))
+        doc = encode_analysis_output(out)
+        struct = _schema_wrap(doc)
+
+        all_pois = snp.locate_pois(struct)
+        all_kinds = {p["kind"] for p in all_pois}
+        assert all_kinds == {"trade", "pattern"}
+
+        trades = snp.locate_pois(struct, kinds="trade")
+        assert {p["kind"] for p in trades} == {"trade"}
+
+        patterns = snp.locate_pois(struct, kinds={"pattern"})
+        assert {p["kind"] for p in patterns} == {"pattern"}
+
+        no_pattern = snp.locate_pois(struct, kinds="trade,!pattern")
+        assert {p["kind"] for p in no_pattern} == {"trade"}
+
+        excl = snp.locate_pois(struct, kinds="trade", exclude_kinds="pattern")
+        assert {p["kind"] for p in excl} == {"trade"}
+
     def test_draw_shapes_renders_all_kinds(self):
         from datetime import UTC, datetime, timedelta
 
