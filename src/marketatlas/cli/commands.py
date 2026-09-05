@@ -871,6 +871,56 @@ def _auto_find_output_json(snapshots_dir: str | Path) -> Path | None:
     return candidates[0] if len(candidates) == 1 else None
 
 
+def _write_review_notebook(
+    notebook_out: str | Path,
+    snapshots_dir: str | Path,
+    doc: dict[str, Any],
+) -> None:
+    """Write a self-contained ipynb review document (spike).
+
+    Embeds every snapshot PNG (base64) under ``snapshots_dir`` beside a tagged
+    feedback cell, prefilled from any existing ``.txt`` sidecars.
+    """
+    from marketatlas.review.notebook import (
+        build_notebook,
+        write_notebook,
+    )
+    from marketatlas.visualization import notes
+    from marketatlas.visualization.snapshot import locate_pois, snapshot_basename
+
+    d = Path(snapshots_dir)
+    png_by_name: dict[str, Path] = {p.name: p for p in sorted(d.glob("*.png"))}
+    if not png_by_name:
+        print(
+            f"Warning: no snapshot PNGs under {d}; writing empty review notebook",
+            file=sys.stderr,
+        )
+
+    poi_by_basename: dict[str, dict[str, Any]] = {}
+    for poi in locate_pois(doc):
+        poi_by_basename[snapshot_basename(poi)] = poi
+
+    entries: list[tuple[dict[str, Any], Path]] = []
+    existing: dict[str, str] = {}
+    for name, png in sorted(png_by_name.items()):
+        poi = poi_by_basename.get(name)
+        text = notes.read_note(png)
+        if text:
+            existing[name] = text
+        entries.append((poi or {"kind": "unknown", "symbol": "?", "ts": ""}, png))
+
+    nb = build_notebook(entries, notes=existing)
+    out = write_notebook(nb, notebook_out)
+    print(f"Review notebook: {out}")
+
+
+def _read_review_notebook_feedback(path: str | Path) -> dict[str, str]:
+    """Extract tagged feedback cells from an existing review notebook."""
+    from marketatlas.review.notebook import iter_review_cells
+
+    return iter_review_cells(path)
+
+
 def review_command(args: argparse.Namespace) -> None:
     """Join human .txt note sidecars (096) to run JSON and yield tuning
     suggestions (097)."""
@@ -915,6 +965,18 @@ def review_command(args: argparse.Namespace) -> None:
         doc = {"per_instrument": doc, "instruments": [doc.get("symbol", "")]}
 
     result = iter_review(snapshots_dir, doc)
+
+    if getattr(args, "notebook_out", ""):
+        nb_out = Path(args.notebook_out)
+        if nb_out.exists():
+            feedback = _read_review_notebook_feedback(nb_out)
+            if feedback:
+                from marketatlas.review import iter_review as _re
+
+                result = _re(snapshots_dir, doc, extra_notes=feedback)
+        else:
+            _write_review_notebook(nb_out, snapshots_dir, doc)
+
     if not result.has_notes:
         print("No notes found to review (no .txt sidecars, or all empty).")
         return

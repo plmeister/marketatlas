@@ -193,6 +193,13 @@ def main() -> None:
         default="",
         help="Also write a machine-readable suggestions report to this .json path",
     )
+    review_parser.add_argument(
+        "--notebook",
+        dest="notebook_out",
+        default="",
+        help="Write a self-contained ipynb review document embedding every "
+        "snapshot chart with tagged feedback cells (spike)",
+    )
 
     instr_parser = subparsers.add_parser("instruments", help="Manage instrument registry")
     instr_sub = instr_parser.add_subparsers(dest="instr_command", help="Instrument command")

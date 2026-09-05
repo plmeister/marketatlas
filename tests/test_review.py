@@ -109,6 +109,31 @@ class TestJoin:
         # rejection + pattern have no note => unreviewed
         assert {poi["kind"] for poi in res.unreviewed} == {"rejection", "pattern"}
 
+    def test_notebook_extra_notes_wins_over_sidecar(self, tmp_path: Path):
+        # .txt says one thing, notebook feedback (fresher) overrides it
+        _write_note(tmp_path, TRADE_PNG, "old txt verdict")
+        feedback = {TRADE_PNG: "notebook verdict: stop too wide"}
+        res = iter_review(tmp_path, _mk_struct(), extra_notes=feedback)
+        assert len(res.bundles) == 1
+        assert res.bundles[0].note_text == "notebook verdict: stop too wide"
+
+    def test_notebook_notes_add_bundles_without_sidecar(self, tmp_path: Path):
+        # pattern has no .txt sidecar, but notebook feedback supplies the note
+        _write_png(tmp_path, PAT_PNG)
+        feedback = {PAT_PNG: "asymmetric RR here"}
+        res = iter_review(tmp_path, _mk_struct(), extra_notes=feedback)
+        kinds = {b.poi["kind"] for b in res.bundles}
+        assert kinds == {"pattern"}
+        assert res.bundles[0].note_text == "asymmetric RR here"
+
+    def test_notebook_basename_without_png_is_orphan(self, tmp_path: Path):
+        # notebook references a basename with no PNG in the dir => orphan note
+        _write_note(tmp_path, TRADE_PNG, "ok")
+        feedback = {"MADEUP_2024-01-01_trade_x.png": "no such snapshot"}
+        res = iter_review(tmp_path, _mk_struct(), extra_notes=feedback)
+        assert len(res.orphans) == 1
+        assert "MADEUP_2024-01-01_trade_x" in res.orphans[0].name
+
     def test_context_bundle_facts_trimmed(self, tmp_path: Path):
         _write_note(tmp_path, TRADE_PNG, "Stop too tight")
         res = iter_review(tmp_path, _mk_struct())

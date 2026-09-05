@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from marketatlas.visualization.notes import iter_notes
+from marketatlas.visualization.notes import iter_notes, note_path
 from marketatlas.visualization.snapshot import locate_pois, snapshot_basename
 
 
@@ -96,13 +96,22 @@ def _fact_context(
 def iter_review(
     snapshots_dir: str | Path,
     struct: dict[str, Any],
+    extra_notes: dict[str, str] | None = None,
 ) -> ReviewResult:
-    """Join every note sidecar under ``snapshots_dir`` to the run's POIs."""
+    """Join note feedback (``.txt`` sidecars, plus optional ``extra_notes``)
+    to the run's POIs.
+
+    ``extra_notes`` maps a snapshot basename to feedback text (e.g. the tagged
+    feedback cells extracted from a review notebook). When both a ``.txt``
+    sidecar and an ``extra_notes`` entry exist for the same basename, the
+    ``extra_notes`` text wins (the notebook is the fresher review surface).
+    """
     pois = locate_pois(struct)
     by_basename: dict[str, dict[str, Any]] = {}
     for poi in pois:
         by_basename[snapshot_basename(poi)] = poi
 
+    extra_notes = extra_notes or {}
     bundles: list[ContextBundle] = []
     orphans: list[Path] = []
     reviewed_names: set[str] = set()
@@ -112,6 +121,9 @@ def iter_review(
         if poi_match is None:
             orphans.append(png)
             continue
+        nb_text = extra_notes.get(png.name)
+        if nb_text:
+            text = nb_text
         if text is None or text == "":
             continue
         bundles.append(
@@ -123,6 +135,11 @@ def iter_review(
                 facts=_fact_context(struct, poi_match),
             )
         )
+
+    for name, text in extra_notes.items():
+        if name in reviewed_names:
+            continue
+        orphans.append(note_path(name))
 
     unreviewed = [
         poi for name, poi in by_basename.items() if name not in reviewed_names
