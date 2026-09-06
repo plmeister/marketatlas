@@ -155,6 +155,14 @@ class TestDefaultRegistrySchemas:
         risk = {s.name for s in r.param_schema("manage_risk") or ()}
         assert {"risk_pct", "min_rr", "max_rr"} <= risk
 
+    def test_manage_risk_has_anchor_sr_schema(self) -> None:
+        r = create_default_registry()
+        risk = {s.name: s.expected_type for s in r.param_schema("manage_risk") or ()}
+        assert "anchor_sr" in risk
+        assert risk["anchor_sr"] is bool
+        assert "max_anchor_atr" in risk
+        assert risk["max_anchor_atr"] is float
+
 
 def _ema_analysis(**params: object) -> Analysis:
     provider = Provider(name="ema", capability="ema", category="analyzer", impl="EMAAnalyzer")

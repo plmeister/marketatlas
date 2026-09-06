@@ -97,6 +97,20 @@ class TestToConfig:
             params={"risk_pct": 1.0, "min_rr": 2.0},
         )
 
+    def test_risk_definition_with_anchor_sr(self) -> None:
+        a = (
+            AnalysisBuilder("test", "1.0")
+            .define("risk", "risk", "RiskEngine")
+            .with_param("anchor_sr", True)
+            .with_param("max_anchor_atr", 1.5)
+            .build()
+        )
+        config = ASTCompiler.to_config(a)
+        assert config.risk == RiskConfig(
+            algorithm="RiskEngine",
+            params={"anchor_sr": True, "max_anchor_atr": 1.5},
+        )
+
     def test_empty_analysis(self) -> None:
         a = AnalysisBuilder("empty", "1.0").build()
         config = ASTCompiler.to_config(a)

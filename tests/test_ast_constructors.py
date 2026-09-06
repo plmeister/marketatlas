@@ -222,3 +222,10 @@ class TestCompilation:
         a = build_analysis("t", [EMA(period=20)])
         graph = ASTCompiler.compile(a)
         assert isinstance(graph.execution_order()[0], EMAAnalyzer)
+
+    def test_manage_risk_anchor_sr_param(self) -> None:
+        d = ManageRisk(anchor_sr=True, max_anchor_atr=1.5)
+        assert d.provider == "manage_risk"
+        params = {p.name: p.value for p in d.parameters}
+        assert params["anchor_sr"] == LiteralExpression(True)
+        assert params["max_anchor_atr"] == LiteralExpression(1.5)
