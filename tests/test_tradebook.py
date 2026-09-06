@@ -195,6 +195,65 @@ class TestTradeResolution:
         assert tb.trades[-1].pnl == 0.0
         assert tb.total_pnl == 0.0
 
+    def test_boundary_candle_target_hit_closes_win_not_cancel(self) -> None:
+        """Target touched on the max-hold boundary candle must close as a win
+        (backlog 104 — AUDJPY 2026-01-29 hit target on day 10 but was recorded
+        cancelled)."""
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+
+        cand = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
+        tb.submit_order(cand, _signal(), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
+
+        boundary = _candle(t0 + timedelta(days=11), h=116.0, lo=99.0, c=114.0)
+        tb.resolve_at_cursor(boundary, max_hold_days=10)
+
+        assert tb.has_no_open_trade is True
+        assert tb.trades[-1].result == "win"
+        expected_pnl = (115.0 - 100.0) * 0.2
+        assert tb.total_pnl == pytest.approx(expected_pnl)
+
+    def test_boundary_candle_stop_hit_closes_loss_not_cancel(self) -> None:
+        """Stop touched on the max-hold boundary candle must close as a loss
+        instead of being cancelled at pnl 0."""
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+
+        cand = _candidate(entry=100.0, stop=95.0, target=200.0, size=0.2)
+        tb.submit_order(cand, _signal(), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
+
+        boundary = _candle(t0 + timedelta(days=11), h=110.0, lo=94.0, c=96.0)
+        tb.resolve_at_cursor(boundary, max_hold_days=10)
+
+        assert tb.has_no_open_trade is True
+        assert tb.trades[-1].result == "loss"
+        expected_pnl = (95.0 - 100.0) * 0.2
+        assert tb.total_pnl == pytest.approx(expected_pnl)
+
+    def test_bearish_boundary_candle_target_hit_closes_win(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+
+        cand = _candidate(
+            direction=TrendDirection.BEARISH,
+            entry=100.0,
+            stop=105.0,
+            target=85.0,
+            size=0.2,
+        )
+        tb.submit_order(cand, _signal(TrendDirection.BEARISH), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
+
+        boundary = _candle(t0 + timedelta(days=11), h=101.0, lo=84.0, c=86.0)
+        tb.resolve_at_cursor(boundary, max_hold_days=10)
+
+        assert tb.has_no_open_trade is True
+        assert tb.trades[-1].result == "win"
+        expected_pnl = (100.0 - 85.0) * 0.2
+        assert tb.total_pnl == pytest.approx(expected_pnl)
+
     def test_no_resolution_without_trade(self) -> None:
         tb = TradeBook()
         candle = _candle(datetime(2024, 1, 1))
@@ -230,7 +289,7 @@ class TestBreakevenCount:
         tb.submit_order(cand, _signal(), "s", t0)
         tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
 
-        still_open = _candle(t0 + timedelta(days=11), c=100.0)
+        still_open = _candle(t0 + timedelta(days=11), h=104.0, lo=96.0, c=100.0)
         tb.resolve_at_cursor(still_open, max_hold_days=10)
 
         assert tb.trades[-1].result == "cancelled"

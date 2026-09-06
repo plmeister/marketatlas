@@ -252,21 +252,29 @@ class TradeBook:
         if open_trade is None:
             return
         c = open_trade.candidate
-        days_held = (candle.timestamp - open_trade.entry_timestamp).days
-        if days_held >= max_hold_days:
-            self._cancel_open(timestamp=candle.timestamp, instrument=instrument)
-            return
 
+        # Stop/target are checked before the max-hold expiry below so a trade
+        # that touches either on the boundary candle realizes that outcome
+        # instead of being cancelled at pnl 0 (backlog 104 — AUDJPY 2026-01-29
+        # hit target on day 10 but was recorded cancelled).
         if c.direction == TrendDirection.BULLISH:
             if candle.low <= c.stop:
                 self.close_trade(c.stop, candle.timestamp, instrument)
-            elif candle.high >= c.target:
+                return
+            if candle.high >= c.target:
                 self.close_trade(c.target, candle.timestamp, instrument)
+                return
         else:
             if candle.high >= c.stop:
                 self.close_trade(c.stop, candle.timestamp, instrument)
-            elif candle.low <= c.target:
+                return
+            if candle.low <= c.target:
                 self.close_trade(c.target, candle.timestamp, instrument)
+                return
+
+        days_held = (candle.timestamp - open_trade.entry_timestamp).days
+        if days_held >= max_hold_days:
+            self._cancel_open(timestamp=candle.timestamp, instrument=instrument)
 
     def _cancel_pending(self, candle: Candle, instrument: str = "") -> None:
         """Drop a pending order that never reached its entry within max_hold_days.
