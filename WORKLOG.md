@@ -2,6 +2,8 @@
 
 ## Completed
 
+- **106** — SR-anchored target sizing: `RiskEngine` gains optional `anchor_sr` (off by default) + `max_anchor_atr` (default 1.0) params. When enabled, `_find_valid_rr` only accepts an RR whose target sits within `max_anchor_atr`×ATR *below* a resistance (longs) / *above* a support (shorts) — no more ATR×RR-only "flying blind" targets (AUDCAD 02-12 / AUDJPY 01-12 / AUDNZD 03-17 notebook feedback, backlog 103). In anchor mode the proximity-buffer check is lifted (a target is meant to hug a level) and only a target that *crosses* a level is rejected. Rejection evidence names the expected anchor zone + nearest level ("no S/R anchoring beyond target within N ATR of the resistance band…nearest level: …"); accepted trades gain an "SR anchor" evidence line. DSL wiring automatic: params flow through `manage_risk` → `RiskConfig.params` → `RiskEngine(**params)` and the param schema derives from the signature (verified end-to-end DSL→Strategy→RiskEngine); `--ab` choice over `anchor_sr` splits variants. 15 new tests (risk-engine accept/reject/threshold/direction, constructor param, ASTCompiler risk config, param schema, ab variant toggle). 1412 pass (1 pre-existing `data/instruments.yaml` CLI env failure untouched).
+
 - **098b** — MFE/MAE + equity curve + per-trade regime context (second slice of
   098, unlocks 099/100/101/102): `TradeBook` tracks max favourable/adverse
   excursion in account currency on fill candle + every open cursor using the
