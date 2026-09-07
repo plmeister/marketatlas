@@ -337,7 +337,9 @@ def _empty_summary():
         total_return_pct=12.34, total_trades=1, wins=1, losses=0, breakevens=0,
         win_rate=1.0, peak_balance=1123.4, max_drawdown=0.0, gross_profit=123.4,
         gross_loss=0.0, profit_factor=1.0, avg_win=123.4, avg_loss=0.0,
-        expectancy=123.4, by_strategy={}, by_instrument={},
+        expectancy=123.4, avg_win_r=1.0, avg_loss_r=0.0, payoff_ratio=0.0,
+        expectancy_in_r=1.0, kelly_fraction=0.0, trades_per_year=0.0,
+        by_direction={}, by_strategy={}, by_instrument={},
     )
 
 

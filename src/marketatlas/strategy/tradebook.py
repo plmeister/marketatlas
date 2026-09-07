@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import cast
 
 from marketatlas.data.types import Candle
 from marketatlas.facts.structural import TrendDirection
@@ -121,6 +122,123 @@ class TradeBook:
         if total == 0:
             return 0.0
         return self.total_pnl / total
+
+    # --- R-based metrics (backlog: growth measurement) -----------------------
+    # R = one unit of risk. Each trade's outcome expressed in R multiplies
+    # pnl / risk_amount, so edge, payoff and Kelly are comparable across
+    # instruments/setups regardless of nominal price or size.
+
+    @staticmethod
+    def _r_for(trade: TradeOutcome) -> float | None:
+        c = trade.candidate
+        if trade.pnl is None or not c.risk_amount:
+            return None
+        return float(trade.pnl) / c.risk_amount
+
+    @property
+    def avg_win_r(self) -> float:
+        values = [
+            r
+            for t in self._trades
+            if t.result == "win" and (r := self._r_for(t)) is not None
+        ]
+        return sum(values) / len(values) if values else 0.0
+
+    @property
+    def avg_loss_r(self) -> float:
+        """Average loss magnitude in R units (positive; payoff ratios stay sane)."""
+        values = [
+            r
+            for t in self._trades
+            if t.result == "loss" and (r := self._r_for(t)) is not None
+        ]
+        return sum(abs(v) for v in values) / len(values) if values else 0.0
+
+    @property
+    def payoff_ratio(self) -> float:
+        """Avg win (R) / avg loss (R); NaN-safe ``0.0`` when no losses.
+
+        ``inf`` is returned when losses exist but wins don't (pure losing), or
+        when the strategy has wins and no losses (pure winning, ``inf``).
+        """
+        aw = self.avg_win_r
+        al = self.avg_loss_r
+        if al == 0:
+            return float("inf") if aw > 0 else 0.0
+        return aw / al
+
+    @property
+    def expectancy_in_r(self) -> float:
+        """Edge per trade in R units: (w * avg_win_R) - (l * avg_loss_R)."""
+        w = self.win_rate
+        l = 1.0 - w
+        return w * self.avg_win_r - l * self.avg_loss_r
+
+    @property
+    def kelly_fraction(self) -> float:
+        """Full Kelly for win-rate/payoff pair, clamped to [0, 1).
+
+        Full Kelly on a decided-trades basis. Real deployment would use a
+        fraction of this (half-Kelly typical). ``0.0`` when no edge.
+        """
+        w = self.win_rate
+        if w <= 0 or w >= 1:
+            return 0.0
+        aw = self.avg_win_r
+        al = self.avg_loss_r
+        if aw <= 0 or al <= 0:
+            return 0.0
+        # Kelly: f* = (W - L / b) where b = win payoff per unit risk (avg_win_R),
+        # L = loss per unit risk (avg_loss_R). With symmetric stop sizing
+        # avg_loss_R ~ 1.0. Clamp against degenerate payoff.
+        return max(0.0, min(1.0 - 1e-9, w - (1.0 - w) * al / aw))
+
+    @property
+    def trades_per_year(self) -> float:
+        """Decided (closed) trades normalized over the run's calendar span.
+
+        Span is first submit to last exit; collapses to ``0.0`` for <2 timestamps.
+        """
+        stamps = [
+            t.exit_timestamp or t.entry_timestamp
+            for t in self._trades
+            if t.exit_timestamp is not None or t.entry_timestamp is not None
+        ]
+        if len(stamps) < 2:
+            return 0.0
+        days = (max(stamps) - min(stamps)).total_seconds() / 86400.0
+        if days <= 0:
+            return 0.0
+        return self.closed_count / (days / 365.25)
+
+    @property
+    def by_direction(self) -> dict[str, dict[str, object]]:
+        """Per-direction decided stats: trades, wins, losses, win_rate."""
+        out: dict[str, dict[str, object]] = {}
+        for trade in self._trades:
+            if trade.result not in ("win", "loss"):
+                continue
+            name = trade.candidate.direction.value
+            row = out.setdefault(
+                name, {"trades": 0, "wins": 0, "losses": 0, "gross_pnl": 0.0}
+            )
+            trades: int = int(cast(int, row["trades"]))
+            wins: int = int(cast(int, row["wins"]))
+            losses: int = int(cast(int, row["losses"]))
+            pnl: float = float(cast(float, row["gross_pnl"]))
+            row["trades"] = trades + 1
+            if trade.result == "win":
+                row["wins"] = wins + 1
+            else:
+                row["losses"] = losses + 1
+            if trade.pnl is not None:
+                row["gross_pnl"] = pnl + trade.pnl
+        for row in out.values():
+            wins = int(cast(int, row["wins"]))
+            losses = int(cast(int, row["losses"]))
+            decided = wins + losses
+            row["win_rate"] = wins / decided if decided else 0.0
+        return out
 
     @property
     def max_drawdown(self) -> float:
@@ -360,6 +478,13 @@ class TradeBook:
             "avg_win": self.avg_win,
             "avg_loss": self.avg_loss,
             "expectancy": self.expectancy,
+            "avg_win_r": self.avg_win_r,
+            "avg_loss_r": self.avg_loss_r,
+            "payoff_ratio": self.payoff_ratio,
+            "expectancy_in_r": self.expectancy_in_r,
+            "kelly_fraction": self.kelly_fraction,
+            "trades_per_year": self.trades_per_year,
+            "by_direction": self.by_direction,
             "by_strategy": self._strategy_breakdown(),
             "by_instrument": self._instrument_breakdown(),
         }

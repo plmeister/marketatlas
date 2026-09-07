@@ -48,6 +48,13 @@ class AnalysisSummary:
     avg_win: float
     avg_loss: float
     expectancy: float
+    avg_win_r: float
+    avg_loss_r: float
+    payoff_ratio: float
+    expectancy_in_r: float
+    kelly_fraction: float
+    trades_per_year: float
+    by_direction: dict[str, dict[str, object]]
     by_strategy: dict[str, dict[str, Any]]
     by_instrument: dict[str, dict[str, Any]]
 
@@ -72,6 +79,13 @@ class AnalysisSummary:
             avg_win=s.get("avg_win", 0.0),
             avg_loss=s.get("avg_loss", 0.0),
             expectancy=s["expectancy"],
+            avg_win_r=s.get("avg_win_r", 0.0),
+            avg_loss_r=s.get("avg_loss_r", 0.0),
+            payoff_ratio=s.get("payoff_ratio", 0.0),
+            expectancy_in_r=s.get("expectancy_in_r", 0.0),
+            kelly_fraction=s.get("kelly_fraction", 0.0),
+            trades_per_year=s.get("trades_per_year", 0.0),
+            by_direction=s.get("by_direction", {}),
             by_strategy=s.get("by_strategy", {}),
             by_instrument=s.get("by_instrument", {}),
         )
@@ -96,6 +110,13 @@ class AnalysisSummary:
             "avg_win": self.avg_win,
             "avg_loss": self.avg_loss,
             "expectancy": self.expectancy,
+            "avg_win_r": self.avg_win_r,
+            "avg_loss_r": self.avg_loss_r,
+            "payoff_ratio": self.payoff_ratio,
+            "expectancy_in_r": self.expectancy_in_r,
+            "kelly_fraction": self.kelly_fraction,
+            "trades_per_year": self.trades_per_year,
+            "by_direction": self.by_direction,
             "by_strategy": self.by_strategy,
             "by_instrument": self.by_instrument,
         }

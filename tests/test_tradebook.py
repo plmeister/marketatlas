@@ -654,3 +654,111 @@ class TestMonthlySummary:
 
     def test_empty_when_no_closed_trades(self) -> None:
         assert TradeBook(initial_balance=1000.0).monthly_summary() == {}
+
+
+class TestRBasedMetrics:
+    """R-multiple edge metrics (backlog: growth measurement).
+
+    Each trade's outcome in R units: pnl / risk_amount. `_candidate` with
+    entry=100/stop=95/target=115/size=0.2 has risk_amount=1.0, so target hit
+    -> +3.0 P&L = +3R, stop hit -> -1.0 P&L = -1R.
+    """
+
+    def test_empty_book(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        assert tb.avg_win_r == 0.0
+        assert tb.avg_loss_r == 0.0
+        assert tb.expectancy_in_r == 0.0
+        assert tb.kelly_fraction == 0.0
+        assert tb.payoff_ratio == 0.0
+        assert tb.trades_per_year == 0.0
+        assert tb.by_direction == {}
+
+    def test_win_and_loss_r(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+
+        c1 = _candidate(entry=100.0, stop=95.0, target=115.0)  # risk 1.0
+        sig = _signal()
+        tb.submit_order(c1, sig, "s", t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=99.0))  # target -> +3R
+
+        t1 = t0 + timedelta(days=5)
+        c2 = _candidate(entry=100.0, stop=95.0, target=115.0)
+        tb.submit_order(c2, _signal(), "s", t1)
+        tb.fill_order(_candle(t1, h=110.0, lo=90.0))
+        tb.resolve_at_cursor(_candle(t1 + timedelta(days=1), lo=94.0, h=101.0))  # stop -> -1R
+
+        assert tb.win_rate == 0.5
+        assert tb.avg_win_r == pytest.approx(3.0)
+        assert tb.avg_loss_r == pytest.approx(1.0)
+        assert tb.payoff_ratio == pytest.approx(3.0)
+        assert tb.expectancy_in_r == pytest.approx(0.5 * 3.0 - 0.5 * 1.0)  # 1.0
+        assert tb.kelly_fraction == pytest.approx(0.5 - 0.5 * 1.0 / 3.0)
+
+    def test_kelly_zero_without_edge(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        # Same-R win then loss: E = 0 -> Kelly 0.
+        for i in range(2):
+            c = _candidate(entry=100.0, stop=95.0, target=110.0, size=0.2)  # +2R target
+            tb.submit_order(c, _signal(), "s", t0 + timedelta(days=i))
+            tb.fill_order(_candle(t0 + timedelta(days=i), h=110.0, lo=90.0))
+            win = bool(i % 2 == 0)
+            tb.resolve_at_cursor(
+                _candle(t0 + timedelta(days=i, hours=12), h=111.0, lo=89.0)
+                if win
+                else _candle(t0 + timedelta(days=i, hours=12), h=111.0, lo=94.0)
+            )
+        assert tb.by_direction["bullish"]["trades"] == 2
+        assert tb.kelly_fraction == 0.0
+
+    def test_by_direction(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        bull = _candidate(entry=100.0, stop=95.0, target=115.0)
+        tb.submit_order(bull, _signal(), "s", t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=99.0))
+
+        t1 = t0 + timedelta(days=5)
+        bear = _candidate(direction=TrendDirection.BEARISH, entry=100.0, stop=105.0, target=85.0)
+        tb.submit_order(bear, _signal(), "s", t1)
+        tb.fill_order(_candle(t1, h=110.0, lo=90.0))  # low 90 <= 100 -> fill
+        tb.resolve_at_cursor(_candle(t1 + timedelta(days=1), h=90.0, lo=80.0))  # low 80 <= 85 -> target
+
+        by_dir = tb.by_direction
+        assert by_dir["bullish"]["trades"] == 1
+        assert by_dir["bullish"]["wins"] == 1
+        assert by_dir["bullish"]["win_rate"] == 1.0
+        assert by_dir["bearish"]["trades"] == 1
+        assert by_dir["bearish"]["wins"] == 1
+        assert by_dir["bearish"]["win_rate"] == 1.0
+
+    def test_trades_per_year_spans_first_to_last_exit(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        jan = datetime(2024, 1, 1)
+        c = _candidate(entry=100.0, stop=95.0, target=115.0)
+        tb.submit_order(c, _signal(), "s", jan)
+        tb.fill_order(_candle(jan, h=110.0, lo=90.0))
+        tb.resolve_at_cursor(_candle(jan + timedelta(days=1), h=116.0, lo=99.0))  # exit day 1
+        # Second trade ~365 days later: span ~365 days, 2 trades -> ~2/yr.
+        second = jan.replace(year=2025)
+        tb.submit_order(_candidate(), _signal(), "s", second)
+        tb.fill_order(_candle(second, h=110.0, lo=90.0))
+        tb.close_trade(116.0, second + timedelta(days=1))
+        assert tb.trades_per_year == pytest.approx(2.0, rel=0.02)
+
+    def test_summary_carries_r_metrics(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        c = _candidate(entry=100.0, stop=95.0, target=115.0)
+        tb.submit_order(c, _signal(), "s", t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=99.0))  # +3R
+        s = tb.summary
+        assert s["avg_win_r"] == pytest.approx(3.0)
+        assert s["expectancy_in_r"] == pytest.approx(3.0)
+        assert s["payoff_ratio"] == float("inf")
+        assert s["by_direction"]["bullish"]["wins"] == 1  # type: ignore[index]
