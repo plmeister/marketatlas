@@ -48,6 +48,8 @@ class RiskEngine:
         max_stop_atr: float = 3.0,
         max_hold_days: int = 10,
         avoid_srxing: bool = True,
+        anchor_sr: bool = False,
+        max_anchor_atr: float = 1.0,
         slippage_pct: float = 0.1,
         atr_key: str = "atr_14",
         sr_key: str = "sr",
@@ -68,6 +70,8 @@ class RiskEngine:
         self._max_stop_atr = max_stop_atr
         self._max_hold_days = max_hold_days
         self._avoid_srxing = avoid_srxing
+        self._anchor_sr = anchor_sr
+        self._max_anchor_atr = max_anchor_atr
         self._slippage_pct = slippage_pct
         self._swing_buffer_atr = swing_buffer_atr
         self._sr_buffer_atr = sr_buffer_atr
@@ -312,6 +316,24 @@ class RiskEngine:
             )
             return None, tuple(rejection)
 
+        anchor: SRLevel | None = None
+        if self._anchor_sr:
+            anchor = self._find_anchor(signal.direction, target, sr_fact.levels, atr_val)
+            if anchor is None:
+                rejection.append(
+                    EvidenceEntry(
+                        text=(
+                            f"Rejected: no S/R anchor within {self._max_anchor_atr} ATR "
+                            f"beyond target {_fmt_p(target)} "
+                            f"(entry {_fmt_p(entry)}; "
+                            f"dir {'up' if signal.direction == TrendDirection.BULLISH else 'down'})"
+                        ),
+                        level=EvidenceLevel.WARNING,
+                        source="RiskEngine",
+                    )
+                )
+                return None, tuple(rejection)
+
         risk_amount = balance * (self._risk_pct / 100)
         size = risk_amount / stop_distance
         reward_amount = rr_ratio * risk_amount
@@ -340,6 +362,19 @@ class RiskEngine:
                 source="RiskEngine",
             ),
         ]
+
+        if self._anchor_sr:
+            assert anchor is not None
+            evidence.append(
+                EvidenceEntry(
+                    text=(
+                        f"S/R anchor: {anchor.type} {_fmt_p(anchor.price)} "
+                        f"({abs(anchor.price - target) / atr_val:.2f} ATR beyond target)"
+                    ),
+                    level=EvidenceLevel.INFO,
+                    source="RiskEngine",
+                ),
+            )
 
         if self._slippage_pct > 0:
             evidence.append(
@@ -480,6 +515,36 @@ class RiskEngine:
             if abs(level.price - target) < buffer:
                 hits.append(level)
         return bool(hits), tuple(hits)
+
+    def _find_anchor(
+        self,
+        direction: TrendDirection,
+        target: float,
+        levels: tuple[SRLevel, ...],
+        atr: float,
+    ) -> SRLevel | None:
+        """Return the nearest S/R level anchoring the target, or None.
+
+        For a long the target sits below a resistance level (price turns down);
+        for a short it sits above a support level (price turns up). The level
+        must lie within ``_max_anchor_atr * atr`` beyond the target so the
+        turn point is close enough to constrain the exit.
+        """
+        max_dist = self._max_anchor_atr * atr
+        best: SRLevel | None = None
+        best_dist = float("inf")
+        for level in levels:
+            if direction == TrendDirection.BULLISH:
+                in_zone = level.type == "resistance" and level.price > target
+            else:
+                in_zone = level.type == "support" and level.price < target
+            if not in_zone:
+                continue
+            dist = abs(level.price - target)
+            if dist <= max_dist and dist < best_dist:
+                best = level
+                best_dist = dist
+        return best
 
     def _crosses_sr(
         self,

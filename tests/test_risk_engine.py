@@ -832,3 +832,93 @@ class TestRiskEngine:
         )
         assert candidate is None
         assert any("breaks through resistance" in e.text for e in evidence)
+
+    def test_anchor_sr_off_accepts_without_anchor(self) -> None:
+        """default anchor_sr=False keeps baseline: far resistance still fine."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=125.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is not None
+        assert not any("S/R anchor" in e.text for e in evidence)
+
+    def test_anchor_sr_rejects_when_no_level_beyond_target(self) -> None:
+        """anchor_sr on, empty SR => no anchor within window, reject."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(anchor_sr=True, slippage_pct=0.0)
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
+        )
+        assert candidate is None
+        assert any("no S/R anchor" in e.text for e in evidence)
+
+    def test_anchor_sr_rejects_level_too_far_beyond_target(self) -> None:
+        """Resistance 14.6 ATR beyond target, window 1 ATR => reject."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(anchor_sr=True, max_anchor_atr=1.0, slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=125.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is None
+        assert any("no S/R anchor" in e.text for e in evidence)
+
+    def test_anchor_sr_accepts_resistance_near_target(self) -> None:
+        """Resistance 0.9 ATR beyond target sits in the 1-ATR window => accept."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(anchor_sr=True, max_anchor_atr=1.0, slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=113.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is not None
+        assert any("S/R anchor" in e.text for e in evidence)
+
+    def test_anchor_sr_bearish_accepts_support_near_target(self) -> None:
+        """Bearish target below entry, support within window below => accept."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(anchor_sr=True, max_anchor_atr=1.0, slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=91.5, strength=2, type="support"),))
+        candidate, evidence = engine.evaluate(
+            _bearish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is not None
+        assert any("S/R anchor" in e.text for e in evidence)
+
+    def test_anchor_sr_bearish_rejects_resistance_only(self) -> None:
+        """Bearish needs support below target; resistance-only levels reject."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(anchor_sr=True, max_anchor_atr=1.0, slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=113.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bearish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is None
+        assert any("no S/R anchor" in e.text for e in evidence)
+
+    def test_anchor_sr_max_atr_controls_window(self) -> None:
+        """Narrow window (0.5 ATR) rejects a level 0.9 ATR beyond target."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(anchor_sr=True, max_anchor_atr=0.5, slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=113.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is None
+        assert any("no S/R anchor" in e.text for e in evidence)
