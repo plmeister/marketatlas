@@ -910,6 +910,130 @@ class TestRiskEngine:
         assert candidate is None
         assert any("no S/R anchor" in e.text for e in evidence)
 
+    def test_fixed_mode_rejects_no_valid_rr(self) -> None:
+        """default size_mode=fixed keeps baseline: resistance blocks all rr targets."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=107.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is None
+        assert any("no valid RR" in e.text for e in evidence)
+
+    def test_spacing_mode_rescues_no_valid_rr(self) -> None:
+        """shrink stop until target clears resistance and gap gate passes."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(size_mode="spacing", min_rr=1.0, slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=107.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is not None
+        assert candidate.rr_ratio >= 1.0
+        assert candidate.stop > 97.4
+        assert any("spacing-aware" in e.text for e in evidence)
+
+    def test_spacing_target_gap_gate_default_on(self) -> None:
+        """resistance 0.8 ATR past target: default target_gap gate blocks rescue."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(size_mode="spacing", min_rr=1.0, slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=106.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is None
+        assert any("no valid RR" in e.text for e in evidence)
+
+    def test_spacing_target_gap_gate_off_rescues(self) -> None:
+        """disabling target_gap restores pre-gate rescue of the same setup."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(
+            size_mode="spacing", min_rr=1.0, min_spacing_target_gap=0.0, slippage_pct=0.0
+        )
+        sr = _sr_fact((SRLevel(price=106.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is not None
+        assert any("spacing-aware" in e.text for e in evidence)
+
+    def test_spacing_stop_gap_gate_blocks_support_parking(self) -> None:
+        """rescue stop landing 0.1 ATR above support is rejected (stop_gap gate)."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(size_mode="spacing", min_rr=1.0, slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=100.0, strength=2, type="support"),))
+        reject, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert reject is None
+        assert any("breaks through" in e.text for e in evidence)
+
+    def test_spacing_stop_gap_gate_off_rescues(self) -> None:
+        """gates off: support 1 ATR below entry allows a stop above it."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(
+            size_mode="spacing",
+            min_spacing_stop_atr=0.0,
+            min_spacing_stop_gap=0.0,
+            min_spacing_target_gap=0.0,
+            slippage_pct=0.0,
+        )
+        sr = _sr_fact((SRLevel(price=99.0, strength=2, type="support"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is not None
+        assert candidate.stop > 99.0
+        assert any("spacing-aware" in e.text for e in evidence)
+
+    def test_spacing_mode_preserves_anchor_gate(self) -> None:
+        """anchor_sr still enforced on spacing geometry: far-only resistance rejects."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(
+            size_mode="spacing", anchor_sr=True, max_anchor_atr=1.0, slippage_pct=0.0
+        )
+        sr = _sr_fact((SRLevel(price=130.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is None
+        assert any("no S/R anchor" in e.text for e in evidence)
+
+    def test_spacing_mode_anchor_rescue(self) -> None:
+        """shrink target into anchor window: resistance 0.5 ATR beyond admits."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(
+            size_mode="spacing",
+            anchor_sr=True,
+            max_anchor_atr=1.0,
+            min_rr=1.0,
+            min_spacing_target_gap=0.0,
+            slippage_pct=0.0,
+        )
+        sr = _sr_fact((SRLevel(price=105.4, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is not None
+        assert any("S/R anchor" in e.text for e in evidence)
+
     def test_anchor_sr_max_atr_controls_window(self) -> None:
         """Narrow window (0.5 ATR) rejects a level 0.9 ATR beyond target."""
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5

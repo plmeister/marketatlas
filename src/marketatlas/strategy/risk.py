@@ -50,6 +50,10 @@ class RiskEngine:
         avoid_srxing: bool = True,
         anchor_sr: bool = False,
         max_anchor_atr: float = 1.0,
+        size_mode: str = "fixed",
+        min_spacing_stop_atr: float = 1.0,
+        min_spacing_stop_gap: float = 0.5,
+        min_spacing_target_gap: float = 1.0,
         slippage_pct: float = 0.1,
         atr_key: str = "atr_14",
         sr_key: str = "sr",
@@ -72,6 +76,10 @@ class RiskEngine:
         self._avoid_srxing = avoid_srxing
         self._anchor_sr = anchor_sr
         self._max_anchor_atr = max_anchor_atr
+        self._size_mode = size_mode
+        self._min_spacing_stop_atr = min_spacing_stop_atr
+        self._min_spacing_stop_gap = min_spacing_stop_gap
+        self._min_spacing_target_gap = min_spacing_target_gap
         self._slippage_pct = slippage_pct
         self._swing_buffer_atr = swing_buffer_atr
         self._sr_buffer_atr = sr_buffer_atr
@@ -256,6 +264,19 @@ class RiskEngine:
         if self._avoid_srxing:
             hit = self._stop_crosses_sr(signal.direction, entry, stop, sr_fact.levels)
             if hit is not None:
+                if self._size_mode == "spacing":
+                    sp = self._spacing_candidate(
+                        signal.direction, entry, atr_val, sr_fact, stop_distance
+                    )
+                    if sp is not None:
+                        stop, target, rr_ratio, stop_distance = sp
+                        anchor_sp = self._find_anchor(
+                            signal.direction, target, sr_fact.levels, atr_val
+                        ) if self._anchor_sr else None
+                        return self._candidate(
+                            signal, balance, entry, stop, target, rr_ratio,
+                            stop_distance, atr_val, anchor_sp, stop_anchor, spacing=True,
+                        )
                 rejection.append(
                     EvidenceEntry(
                         text=(
@@ -271,6 +292,19 @@ class RiskEngine:
 
         found = self._find_valid_rr(signal.direction, entry, stop_distance, sr_fact, atr_val)
         if found is None:
+            if self._size_mode == "spacing":
+                sp = self._spacing_candidate(
+                    signal.direction, entry, atr_val, sr_fact, stop_distance
+                )
+                if sp is not None:
+                    stop, target, rr_ratio, stop_distance = sp
+                    anchor_sp = self._find_anchor(
+                        signal.direction, target, sr_fact.levels, atr_val
+                    ) if self._anchor_sr else None
+                    return self._candidate(
+                        signal, balance, entry, stop, target, rr_ratio,
+                        stop_distance, atr_val, anchor_sp, stop_anchor, spacing=True,
+                    )
             blockers = self._blocking_sr(signal.direction, entry, stop_distance, sr_fact, atr_val)
             blocks = (
                 ", ".join(f"{lv.type}@{_fmt_p(lv.price)}(x{lv.strength})" for lv in blockers)
@@ -320,6 +354,19 @@ class RiskEngine:
         if self._anchor_sr:
             anchor = self._find_anchor(signal.direction, target, sr_fact.levels, atr_val)
             if anchor is None:
+                if self._size_mode == "spacing":
+                    sp = self._spacing_candidate(
+                        signal.direction, entry, atr_val, sr_fact, stop_distance
+                    )
+                    if sp is not None:
+                        stop, target, rr_ratio, stop_distance = sp
+                        anchor = self._find_anchor(
+                            signal.direction, target, sr_fact.levels, atr_val
+                        )
+                        return self._candidate(
+                            signal, balance, entry, stop, target, rr_ratio,
+                            stop_distance, atr_val, anchor, stop_anchor, spacing=True,
+                        )
                 rejection.append(
                     EvidenceEntry(
                         text=(
@@ -334,17 +381,44 @@ class RiskEngine:
                 )
                 return None, tuple(rejection)
 
+        return self._candidate(
+            signal, balance, entry, stop, target, rr_ratio, stop_distance,
+            atr_val, anchor, stop_anchor,
+        )
+
+    def _candidate(
+        self,
+        signal: TradeSignal,
+        balance: float,
+        entry: float,
+        stop: float,
+        target: float,
+        rr_ratio: float,
+        stop_distance: float,
+        atr_val: float,
+        anchor: SRLevel | None,
+        stop_anchor: float | None,
+        spacing: bool = False,
+    ) -> tuple[TradeCandidate, tuple[EvidenceEntry, ...]]:
+        """Build sized candidate + evidence. ``spacing=True`` marks the
+        spacing-aware fallback geometry (stop may sit inside the last swing)."""
         risk_amount = balance * (self._risk_pct / 100)
         size = risk_amount / stop_distance
         reward_amount = rr_ratio * risk_amount
 
+        stop_desc = (
+            f"{stop_distance / atr_val:.1f} ATR below entry (spacing-aware)"
+            if spacing
+            else (
+                f"{stop_distance / atr_val:.1f} ATR below entry, "
+                f"beyond last swing at {_fmt_p(stop_anchor)}"
+                if stop_anchor is not None
+                else f"{stop_distance / atr_val:.1f} ATR below entry"
+            )
+        )
         evidence: list[EvidenceEntry] = [
             EvidenceEntry(
-                text=(
-                    f"Stop: {_fmt_p(stop)} "
-                    f"({stop_distance / atr_val:.1f} ATR below entry, "
-                    f"beyond last swing at {_fmt_p(stop_anchor)})"
-                ),
+                text=f"Stop: {_fmt_p(stop)} ({stop_desc})",
                 level=EvidenceLevel.INFO,
                 source="RiskEngine",
             ),
@@ -363,8 +437,7 @@ class RiskEngine:
             ),
         ]
 
-        if self._anchor_sr:
-            assert anchor is not None
+        if self._anchor_sr and anchor is not None:
             evidence.append(
                 EvidenceEntry(
                     text=(
@@ -399,6 +472,105 @@ class RiskEngine:
             evidence=tuple(evidence),
             min_rr=self._min_rr,
         ), tuple(evidence)
+
+    def _spacing_candidate(
+        self,
+        direction: TrendDirection,
+        entry: float,
+        atr: float,
+        sr_fact: SRFact,
+        max_stop_dist: float,
+    ) -> tuple[float, float, float, float] | None:
+        """Spacing-aware fallback: find a (stop, target, rr, stop_dist) triple.
+
+        Engaged only when the swing-anchored stop geometry fails. The swing
+        anchor can put the target past a nearby S/R level; here we shrink the
+        stop toward the entry (widest plausible first), re-scanning RR over
+        clean bands until a target sits clear with a valid anchor. Prefers the
+        widest admissible stop to stay as conservative as possible. Returns the
+        first working (stop, target, rr_ratio, stop_distance) or None.
+        """
+        stop_dist_atr = max_stop_dist / atr
+        widths = _frange(0.5, max(0.5, stop_dist_atr) + 0.001, 0.1)[::-1]
+        for sd_atr in widths:
+            if self._min_spacing_stop_atr > 0 and sd_atr < self._min_spacing_stop_atr - 1e-9:
+                break
+            sd = sd_atr * atr
+            if sd <= 0 or sd > self._max_stop_atr * atr:
+                continue
+            candidate_stop = (
+                entry - sd if direction == TrendDirection.BULLISH else entry + sd
+            )
+            if self._avoid_srxing and self._stop_crosses_sr(
+                direction, entry, candidate_stop, sr_fact.levels
+            ):
+                continue
+            if self._avoid_srxing and any(
+                (
+                    direction == TrendDirection.BULLISH
+                    and lv.type == "support"
+                    and candidate_stop <= lv.price < entry
+                )
+                or (
+                    direction == TrendDirection.BEARISH
+                    and lv.type == "resistance"
+                    and entry < lv.price <= candidate_stop
+                )
+                for lv in sr_fact.levels
+            ):
+                continue
+            if self._min_spacing_stop_gap > 0 and self._avoid_srxing:
+                stop_gap = self._stop_gap(direction, candidate_stop, sr_fact.levels)
+                if stop_gap is not None and stop_gap < self._min_spacing_stop_gap * atr:
+                    continue
+            found = self._find_valid_rr(direction, entry, sd, sr_fact, atr)
+            if found is None:
+                continue
+            rr, _ = found
+            target = (
+                entry + rr * sd if direction == TrendDirection.BULLISH else entry - rr * sd
+            )
+            if self._min_spacing_target_gap > 0 and self._avoid_srxing:
+                target_gap = self._target_gap(direction, target, sr_fact.levels)
+                if target_gap is not None and target_gap < self._min_spacing_target_gap * atr:
+                    continue
+            if self._anchor_sr and (
+                self._find_anchor(direction, target, sr_fact.levels, atr) is None
+            ):
+                continue
+            return candidate_stop, target, rr, sd
+        return None
+
+    def _stop_gap(
+        self, direction: TrendDirection, stop: float, levels: tuple[SRLevel, ...]
+    ) -> float | None:
+        """Clean room between the stop and the nearest level on its outer side.
+
+        Bullish stop sits below entry: nearest support strictly below it.
+        Bearish stop sits above entry: nearest resistance strictly above it.
+        None when no such level (open outer space).
+        """
+        if direction == TrendDirection.BULLISH:
+            below = [lv.price for lv in levels if lv.type == "support" and lv.price < stop]
+            return stop - max(below) if below else None
+        above = [lv.price for lv in levels if lv.type == "resistance" and lv.price > stop]
+        return min(above) - stop if above else None
+
+    def _target_gap(
+        self, direction: TrendDirection, target: float, levels: tuple[SRLevel, ...]
+    ) -> float | None:
+        """Clean exhaust room beyond the target before the next S/R level.
+
+        Bullish: nearest resistance strictly above target. Bearish: nearest
+        support strictly below target. None when open space (uncapped).
+        """
+        if direction == TrendDirection.BULLISH:
+            above = [
+                lv.price for lv in levels if lv.type == "resistance" and lv.price > target
+            ]
+            return min(above) - target if above else None
+        below = [lv.price for lv in levels if lv.type == "support" and lv.price < target]
+        return target - max(below) if below else None
 
     def _find_stop_anchor(
         self,

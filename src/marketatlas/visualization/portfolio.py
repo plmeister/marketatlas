@@ -347,6 +347,13 @@ def _empty_summary() -> AnalysisSummary:
         avg_win=0.0,
         avg_loss=0.0,
         expectancy=0.0,
+        avg_win_r=0.0,
+        avg_loss_r=0.0,
+        payoff_ratio=0.0,
+        expectancy_in_r=0.0,
+        kelly_fraction=0.0,
+        trades_per_year=0.0,
+        by_direction={},
         by_strategy={},
         by_instrument={},
     )
