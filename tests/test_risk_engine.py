@@ -266,6 +266,29 @@ class TestRiskEngine:
         assert c1 is not None and c2 is not None
         assert c2.size < c1.size
 
+    def test_risk_multiplier_scales_size(self) -> None:
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(risk_pct=1.0, slippage_pct=0.0)
+        base, _ = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view, balance=1000.0
+        )
+        weighted = TradeSignal(
+            direction=TrendDirection.BULLISH,
+            entry_zone=(99.0, 101.0),
+            confidence=0.7,
+            source="BreakoutSignal",
+            evidence=(),
+            risk_multiplier=2.0,
+        )
+        big, _ = engine.evaluate(
+            weighted, _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view, balance=1000.0
+        )
+        assert base is not None and big is not None
+        assert abs(base.risk_amount * 2.0 - big.risk_amount) < 0.01
+        assert big.size > base.size
+
     def test_slippage_evidence(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
@@ -853,10 +876,74 @@ class TestRiskEngine:
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(anchor_sr=True, slippage_pct=0.0)
         candidate, evidence = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
+            _bullish_signal(),
+            _facts(atr=_atr_fact(2.0), sr=_sr_fact(())),
+            view,
         )
         assert candidate is None
         assert any("no S/R anchor" in e.text for e in evidence)
+
+    def test_trend_eff_gate_disabled_by_default(self) -> None:
+        candles = [(100.0, 101.0, 99.0, 100.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0)
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(),
+            _facts(atr=_atr_fact(2.0), sr=_sr_fact(())),
+            view,
+        )
+        assert candidate is not None
+
+    def test_trend_eff_gate_rejects_flat_bull(self) -> None:
+        candles = [(100.0, 101.0, 99.0, 100.0, 1000.0)] * 80
+        store = _make_store(candles)
+        view = MarketView(store, cursor=79, window_size=79)
+        engine = RiskEngine(min_trend_eff=0.25, slippage_pct=0.0)
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(),
+            _facts(atr=_atr_fact(2.0), sr=_sr_fact(())),
+            view,
+        )
+        assert candidate is None
+        assert any("trend efficiency" in e.text for e in evidence)
+
+    def test_trend_eff_gate_passes_rising_bull(self) -> None:
+        candles = [(100.0 + i, 102.0 + i, 98.0 + i, 100.0 + i, 1000.0) for i in range(80)]
+        store = _make_store(candles)
+        view = MarketView(store, cursor=79, window_size=79)
+        engine = RiskEngine(min_trend_eff=0.25, slippage_pct=0.0)
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(),
+            _facts(atr=_atr_fact(2.0), sr=_sr_fact(())),
+            view,
+        )
+        assert candidate is not None
+
+    def test_trend_eff_gate_rejects_rising_bear(self) -> None:
+        candles = [(100.0 + i, 102.0 + i, 98.0 + i, 100.0 + i, 1000.0) for i in range(80)]
+        store = _make_store(candles)
+        view = MarketView(store, cursor=79, window_size=79)
+        engine = RiskEngine(min_trend_eff=0.25, slippage_pct=0.0)
+        candidate, evidence = engine.evaluate(
+            _bearish_signal(),
+            _facts(atr=_atr_fact(2.0), sr=_sr_fact(())),
+            view,
+        )
+        assert candidate is None
+        assert any("trend efficiency" in e.text for e in evidence)
+
+    def test_trend_eff_gate_skips_short_history(self) -> None:
+        candles = [(100.0 + i, 102.0 + i, 98.0 + i, 100.0 + i, 1000.0) for i in range(10)]
+        store = _make_store(candles)
+        view = MarketView(store, cursor=9, window_size=9)
+        engine = RiskEngine(min_trend_eff=0.25, trend_eff_lookback=63, slippage_pct=0.0)
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(),
+            _facts(atr=_atr_fact(2.0), sr=_sr_fact(())),
+            view,
+        )
+        assert candidate is not None
 
     def test_anchor_sr_rejects_level_too_far_beyond_target(self) -> None:
         """Resistance 14.6 ATR beyond target, window 1 ATR => reject."""

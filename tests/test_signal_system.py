@@ -802,6 +802,28 @@ class TestBreakoutSignal:
         assert result.signal is None
         assert result.rejections
 
+    def test_shallow_penetration_returns_rejection(self) -> None:
+        store = self._breakout_store()
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = BreakoutSignal(min_penetration_atr=10.0)
+        result = signal.evaluate_with_rejections(
+            view,
+            self._facts(self._channel_fact(), _bullish_trend_fact(), _atr_fact(50.0)),
+        )
+        assert result.signal is None
+        assert result.rejections
+
+    def test_deep_penetration_passes_gate(self) -> None:
+        store = self._breakout_store()
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = BreakoutSignal(min_penetration_atr=0.01)
+        result = signal.evaluate(
+            view,
+            self._facts(self._channel_fact(), _bullish_trend_fact(), _atr_fact(50.0)),
+        )
+        assert result is not None
+        assert result.direction == TrendDirection.BULLISH
+
     def test_missing_facts_return_none(self) -> None:
         store = self._breakout_store()
         view = MarketView(store, cursor=49, window_size=50)

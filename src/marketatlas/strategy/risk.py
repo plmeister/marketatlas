@@ -66,6 +66,8 @@ class RiskEngine:
         max_atr_pct: float = 0.0,
         min_vol_ratio: float = 0.0,
         max_vol_ratio: float = 0.0,
+        min_trend_eff: float = 0.0,
+        trend_eff_lookback: int = 63,
         bindings: dict[str, str] | None = None,
     ) -> None:
         self._risk_pct = risk_pct
@@ -89,6 +91,8 @@ class RiskEngine:
         self._max_atr_pct = max_atr_pct
         self._min_vol_ratio = min_vol_ratio
         self._max_vol_ratio = max_vol_ratio
+        self._min_trend_eff = min_trend_eff
+        self._trend_eff_lookback = max(trend_eff_lookback, 2)
         self._atr_key = atr_key
         self._sr_key = sr_key
         self._swing_key = swing_key
@@ -112,6 +116,7 @@ class RiskEngine:
         balance: float = 1000.0,
     ) -> tuple[TradeCandidate | None, tuple[EvidenceEntry, ...]]:
         rejection: list[EvidenceEntry] = []
+        risk_multiplier = getattr(signal, "risk_multiplier", 1.0)
 
         # DSL-compiled risk nodes declare their inputs as explicit fact
         # references (backlog 083), compiled into ``bindings`` keyed by the
@@ -214,6 +219,43 @@ class RiskEngine:
                     )
                     return None, tuple(rejection)
 
+        # Trend-efficiency regime gate (0.0 = disabled): pullback-continuation
+        # only pays when the instrument actually trends; in ranged markets the
+        # move decays into 10-day churn (windowed ab6 A/B: 2020-24 flat zero,
+        # 2024-26 trend burst +8R). Signed Kaufman efficiency over a lookback:
+        # |close_t - close_{t-N}| / sum(|dclose|). Direction must match the
+        # signal; magnitude must clear the floor. Insufficient history -> skip.
+        if self._min_trend_eff > 0:
+            eff = self._signed_eff(view.prices)
+            if eff is not None:
+                if signal.direction == TrendDirection.BULLISH:
+                    aligned = eff >= self._min_trend_eff
+                elif signal.direction == TrendDirection.BEARISH:
+                    aligned = eff <= -self._min_trend_eff
+                else:
+                    aligned = True
+                if not aligned:
+                    cmp_word = (
+                        "below" if signal.direction == TrendDirection.BULLISH else "above"
+                    )
+                    way_word = (
+                        "up" if signal.direction == TrendDirection.BULLISH else "down"
+                    )
+                    rejection.append(
+                        EvidenceEntry(
+                            text=(
+                                f"Rejected: trend efficiency {eff:+.3f} "
+                                f"{cmp_word} min {self._min_trend_eff:+.3f} "
+                                f"({way_word}) "
+                                f"({self._trend_eff_lookback}d) — "
+                                f"market not trending (close {close_price:.5f})"
+                            ),
+                            level=EvidenceLevel.WARNING,
+                            source="RiskEngine",
+                        )
+                    )
+                    return None, tuple(rejection)
+
         # Breakout entry (backlog: continued-trend entry). The signal fires on a
         # confirmed pullback candle; buying (bullish) requires price to push
         # above that candle's close by an ATR buffer, so the order only triggers
@@ -276,6 +318,7 @@ class RiskEngine:
                         return self._candidate(
                             signal, balance, entry, stop, target, rr_ratio,
                             stop_distance, atr_val, anchor_sp, stop_anchor, spacing=True,
+                            risk_multiplier=risk_multiplier,
                         )
                 rejection.append(
                     EvidenceEntry(
@@ -304,6 +347,7 @@ class RiskEngine:
                     return self._candidate(
                         signal, balance, entry, stop, target, rr_ratio,
                         stop_distance, atr_val, anchor_sp, stop_anchor, spacing=True,
+                        risk_multiplier=risk_multiplier,
                     )
             blockers = self._blocking_sr(signal.direction, entry, stop_distance, sr_fact, atr_val)
             blocks = (
@@ -366,6 +410,7 @@ class RiskEngine:
                         return self._candidate(
                             signal, balance, entry, stop, target, rr_ratio,
                             stop_distance, atr_val, anchor, stop_anchor, spacing=True,
+                            risk_multiplier=risk_multiplier,
                         )
                 rejection.append(
                     EvidenceEntry(
@@ -383,7 +428,7 @@ class RiskEngine:
 
         return self._candidate(
             signal, balance, entry, stop, target, rr_ratio, stop_distance,
-            atr_val, anchor, stop_anchor,
+            atr_val, anchor, stop_anchor, risk_multiplier=risk_multiplier,
         )
 
     def _candidate(
@@ -399,10 +444,11 @@ class RiskEngine:
         anchor: SRLevel | None,
         stop_anchor: float | None,
         spacing: bool = False,
+        risk_multiplier: float = 1.0,
     ) -> tuple[TradeCandidate, tuple[EvidenceEntry, ...]]:
         """Build sized candidate + evidence. ``spacing=True`` marks the
         spacing-aware fallback geometry (stop may sit inside the last swing)."""
-        risk_amount = balance * (self._risk_pct / 100)
+        risk_amount = balance * (self._risk_pct / 100) * risk_multiplier
         size = risk_amount / stop_distance
         reward_amount = rr_ratio * risk_amount
 
@@ -643,6 +689,19 @@ class RiskEngine:
                 return rr, tuple()
 
         return None
+
+    def _signed_eff(self, prices: tuple[float, ...]) -> float | None:
+        """Signed Kaufman efficiency over the lookback; None if insufficient
+        history. Positive -> drifting up, negative -> down, ~0 -> zigzag."""
+        n = self._trend_eff_lookback
+        if len(prices) < n + 1:
+            return None
+        window = prices[-(n + 1):]
+        drift = window[-1] - window[0]
+        path = 0.0
+        for i in range(1, len(window)):
+            path += abs(window[i] - window[i - 1])
+        return drift / path if path > 0 else 0.0
 
     def _blocking_sr(
         self,

@@ -33,6 +33,9 @@ class BreakoutSignal(Signal):
         min_breakout_days: int = 0,
         compress_days: int = 10,
         compression_atr: float = 3.0,
+        min_penetration_atr: float = 0.0,
+        penetration_weight: float = 1.0,
+        penetration_weight_atr: float = 0.5,
         require_trend: bool = True,
         bindings: dict[str, str] | None = None,
     ) -> None:
@@ -42,6 +45,9 @@ class BreakoutSignal(Signal):
         self._min_breakout_days = min_breakout_days
         self._compress_days = compress_days
         self._compression_atr = compression_atr
+        self._min_penetration_atr = min_penetration_atr
+        self._penetration_weight = penetration_weight
+        self._penetration_weight_atr = penetration_weight_atr
         self._require_trend = require_trend
         self._bindings = dict(bindings) if bindings else {}
 
@@ -96,10 +102,24 @@ class BreakoutSignal(Signal):
         if not self._range_compressed(view, channel, atr_val):
             return self._rejected("range not compressed before breakout")
 
+        penetration = (close - channel.high) if direction == TrendDirection.BULLISH \
+            else (channel.low - close)
+
+        if self._min_penetration_atr > 0 and atr_val > 0:
+            if penetration / atr_val < self._min_penetration_atr:
+                return self._rejected(
+                    f"breakout penetration {penetration / atr_val:.2f} ATR "
+                    f"below min {self._min_penetration_atr:.1f} ATR"
+                )
+
+        weight = self._penetration_weight if self._penetration_weight != 1.0 else 1.0
+        if weight != 1.0 and (atr_val <= 0 or penetration / atr_val < self._penetration_weight_atr):
+            weight = 1.0
+
         buffer = 0.5 * atr_val
         entry_zone = (close - buffer, close + buffer)
 
-        evidence = (
+        evidence: list[EvidenceEntry] = [
             EvidenceEntry(
                 text=(
                     f"Signal: {direction.value} breakout above/below "
@@ -114,14 +134,26 @@ class BreakoutSignal(Signal):
                 level=EvidenceLevel.INFO,
                 source="BreakoutSignal",
             ),
-        )
+        ]
+        if weight != 1.0:
+            evidence.append(
+                EvidenceEntry(
+                    text=(
+                        f"Penetration {penetration / atr_val:.2f} ATR \u2265 "
+                        f"weight floor {self._penetration_weight_atr:.1f} — risk \u00d7{weight:g}"
+                    ),
+                    level=EvidenceLevel.INFO,
+                    source="BreakoutSignal",
+                ),
+            )
         return SignalEvaluation(
             signal=TradeSignal(
                 direction=direction,
                 entry_zone=entry_zone,
                 confidence=1.0,
                 source="BreakoutSignal",
-                evidence=evidence,
+                evidence=tuple(evidence),
+                risk_multiplier=weight,
             )
         )
 
