@@ -18,6 +18,7 @@ from marketatlas.facts.structural import (
 )
 from marketatlas.strategy.risk import RiskEngine, _fmt_p
 from marketatlas.strategy.signals import TradeSignal
+from marketatlas.strategy.trade import TradeCandidate
 
 pytestmark = pytest.mark.tier1
 
@@ -351,6 +352,23 @@ class TestRiskEngine:
             _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
         )
         assert candidate is not None
+
+    def test_stop_width_mult_scales_geometry_preserves_rr(self) -> None:
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        base = RiskEngine(slippage_pct=0.0)
+        tight = RiskEngine(slippage_pct=0.0, stop_width_mult=0.5)
+        facts = _facts(atr=_atr_fact(2.0), sr=_sr_fact(()))
+        cb, _ = base.evaluate(_bullish_signal(), facts, view)
+        ct, ev = tight.evaluate(_bullish_signal(), facts, view)
+        assert cb is not None
+        assert ct is not None
+        assert abs(ct.entry - ct.stop) == pytest.approx(abs(cb.entry - cb.stop) * 0.5, rel=1e-9)
+        assert ct.size == pytest.approx(cb.size * 2.0, rel=1e-9)
+        assert ct.risk_amount == cb.risk_amount
+        assert ct.rr_ratio == cb.rr_ratio >= 1.0
+        assert any("Stop width" in e.text for e in ev)
 
     def test_no_valid_rr_rejects(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
@@ -1133,3 +1151,67 @@ class TestRiskEngine:
         )
         assert candidate is None
         assert any("no S/R anchor" in e.text for e in evidence)
+
+
+class TestExitPlanBuilding:
+    def _build(self, **kwargs: object) -> tuple[TradeCandidate | None, tuple[EvidenceEntry, ...]]:
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0, **kwargs)  # type: ignore[arg-type]
+        return engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
+        )
+
+    def test_no_exit_plan_by_default(self) -> None:
+        candidate, _evidence = self._build()
+        assert candidate is not None
+        assert candidate.exit_plan is None
+
+    def test_exit_plan_absent_when_fraction_zero(self) -> None:
+        candidate, _evidence = self._build(
+            runner_target_rr=2.0, trailing_stop_rr=0.5
+        )
+        assert candidate is not None
+        assert candidate.exit_plan is None
+
+    def test_exit_plan_built_when_fraction_set(self) -> None:
+        candidate, evidence = self._build(
+            scale_out_fraction=0.5,
+            scale_out_rr=1.0,
+            breakeven_after_scale=True,
+            runner_target_rr=2.0,
+            trailing_stop_rr=0.5,
+        )
+        assert candidate is not None
+        plan = candidate.exit_plan
+        assert plan is not None
+        assert plan.enabled is True
+        assert plan.scale_out_fraction == 0.5
+        assert plan.scale_out_rr == 1.0
+        assert plan.breakeven_after_scale is True
+        assert plan.runner_target_rr == 2.0
+        assert plan.trailing_stop_rr == 0.5
+        assert any("Exit plan" in e.text for e in evidence)
+
+    def test_exit_plan_fraction_clamped(self) -> None:
+        candidate, _evidence = self._build(scale_out_fraction=1.5)
+        assert candidate is not None
+        assert candidate.exit_plan is not None
+        assert candidate.exit_plan.scale_out_fraction < 1.0
+
+    def test_ratchet_plan_built_without_fraction(self) -> None:
+        candidate, evidence = self._build(breakeven_at_rr=0.25)
+        assert candidate is not None
+        plan = candidate.exit_plan
+        assert plan is not None
+        assert plan.enabled is True
+        assert plan.scale_out_fraction == 0.0
+        assert plan.breakeven_at_rr == 0.25
+        assert any("ratchets to breakeven" in e.text for e in evidence)
+
+    def test_ratchet_rr_clamped_negative(self) -> None:
+        candidate, _evidence = self._build(breakeven_at_rr=-0.5)
+        assert candidate is not None
+        plan = candidate.exit_plan
+        assert plan is None or plan.breakeven_at_rr == 0.0

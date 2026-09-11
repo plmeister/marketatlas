@@ -16,7 +16,7 @@ from marketatlas.facts.structural import (
     TrendDirection,
 )
 from marketatlas.strategy.signals import TradeSignal, resolve_fact_key
-from marketatlas.strategy.trade import TradeCandidate
+from marketatlas.strategy.trade import ExitPlan, TradeCandidate
 
 
 def _fmt_p(value: float) -> str:
@@ -50,11 +50,18 @@ class RiskEngine:
         avoid_srxing: bool = True,
         anchor_sr: bool = False,
         max_anchor_atr: float = 1.0,
+        scale_out_fraction: float = 0.0,
+        scale_out_rr: float = 1.0,
+        breakeven_after_scale: bool = True,
+        runner_target_rr: float = 0.0,
+        trailing_stop_rr: float = 0.0,
+        breakeven_at_rr: float = 0.0,
         size_mode: str = "fixed",
         min_spacing_stop_atr: float = 1.0,
         min_spacing_stop_gap: float = 0.5,
         min_spacing_target_gap: float = 1.0,
         slippage_pct: float = 0.1,
+        stop_width_mult: float = 1.0,
         atr_key: str = "atr_14",
         sr_key: str = "sr",
         swing_key: str = "swing",
@@ -78,11 +85,18 @@ class RiskEngine:
         self._avoid_srxing = avoid_srxing
         self._anchor_sr = anchor_sr
         self._max_anchor_atr = max_anchor_atr
+        self._scale_out_fraction = min(max(scale_out_fraction, 0.0), 0.99)
+        self._scale_out_rr = max(scale_out_rr, 1e-9)
+        self._breakeven_after_scale = breakeven_after_scale
+        self._runner_target_rr = max(runner_target_rr, 0.0)
+        self._trailing_stop_rr = max(trailing_stop_rr, 0.0)
+        self._breakeven_at_rr = max(breakeven_at_rr, 0.0)
         self._size_mode = size_mode
         self._min_spacing_stop_atr = min_spacing_stop_atr
         self._min_spacing_stop_gap = min_spacing_stop_gap
         self._min_spacing_target_gap = min_spacing_target_gap
         self._slippage_pct = slippage_pct
+        self._stop_width_mult = min(max(stop_width_mult, 0.05), 5.0)
         self._swing_buffer_atr = swing_buffer_atr
         self._sr_buffer_atr = sr_buffer_atr
         self._entry_buffer_atr = entry_buffer_atr
@@ -274,6 +288,17 @@ class RiskEngine:
             stop = stop_anchor - self._swing_buffer_atr * atr_val
         else:
             stop = stop_anchor + self._swing_buffer_atr * atr_val
+
+        # Geometry scaling at fixed RR (target stays >= 1R): shrink or widen the
+        # whole envelope by tightening both stop and stop_distance proportionally.
+        # Size recomputes from stop_distance, so $ risk at risk_pct is preserved.
+        if self._stop_width_mult != 1.0:
+            raw_sd = abs(entry - stop)
+            if raw_sd > 0:
+                if signal.direction == TrendDirection.BULLISH:
+                    stop = entry - raw_sd * self._stop_width_mult
+                else:
+                    stop = entry + raw_sd * self._stop_width_mult
 
         stop_distance = abs(entry - stop)
         if stop_distance <= 0:
@@ -504,6 +529,52 @@ class RiskEngine:
                 ),
             )
 
+        if self._stop_width_mult != 1.0:
+            evidence.append(
+                EvidenceEntry(
+                    text=f"Stop width: \u00d7{self._stop_width_mult:g} (RR preserved)",
+                    level=EvidenceLevel.INFO,
+                    source="RiskEngine",
+                ),
+            )
+
+        exit_plan: ExitPlan | None = None
+        if self._scale_out_fraction > 0 or self._breakeven_at_rr > 0:
+            exit_plan = ExitPlan(
+                scale_out_fraction=self._scale_out_fraction,
+                scale_out_rr=self._scale_out_rr,
+                breakeven_after_scale=self._breakeven_after_scale,
+                runner_target_rr=self._runner_target_rr,
+                trailing_stop_rr=self._trailing_stop_rr,
+                breakeven_at_rr=self._breakeven_at_rr,
+            )
+            if self._breakeven_at_rr > 0 and self._scale_out_fraction <= 0:
+                evidence.append(
+                    EvidenceEntry(
+                        text=(
+                            f"Exit plan: stop ratchets to breakeven once price "
+                            f"reaches {self._breakeven_at_rr:.2f} R; target unchanged "
+                            f"(submitted RR {self._min_rr:.1f})"
+                        ),
+                        level=EvidenceLevel.INFO,
+                        source="RiskEngine",
+                    ),
+                )
+            else:
+                evidence.append(
+                    EvidenceEntry(
+                        text=(
+                            f"Exit plan: scale out {self._scale_out_fraction:.0%} at "
+                            f"{self._scale_out_rr:.1f}R; breakeven "
+                            f"{'on' if self._breakeven_after_scale else 'off'}; "
+                            f"trail {self._trailing_stop_rr:.1f}R; "
+                            f"runner target {self._runner_target_rr:.1f}R"
+                        ),
+                        level=EvidenceLevel.INFO,
+                        source="RiskEngine",
+                    ),
+                )
+
         return TradeCandidate(
             direction=signal.direction,
             entry=entry,
@@ -517,6 +588,7 @@ class RiskEngine:
             source=signal.source,
             evidence=tuple(evidence),
             min_rr=self._min_rr,
+            exit_plan=exit_plan,
         ), tuple(evidence)
 
     def _spacing_candidate(

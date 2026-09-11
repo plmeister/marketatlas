@@ -8,7 +8,7 @@ from marketatlas.data.types import Candle
 from marketatlas.facts.structural import TrendDirection
 from marketatlas.strategy.ledger import TradeLedger
 from marketatlas.strategy.signals import TradeSignal
-from marketatlas.strategy.trade import TradeCandidate
+from marketatlas.strategy.trade import ExitPlan, TradeCandidate
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,26 @@ class _PendingOrder:
     source: str
     instrument: str
     timestamp: datetime
+
+
+@dataclass
+class _ExitState:
+    """Mutable partial-exit bookkeeping for one open position.
+
+    Only populated when the candidate carries an enabled ``ExitPlan``. The
+    frozen ``TradeCandidate``/``TradeOutcome`` records keep the reported math
+    pure; this object owns the scaled-out size, banked P&L, and runner stop
+    geometry while the position is live.
+    """
+
+    plan: ExitPlan | None = None
+    scaled_out: bool = False
+    remaining_fraction: float = 1.0
+    realized_pnl: float = 0.0
+    breakeven_active: bool = False
+    trail_stop: float | None = None
+    runner_target: float | None = None
+    extreme: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -48,6 +68,7 @@ class TradeBook:
         self._trades: list[TradeOutcome] = []
         self._open_trades: dict[str, TradeOutcome] = {}
         self._pending: dict[str, _PendingOrder] = {}
+        self._exit_states: dict[str, _ExitState] = {}
 
     @property
     def balance(self) -> float:
@@ -322,6 +343,12 @@ class TradeBook:
             pnl=None,
             result=None,
         )
+        plan = (
+            candidate.exit_plan
+            if candidate.exit_plan is not None and candidate.exit_plan.enabled
+            else None
+        )
+        self._exit_states[instrument] = _ExitState(plan=plan)
         del self._pending[instrument]
 
     def close_trade(
@@ -331,10 +358,14 @@ class TradeBook:
         if trade is None:
             return
         c = trade.candidate
+        st = self._exit_states.get(instrument)
+        size = c.size * (st.remaining_fraction if st is not None else 1.0)
         if c.direction == TrendDirection.BULLISH:
-            pnl = (exit_price - c.entry) * c.size
+            pnl = (exit_price - c.entry) * size
         else:
-            pnl = (c.entry - exit_price) * c.size
+            pnl = (c.entry - exit_price) * size
+        if st is not None:
+            pnl += st.realized_pnl
 
         if pnl > 0:
             result = "win"
@@ -356,6 +387,7 @@ class TradeBook:
         )
         self._trades.append(closed)
         self._ledger.apply(pnl)
+        self._exit_states.pop(instrument, None)
         del self._open_trades[instrument]
 
     def resolve_at_cursor(
@@ -370,29 +402,187 @@ class TradeBook:
         if open_trade is None:
             return
         c = open_trade.candidate
+        st = self._exit_states.get(instrument)
+        plan = st.plan if st is not None else None
+        assert plan is None or st is not None
 
-        # Stop/target are checked before the max-hold expiry below so a trade
-        # that touches either on the boundary candle realizes that outcome
-        # instead of being cancelled at pnl 0 (backlog 104 — AUDJPY 2026-01-29
-        # hit target on day 10 but was recorded cancelled).
-        if c.direction == TrendDirection.BULLISH:
-            if candle.low <= c.stop:
-                self.close_trade(c.stop, candle.timestamp, instrument)
-                return
-            if candle.high >= c.target:
-                self.close_trade(c.target, candle.timestamp, instrument)
+        if plan is not None:
+            assert st is not None
+            if plan.scale_out_fraction > 0:
+                self._resolve_scaled(candle, open_trade, st)
+            elif plan.breakeven_at_rr > 0:
+                self._resolve_ratchet(candle, open_trade, st, plan)
+            if instrument not in self._open_trades:
                 return
         else:
-            if candle.high >= c.stop:
-                self.close_trade(c.stop, candle.timestamp, instrument)
-                return
-            if candle.low <= c.target:
-                self.close_trade(c.target, candle.timestamp, instrument)
-                return
+            # Stop/target are checked before the max-hold expiry below so a
+            # trade that touches either on the boundary candle realizes that
+            # outcome instead of being cancelled at pnl 0 (backlog 104 —
+            # AUDJPY 2026-01-29 hit target on day 10 but was recorded
+            # cancelled).
+            if c.direction == TrendDirection.BULLISH:
+                if candle.low <= c.stop:
+                    self.close_trade(c.stop, candle.timestamp, instrument)
+                    return
+                if candle.high >= c.target:
+                    self.close_trade(c.target, candle.timestamp, instrument)
+                    return
+            else:
+                if candle.high >= c.stop:
+                    self.close_trade(c.stop, candle.timestamp, instrument)
+                    return
+                if candle.low <= c.target:
+                    self.close_trade(c.target, candle.timestamp, instrument)
+                    return
 
         days_held = (candle.timestamp - open_trade.entry_timestamp).days
         if days_held >= max_hold_days:
-            self._cancel_open(timestamp=candle.timestamp, instrument=instrument)
+            if st is not None and st.scaled_out:
+                # Remainder is live and already profitable; a synthetic pnl-0
+                # cancel would throw away banked + open runner profit. Close at
+                # the candle's market price instead (real exit).
+                self.close_trade(candle.close, candle.timestamp, instrument)
+            else:
+                self._cancel_open(timestamp=candle.timestamp, instrument=instrument)
+
+    def _resolve_ratchet(
+        self, candle: Candle, trade: TradeOutcome, st: _ExitState, plan: ExitPlan
+    ) -> None:
+        """Resolve a breakeven-ratchet carry (no partial fills).
+
+        While unarmed the original stop plus the submitted target govern.
+        Once price trades through ``breakeven_at_rr`` of the original stop
+        distance, the stop ratchets to entry — a stop-modification order, not
+        a position split. Any later adverse retracement exits at breakeven
+        (~0R) instead of the original -1R stop.
+        """
+        c = trade.candidate
+        bull = c.direction == TrendDirection.BULLISH
+        stop_distance = abs(c.entry - c.stop)
+        active_stop = c.entry if st.breakeven_active else c.stop
+        if (bull and candle.low <= active_stop) or (not bull and candle.high >= active_stop):
+            self.close_trade(active_stop, candle.timestamp, trade.instrument)
+            return
+        if not st.breakeven_active:
+            if bull:
+                armed = candle.high >= c.entry + plan.breakeven_at_rr * stop_distance
+            else:
+                armed = candle.low <= c.entry - plan.breakeven_at_rr * stop_distance
+            if armed:
+                st.breakeven_active = True
+        if (bull and candle.high >= c.target) or (not bull and candle.low <= c.target):
+            self.close_trade(c.target, candle.timestamp, trade.instrument)
+
+    def _resolve_scaled(
+        self, candle: Candle, trade: TradeOutcome, st: _ExitState
+    ) -> None:
+        """Resolve a carry that has an enabled ExitPlan.
+
+        Pre-scale: the original stop governs; once price reaches the scale-R
+        level the plan banks a fraction, moves the remainder to a breakeven/
+        trailing stop, and lets it chase the runner target. A price level is
+        scaled only from the first touch (R in units of the original stop
+        distance); later touches on later trades re-scale independently.
+        """
+        assert st.plan is not None
+        c = trade.candidate
+        bull = c.direction == TrendDirection.BULLISH
+        stop_distance = abs(c.entry - c.stop)
+
+        if not st.scaled_out:
+            if (bull and candle.low <= c.stop) or (not bull and candle.high >= c.stop):
+                self.close_trade(c.stop, candle.timestamp, trade.instrument)
+                return
+            scale_price = (
+                c.entry + st.plan.scale_out_rr * stop_distance
+                if bull
+                else c.entry - st.plan.scale_out_rr * stop_distance
+            )
+            triggered = (bull and candle.high >= scale_price) or (
+                not bull and candle.low <= scale_price
+            )
+            if not triggered:
+                return
+            self._apply_scale_out(trade.instrument, scale_price, st)
+
+        self._update_trail(candle, st, bull, stop_distance)
+        runner_stop = self._runner_stop_price(c, st, bull)
+        if runner_stop is not None:
+            if (bull and candle.low <= runner_stop) or (
+                not bull and candle.high >= runner_stop
+            ):
+                self.close_trade(runner_stop, candle.timestamp, trade.instrument)
+                return
+        if st.runner_target is not None:
+            if (bull and candle.high >= st.runner_target) or (
+                not bull and candle.low <= st.runner_target
+            ):
+                self.close_trade(st.runner_target, candle.timestamp, trade.instrument)
+                return
+
+    def _apply_scale_out(
+        self, instrument: str, scale_price: float, st: _ExitState
+    ) -> None:
+        """Bank a fraction of the position at ``scale_price`` and arm runner exits."""
+        assert st.plan is not None
+        trade = self._open_trades[instrument]
+        c = trade.candidate
+        bull = c.direction == TrendDirection.BULLISH
+        banked = (
+            (scale_price - c.entry) if bull else (c.entry - scale_price)
+        ) * c.size * st.plan.scale_out_fraction
+        st.realized_pnl = banked
+        st.remaining_fraction = 1.0 - st.plan.scale_out_fraction
+        st.scaled_out = True
+        stop_distance = abs(c.entry - c.stop)
+        if st.plan.breakeven_after_scale:
+            st.breakeven_active = True
+        if st.plan.trailing_stop_rr > 0:
+            st.extreme = scale_price
+            st.trail_stop = (
+                scale_price - st.plan.trailing_stop_rr * stop_distance
+                if bull
+                else scale_price + st.plan.trailing_stop_rr * stop_distance
+            )
+        if st.plan.runner_target_rr > 0:
+            st.runner_target = (
+                c.entry + st.plan.runner_target_rr * stop_distance
+                if bull
+                else c.entry - st.plan.runner_target_rr * stop_distance
+            )
+
+    def _update_trail(
+        self, candle: Candle, st: _ExitState, bull: bool, stop_distance: float
+    ) -> None:
+        """Ratchet the trailing stop against the newest runner extreme."""
+        if st.plan is None or st.plan.trailing_stop_rr <= 0:
+            return
+        extreme = max(st.extreme, candle.high) if bull else min(st.extreme, candle.low)
+        st.extreme = extreme
+        new_stop = (
+            extreme - st.plan.trailing_stop_rr * stop_distance
+            if bull
+            else extreme + st.plan.trailing_stop_rr * stop_distance
+        )
+        if bull:
+            if st.trail_stop is None or new_stop > st.trail_stop:
+                st.trail_stop = new_stop
+        else:
+            if st.trail_stop is None or new_stop < st.trail_stop:
+                st.trail_stop = new_stop
+
+    def _runner_stop_price(
+        self, c: TradeCandidate, st: _ExitState, bull: bool
+    ) -> float | None:
+        """Active runner stop: trailing (tightest) else breakeven else None."""
+        if st.trail_stop is not None:
+            if st.breakeven_active:
+                be = c.entry
+                return max(be, st.trail_stop) if bull else min(be, st.trail_stop)
+            return st.trail_stop
+        if st.breakeven_active:
+            return c.entry
+        return None
 
     def _cancel_pending(self, candle: Candle, instrument: str = "") -> None:
         """Drop a pending order that never reached its entry within max_hold_days.
@@ -439,6 +629,7 @@ class TradeBook:
             result="cancelled",
         )
         self._trades.append(cancelled)
+        self._exit_states.pop(instrument, None)
         del self._open_trades[instrument]
 
     def filtered_by_instrument(self, canonical: str) -> TradeBook:

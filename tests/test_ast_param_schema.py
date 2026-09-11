@@ -163,6 +163,17 @@ class TestDefaultRegistrySchemas:
         assert "max_anchor_atr" in risk
         assert risk["max_anchor_atr"] is float
 
+    def test_manage_risk_has_de_risk_exit_schema(self) -> None:
+        r = create_default_registry()
+        risk = {s.name: s.expected_type for s in r.param_schema("manage_risk") or ()}
+        assert risk["scale_out_fraction"] is float
+        assert risk["scale_out_rr"] is float
+        assert risk["runner_target_rr"] is float
+        assert risk["trailing_stop_rr"] is float
+        assert risk["breakeven_after_scale"] is bool
+        assert risk["breakeven_at_rr"] is float
+        assert risk["stop_width_mult"] is float
+
 
 def _ema_analysis(**params: object) -> Analysis:
     provider = Provider(name="ema", capability="ema", category="analyzer", impl="EMAAnalyzer")
