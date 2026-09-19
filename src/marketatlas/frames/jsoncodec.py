@@ -133,14 +133,18 @@ def _candle_to_dict(candle: Any) -> dict[str, Any]:
 
 def _trade_to_dict(trade: Any) -> dict[str, Any]:
     c = trade.candidate
+    exit_ts = trade.exit_timestamp.isoformat() if trade.exit_timestamp is not None else None
+    reason = trade.exit_reason.value if trade.exit_reason is not None else None
     return {
         "submit_ts": trade.submit_time.isoformat(),
         "entry_ts": trade.entry_timestamp.isoformat(),
+        "exit_ts": exit_ts,
         "entry": c.entry,
         "stop": c.stop,
         "target": c.target,
         "direction": c.direction.value,
         "result": trade.result,
+        "exit_reason": reason,
         "pnl": trade.pnl,
         "rr_ratio": c.rr_ratio,
         "risk_amount": c.risk_amount,

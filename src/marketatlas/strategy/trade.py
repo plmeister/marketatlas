@@ -1,9 +1,32 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
 from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.facts.structural import TrendDirection
+
+
+class ExitReason(str, Enum):
+    """How a closed trade left the book (backlog 098).
+
+    Values are the stable string forms stored in serialized output:
+
+    * ``stop``    — protective stop (original, breakeven-ratcheted, or trailing) hit.
+    * ``target``  — take-profit target hit.
+    * ``timeout`` — time-driven close: max-hold expiry, or forced flatten at
+      end-of-data while still open.
+    * ``cancel``  — never filled / broker cancelled (open position recorded at
+      0 P&L, or pending order dropped).
+
+    ``reversal`` is reserved for a future signal-reversal exit.
+    """
+
+    STOP = "stop"
+    TARGET = "target"
+    TIMEOUT = "timeout"
+    CANCEL = "cancel"
+    REVERSAL = "reversal"
 
 
 @dataclass(frozen=True)

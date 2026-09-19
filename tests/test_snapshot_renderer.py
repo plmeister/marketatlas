@@ -195,6 +195,33 @@ class TestSnapshotRenderer:
         assert len(pois) == 1
         assert pois[0]["symbol"] == "TEST"
 
+    def test_encode_trade_carries_exit_reason_and_ts(self):
+        from datetime import UTC, datetime, timedelta
+
+        from marketatlas.frames.jsoncodec import encode_analysis_output
+        from marketatlas.strategy.trade import ExitReason
+
+        poi = datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=120)
+        trade = _mk_trade(poi)
+        trade = trade.__class__(
+            submit_time=trade.submit_time,
+            entry_timestamp=trade.entry_timestamp,
+            exit_timestamp=trade.exit_timestamp,
+            candidate=trade.candidate,
+            signal=trade.signal,
+            source_strategy=trade.source_strategy,
+            instrument=trade.instrument,
+            pnl=trade.pnl,
+            result=trade.result,
+            exit_reason=ExitReason.STOP,
+        )
+        doc = encode_analysis_output(_with_trades(_sample_output(poi), trade))
+        row = doc["trades"][0]
+        exit_ts = poi + timedelta(days=3)
+        assert row["exit_reason"] == "stop"
+        assert row["exit_ts"] == exit_ts.isoformat()
+        assert row["r_multiple"] == pytest.approx(123.4 / 10.0)
+
     def test_locate_pois_finds_pattern_and_rejection(self):
         from datetime import UTC, datetime, timedelta
 

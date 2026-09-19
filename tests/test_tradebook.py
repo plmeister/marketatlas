@@ -7,7 +7,7 @@ import pytest
 from marketatlas.data.types import Candle
 from marketatlas.facts.structural import TrendDirection
 from marketatlas.strategy.signals import TradeSignal
-from marketatlas.strategy.trade import ExitPlan, TradeCandidate
+from marketatlas.strategy.trade import ExitPlan, ExitReason, TradeCandidate
 from marketatlas.strategy.tradebook import TradeBook
 
 pytestmark = pytest.mark.tier1
@@ -118,6 +118,7 @@ class TestTradeResolution:
         assert tb.has_no_open_trade is True
         assert tb.win_count == 1
         assert tb.closed_count == 1
+        assert tb.trades[-1].exit_reason is ExitReason.TARGET
         expected_pnl = (115.0 - 100.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
@@ -134,6 +135,7 @@ class TestTradeResolution:
 
         assert tb.has_no_open_trade is True
         assert tb.loss_count == 1
+        assert tb.trades[-1].exit_reason is ExitReason.STOP
         expected_pnl = (95.0 - 100.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
@@ -155,6 +157,7 @@ class TestTradeResolution:
         tb.resolve_at_cursor(hit_target)
 
         assert tb.win_count == 1
+        assert tb.trades[-1].exit_reason is ExitReason.TARGET
         expected_pnl = (100.0 - 85.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
@@ -177,6 +180,7 @@ class TestTradeResolution:
 
         assert tb.has_no_open_trade is True
         assert tb.loss_count == 1
+        assert tb.trades[-1].exit_reason is ExitReason.STOP
         expected_pnl = (100.0 - 105.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
@@ -195,6 +199,7 @@ class TestTradeResolution:
         assert tb.has_no_open_trade is True
         assert tb.trades[-1].result == "cancelled"
         assert tb.trades[-1].pnl == 0.0
+        assert tb.trades[-1].exit_reason is ExitReason.TIMEOUT
         assert tb.total_pnl == 0.0
 
     def test_boundary_candle_target_hit_closes_win_not_cancel(self) -> None:
@@ -213,6 +218,7 @@ class TestTradeResolution:
 
         assert tb.has_no_open_trade is True
         assert tb.trades[-1].result == "win"
+        assert tb.trades[-1].exit_reason is ExitReason.TARGET
         expected_pnl = (115.0 - 100.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
@@ -231,6 +237,7 @@ class TestTradeResolution:
 
         assert tb.has_no_open_trade is True
         assert tb.trades[-1].result == "loss"
+        assert tb.trades[-1].exit_reason is ExitReason.STOP
         expected_pnl = (95.0 - 100.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
@@ -253,6 +260,7 @@ class TestTradeResolution:
 
         assert tb.has_no_open_trade is True
         assert tb.trades[-1].result == "win"
+        assert tb.trades[-1].exit_reason is ExitReason.TARGET
         expected_pnl = (100.0 - 85.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
@@ -282,6 +290,7 @@ class TestBreakevenCount:
 
         assert tb.breakeven_count == 1
         assert tb.total_pnl == pytest.approx(0.0)
+        assert tb.trades[-1].exit_reason is None
 
     def test_max_hold_cancels_not_breakeven(self) -> None:
         tb = TradeBook(initial_balance=1000.0)
@@ -295,6 +304,7 @@ class TestBreakevenCount:
         tb.resolve_at_cursor(still_open, max_hold_days=10)
 
         assert tb.trades[-1].result == "cancelled"
+        assert tb.trades[-1].exit_reason is ExitReason.TIMEOUT
         assert tb.breakeven_count == 0
 
 
@@ -829,6 +839,7 @@ class TestDeRiskExits:
         assert tb.win_count == 1
         assert tb.trades[0].pnl == pytest.approx(0.5)  # banked 0.5R, runner flat
         assert tb.trades[0].result == "win"
+        assert tb.trades[0].exit_reason is ExitReason.STOP
 
     def test_scale_out_then_runner_target_extends_win(self) -> None:
         tb, t0, _ = self._open(_plan(fraction=0.5, scale_rr=1.0, runner_rr=2.0))
@@ -837,12 +848,14 @@ class TestDeRiskExits:
         assert tb.win_count == 1
         # banked 0.5R + runner 0.1 size * 10 pts = 1.0R
         assert tb.trades[0].pnl == pytest.approx(1.5)
+        assert tb.trades[0].exit_reason is ExitReason.TARGET
 
     def test_stop_before_scale_out_is_full_loss(self) -> None:
         tb, t0, _ = self._open(_plan())
         tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=101.0, lo=94.0))
         assert tb.loss_count == 1
         assert tb.trades[0].pnl == pytest.approx(-1.0)
+        assert tb.trades[0].exit_reason is ExitReason.STOP
 
     def test_unscaled_max_hold_still_cancels_at_zero(self) -> None:
         tb, t0, _ = self._open(_plan(scale_rr=3.0))
@@ -851,6 +864,7 @@ class TestDeRiskExits:
         closed = tb.trades[0]
         assert closed.result == "cancelled"
         assert closed.pnl == pytest.approx(0.0)
+        assert closed.exit_reason is ExitReason.TIMEOUT
 
     def test_ratchet_arms_then_breakeven_instead_of_loss(self) -> None:
         tb, t0, _ = self._open(_ratchet_plan())
@@ -861,6 +875,7 @@ class TestDeRiskExits:
         assert tb.breakeven_count == 1
         assert closed.pnl == pytest.approx(0.0)
         assert closed.result == "breakeven"
+        assert closed.exit_reason is ExitReason.STOP
 
     def test_ratchet_arms_then_wins_unchanged(self) -> None:
         tb, t0, _ = self._open(_ratchet_plan())
@@ -869,6 +884,7 @@ class TestDeRiskExits:
         closed = tb.trades[0]
         assert tb.win_count == 1
         assert closed.pnl == pytest.approx(3.0)
+        assert closed.exit_reason is ExitReason.TARGET
 
     def test_ratchet_stop_before_arm_is_full_loss(self) -> None:
         tb, t0, _ = self._open(_ratchet_plan())
@@ -876,6 +892,7 @@ class TestDeRiskExits:
         closed = tb.trades[0]
         assert tb.loss_count == 1
         assert closed.pnl == pytest.approx(-1.0)
+        assert closed.exit_reason is ExitReason.STOP
 
     def test_ratchet_poor_man_stop_after_ratchet_is_zero(self) -> None:
         tb, t0, _ = self._open(_ratchet_plan(breakeven_rr=0.25))
@@ -897,6 +914,7 @@ class TestDeRiskExits:
         assert closed.result == "win"
         # banked 0.5 + runner 0.1 size * (103 - 100) = 0.3 -> 0.8
         assert closed.pnl == pytest.approx(0.8)
+        assert closed.exit_reason is ExitReason.TIMEOUT
 
     def test_bearish_scale_out_banks_partial(self) -> None:
         tb, t0, _ = self._open(_plan(), direction=TrendDirection.BEARISH)
@@ -956,3 +974,39 @@ class TestDeRiskExits:
         assert tb.trades[0].pnl == pytest.approx(3.0)
         assert tb.trades[0].result == "win"
         assert tb.avg_win_r == pytest.approx(3.0)
+
+
+class TestExitReasons:
+    """Exit-reason provenance (backlog 098): every close path records how the
+    trade left the book — stop/target/timeout/cancel — without disturbing the
+    existing result mapping (win/loss/breakeven/cancelled stay pnl-derived)."""
+
+    def test_pending_order_cancel_reason_cancel(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        c = _candidate(entry=100.0, stop=95.0, target=115.0)
+        tb.submit_order(c, _signal(), "s", t0)
+        # Entry never reached within max_hold_days -> pending dropped.
+        no_touch = _candle(t0 + timedelta(days=11), h=99.0, lo=97.0, c=98.0)
+        tb.resolve_at_cursor(no_touch, max_hold_days=10)
+        assert tb.has_no_open_trade is True
+        closed = tb.trades[-1]
+        assert closed.result == "cancelled"
+        assert closed.pnl == 0.0
+        assert closed.exit_reason is ExitReason.CANCEL
+
+    def test_close_trade_passthrough_reason(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1) - timedelta(days=1)
+        c = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
+        tb.submit_order(c, _signal(), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
+        close_ts = t0 + timedelta(days=2)
+        tb.close_trade(112.0, close_ts, "", ExitReason.TARGET)
+        closed = tb.trades[-1]
+        assert closed.result == "win"
+        assert closed.exit_reason is ExitReason.TARGET
+        assert closed.exit_timestamp == close_ts
+
+    def test_exit_reason_uniqueness(self) -> None:
+        assert len({r.value for r in ExitReason}) == len(ExitReason)

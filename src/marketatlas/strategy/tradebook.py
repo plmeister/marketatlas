@@ -8,7 +8,7 @@ from marketatlas.data.types import Candle
 from marketatlas.facts.structural import TrendDirection
 from marketatlas.strategy.ledger import TradeLedger
 from marketatlas.strategy.signals import TradeSignal
-from marketatlas.strategy.trade import ExitPlan, TradeCandidate
+from marketatlas.strategy.trade import ExitPlan, ExitReason, TradeCandidate
 
 
 @dataclass(frozen=True)
@@ -51,6 +51,7 @@ class TradeOutcome:
     instrument: str
     pnl: float | None
     result: str | None  # "win" / "loss" / "breakeven" / "cancelled" / None
+    exit_reason: ExitReason | None = None
 
 
 class TradeBook:
@@ -352,7 +353,11 @@ class TradeBook:
         del self._pending[instrument]
 
     def close_trade(
-        self, exit_price: float, timestamp: datetime, instrument: str = ""
+        self,
+        exit_price: float,
+        timestamp: datetime,
+        instrument: str = "",
+        reason: ExitReason | None = None,
     ) -> None:
         trade = self._open_trades.get(instrument)
         if trade is None:
@@ -384,6 +389,7 @@ class TradeBook:
             instrument=trade.instrument,
             pnl=pnl,
             result=result,
+            exit_reason=reason,
         )
         self._trades.append(closed)
         self._ledger.apply(pnl)
@@ -422,17 +428,17 @@ class TradeBook:
             # cancelled).
             if c.direction == TrendDirection.BULLISH:
                 if candle.low <= c.stop:
-                    self.close_trade(c.stop, candle.timestamp, instrument)
+                    self.close_trade(c.stop, candle.timestamp, instrument, ExitReason.STOP)
                     return
                 if candle.high >= c.target:
-                    self.close_trade(c.target, candle.timestamp, instrument)
+                    self.close_trade(c.target, candle.timestamp, instrument, ExitReason.TARGET)
                     return
             else:
                 if candle.high >= c.stop:
-                    self.close_trade(c.stop, candle.timestamp, instrument)
+                    self.close_trade(c.stop, candle.timestamp, instrument, ExitReason.STOP)
                     return
                 if candle.low <= c.target:
-                    self.close_trade(c.target, candle.timestamp, instrument)
+                    self.close_trade(c.target, candle.timestamp, instrument, ExitReason.TARGET)
                     return
 
         days_held = (candle.timestamp - open_trade.entry_timestamp).days
@@ -441,7 +447,7 @@ class TradeBook:
                 # Remainder is live and already profitable; a synthetic pnl-0
                 # cancel would throw away banked + open runner profit. Close at
                 # the candle's market price instead (real exit).
-                self.close_trade(candle.close, candle.timestamp, instrument)
+                self.close_trade(candle.close, candle.timestamp, instrument, ExitReason.TIMEOUT)
             else:
                 self._cancel_open(timestamp=candle.timestamp, instrument=instrument)
 
@@ -461,7 +467,7 @@ class TradeBook:
         stop_distance = abs(c.entry - c.stop)
         active_stop = c.entry if st.breakeven_active else c.stop
         if (bull and candle.low <= active_stop) or (not bull and candle.high >= active_stop):
-            self.close_trade(active_stop, candle.timestamp, trade.instrument)
+            self.close_trade(active_stop, candle.timestamp, trade.instrument, ExitReason.STOP)
             return
         if not st.breakeven_active:
             if bull:
@@ -471,7 +477,7 @@ class TradeBook:
             if armed:
                 st.breakeven_active = True
         if (bull and candle.high >= c.target) or (not bull and candle.low <= c.target):
-            self.close_trade(c.target, candle.timestamp, trade.instrument)
+            self.close_trade(c.target, candle.timestamp, trade.instrument, ExitReason.TARGET)
 
     def _resolve_scaled(
         self, candle: Candle, trade: TradeOutcome, st: _ExitState
@@ -491,7 +497,7 @@ class TradeBook:
 
         if not st.scaled_out:
             if (bull and candle.low <= c.stop) or (not bull and candle.high >= c.stop):
-                self.close_trade(c.stop, candle.timestamp, trade.instrument)
+                self.close_trade(c.stop, candle.timestamp, trade.instrument, ExitReason.STOP)
                 return
             scale_price = (
                 c.entry + st.plan.scale_out_rr * stop_distance
@@ -511,13 +517,17 @@ class TradeBook:
             if (bull and candle.low <= runner_stop) or (
                 not bull and candle.high >= runner_stop
             ):
-                self.close_trade(runner_stop, candle.timestamp, trade.instrument)
+                self.close_trade(
+                    runner_stop, candle.timestamp, trade.instrument, ExitReason.STOP
+                )
                 return
         if st.runner_target is not None:
             if (bull and candle.high >= st.runner_target) or (
                 not bull and candle.low <= st.runner_target
             ):
-                self.close_trade(st.runner_target, candle.timestamp, trade.instrument)
+                self.close_trade(
+                    st.runner_target, candle.timestamp, trade.instrument, ExitReason.TARGET
+                )
                 return
 
     def _apply_scale_out(
@@ -603,6 +613,7 @@ class TradeBook:
             instrument=pending.instrument,
             pnl=0.0,
             result="cancelled",
+            exit_reason=ExitReason.CANCEL,
         )
         self._trades.append(cancelled)
         del self._pending[instrument]
@@ -627,6 +638,7 @@ class TradeBook:
             instrument=trade.instrument,
             pnl=0.0,
             result="cancelled",
+            exit_reason=ExitReason.TIMEOUT,
         )
         self._trades.append(cancelled)
         self._exit_states.pop(instrument, None)

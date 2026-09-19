@@ -31,16 +31,20 @@ yet (downstream metrics are subsequent backlogs).
 ## Requirements
 
 ### Exit reason
-- [ ] Add a closed-exit-reason representation (enum or string constants):
+- [x] Add a closed-exit-reason representation (enum or string constants):
       `stop`, `target`, `timeout`, `cancel` (never filled / broker), and later
-      `reversal`. Document values.
-- [ ] Record reason on `TradeOutcome` (new field, default None for back-compat).
-- [ ] `resolve_at_cursor` passes through whether stop or target was hit.
-- [ ] `_cancel_open` (timeout) records `timeout`; `_cancel_pending` records
+      `reversal`. Document values. — `ExitReason` str-enum in `strategy/trade.py`.
+- [x] Record reason on `TradeOutcome` (new field, default None for back-compat).
+- [x] `resolve_at_cursor` passes through whether stop or target was hit.
+- [x] `_cancel_open` (timeout) records `timeout`; `_cancel_pending` records
       `cancel`; actual stop/target closes record their respective reason.
-- [ ] `close_trade` / close paths accept and store the reason.
-- [ ] Result mapping stays intact (win/loss/breakeven/cancelled derived from
+- [x] `close_trade` / close paths accept and store the reason. (End-of-run
+      force-flatten in `Backtester`/`PortfolioBacktester` records `timeout`.)
+- [x] Result mapping stays intact (win/loss/breakeven/cancelled derived from
       pnl + reason, not replaced by reason).
+- [x] JSON `_trade_to_dict` gains `exit_ts` + `exit_reason` (partially closes
+      the "enriched payload" grouping below; `size`/`risk_amount`/`r_multiple`
+      were already present).
 
 ### MFE / MAE
 - [ ] Add `mfe` / `mae` fields to `TradeOutcome` (in account currency).

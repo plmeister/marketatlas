@@ -13,6 +13,7 @@ from marketatlas.evidence.collector import collect_fact_evidence
 from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.frames.store import FrameStore
+from marketatlas.strategy.trade import ExitReason
 from marketatlas.strategy.tradebook import TradeBook
 
 if TYPE_CHECKING:
@@ -168,7 +169,9 @@ class PortfolioBacktester:
 
         for canonical in tradebook.open_instruments:
             store = self._store_by[canonical]
-            tradebook.close_trade(store[-1].close, store[-1].timestamp, canonical)
+            tradebook.close_trade(
+                store[-1].close, store[-1].timestamp, canonical, ExitReason.TIMEOUT
+            )
 
         return PortfolioBacktestResult(
             instruments=tuple(inst for inst, _ in self._pairs),

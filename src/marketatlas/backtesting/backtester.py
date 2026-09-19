@@ -13,6 +13,7 @@ from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.frames.store import FrameStore
 from marketatlas.strategy.risk import RiskEngine
+from marketatlas.strategy.trade import ExitReason
 from marketatlas.strategy.tradebook import TradeBook
 
 if TYPE_CHECKING:
@@ -140,6 +141,7 @@ class Backtester:
                 self._store[last_cursor].close,
                 self._store[last_cursor].timestamp,
                 symbol,
+                ExitReason.TIMEOUT,
             )
 
         return BacktestResult(
