@@ -18,6 +18,7 @@ from marketatlas.facts.structural import (
 )
 from marketatlas.strategy.risk import RiskEngine, _fmt_p
 from marketatlas.strategy.signals import TradeSignal
+from marketatlas.strategy.trade import TradeCandidate
 
 pytestmark = pytest.mark.tier1
 
@@ -266,6 +267,29 @@ class TestRiskEngine:
         assert c1 is not None and c2 is not None
         assert c2.size < c1.size
 
+    def test_risk_multiplier_scales_size(self) -> None:
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(risk_pct=1.0, slippage_pct=0.0)
+        base, _ = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view, balance=1000.0
+        )
+        weighted = TradeSignal(
+            direction=TrendDirection.BULLISH,
+            entry_zone=(99.0, 101.0),
+            confidence=0.7,
+            source="BreakoutSignal",
+            evidence=(),
+            risk_multiplier=2.0,
+        )
+        big, _ = engine.evaluate(
+            weighted, _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view, balance=1000.0
+        )
+        assert base is not None and big is not None
+        assert abs(base.risk_amount * 2.0 - big.risk_amount) < 0.01
+        assert big.size > base.size
+
     def test_slippage_evidence(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
         store = _make_store(candles)
@@ -328,6 +352,23 @@ class TestRiskEngine:
             _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
         )
         assert candidate is not None
+
+    def test_stop_width_mult_scales_geometry_preserves_rr(self) -> None:
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        base = RiskEngine(slippage_pct=0.0)
+        tight = RiskEngine(slippage_pct=0.0, stop_width_mult=0.5)
+        facts = _facts(atr=_atr_fact(2.0), sr=_sr_fact(()))
+        cb, _ = base.evaluate(_bullish_signal(), facts, view)
+        ct, ev = tight.evaluate(_bullish_signal(), facts, view)
+        assert cb is not None
+        assert ct is not None
+        assert abs(ct.entry - ct.stop) == pytest.approx(abs(cb.entry - cb.stop) * 0.5, rel=1e-9)
+        assert ct.size == pytest.approx(cb.size * 2.0, rel=1e-9)
+        assert ct.risk_amount == cb.risk_amount
+        assert ct.rr_ratio == cb.rr_ratio >= 1.0
+        assert any("Stop width" in e.text for e in ev)
 
     def test_no_valid_rr_rejects(self) -> None:
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
@@ -853,10 +894,74 @@ class TestRiskEngine:
         view = MarketView(store, cursor=4, window_size=4)
         engine = RiskEngine(anchor_sr=True, slippage_pct=0.0)
         candidate, evidence = engine.evaluate(
-            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
+            _bullish_signal(),
+            _facts(atr=_atr_fact(2.0), sr=_sr_fact(())),
+            view,
         )
         assert candidate is None
         assert any("no S/R anchor" in e.text for e in evidence)
+
+    def test_trend_eff_gate_disabled_by_default(self) -> None:
+        candles = [(100.0, 101.0, 99.0, 100.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0)
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(),
+            _facts(atr=_atr_fact(2.0), sr=_sr_fact(())),
+            view,
+        )
+        assert candidate is not None
+
+    def test_trend_eff_gate_rejects_flat_bull(self) -> None:
+        candles = [(100.0, 101.0, 99.0, 100.0, 1000.0)] * 80
+        store = _make_store(candles)
+        view = MarketView(store, cursor=79, window_size=79)
+        engine = RiskEngine(min_trend_eff=0.25, slippage_pct=0.0)
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(),
+            _facts(atr=_atr_fact(2.0), sr=_sr_fact(())),
+            view,
+        )
+        assert candidate is None
+        assert any("trend efficiency" in e.text for e in evidence)
+
+    def test_trend_eff_gate_passes_rising_bull(self) -> None:
+        candles = [(100.0 + i, 102.0 + i, 98.0 + i, 100.0 + i, 1000.0) for i in range(80)]
+        store = _make_store(candles)
+        view = MarketView(store, cursor=79, window_size=79)
+        engine = RiskEngine(min_trend_eff=0.25, slippage_pct=0.0)
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(),
+            _facts(atr=_atr_fact(2.0), sr=_sr_fact(())),
+            view,
+        )
+        assert candidate is not None
+
+    def test_trend_eff_gate_rejects_rising_bear(self) -> None:
+        candles = [(100.0 + i, 102.0 + i, 98.0 + i, 100.0 + i, 1000.0) for i in range(80)]
+        store = _make_store(candles)
+        view = MarketView(store, cursor=79, window_size=79)
+        engine = RiskEngine(min_trend_eff=0.25, slippage_pct=0.0)
+        candidate, evidence = engine.evaluate(
+            _bearish_signal(),
+            _facts(atr=_atr_fact(2.0), sr=_sr_fact(())),
+            view,
+        )
+        assert candidate is None
+        assert any("trend efficiency" in e.text for e in evidence)
+
+    def test_trend_eff_gate_skips_short_history(self) -> None:
+        candles = [(100.0 + i, 102.0 + i, 98.0 + i, 100.0 + i, 1000.0) for i in range(10)]
+        store = _make_store(candles)
+        view = MarketView(store, cursor=9, window_size=9)
+        engine = RiskEngine(min_trend_eff=0.25, trend_eff_lookback=63, slippage_pct=0.0)
+        candidate, _evidence = engine.evaluate(
+            _bullish_signal(),
+            _facts(atr=_atr_fact(2.0), sr=_sr_fact(())),
+            view,
+        )
+        assert candidate is not None
 
     def test_anchor_sr_rejects_level_too_far_beyond_target(self) -> None:
         """Resistance 14.6 ATR beyond target, window 1 ATR => reject."""
@@ -910,6 +1015,130 @@ class TestRiskEngine:
         assert candidate is None
         assert any("no S/R anchor" in e.text for e in evidence)
 
+    def test_fixed_mode_rejects_no_valid_rr(self) -> None:
+        """default size_mode=fixed keeps baseline: resistance blocks all rr targets."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=107.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is None
+        assert any("no valid RR" in e.text for e in evidence)
+
+    def test_spacing_mode_rescues_no_valid_rr(self) -> None:
+        """shrink stop until target clears resistance and gap gate passes."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(size_mode="spacing", min_rr=1.0, slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=107.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is not None
+        assert candidate.rr_ratio >= 1.0
+        assert candidate.stop > 97.4
+        assert any("spacing-aware" in e.text for e in evidence)
+
+    def test_spacing_target_gap_gate_default_on(self) -> None:
+        """resistance 0.8 ATR past target: default target_gap gate blocks rescue."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(size_mode="spacing", min_rr=1.0, slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=106.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is None
+        assert any("no valid RR" in e.text for e in evidence)
+
+    def test_spacing_target_gap_gate_off_rescues(self) -> None:
+        """disabling target_gap restores pre-gate rescue of the same setup."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(
+            size_mode="spacing", min_rr=1.0, min_spacing_target_gap=0.0, slippage_pct=0.0
+        )
+        sr = _sr_fact((SRLevel(price=106.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is not None
+        assert any("spacing-aware" in e.text for e in evidence)
+
+    def test_spacing_stop_gap_gate_blocks_support_parking(self) -> None:
+        """rescue stop landing 0.1 ATR above support is rejected (stop_gap gate)."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(size_mode="spacing", min_rr=1.0, slippage_pct=0.0)
+        sr = _sr_fact((SRLevel(price=100.0, strength=2, type="support"),))
+        reject, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert reject is None
+        assert any("breaks through" in e.text for e in evidence)
+
+    def test_spacing_stop_gap_gate_off_rescues(self) -> None:
+        """gates off: support 1 ATR below entry allows a stop above it."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(
+            size_mode="spacing",
+            min_spacing_stop_atr=0.0,
+            min_spacing_stop_gap=0.0,
+            min_spacing_target_gap=0.0,
+            slippage_pct=0.0,
+        )
+        sr = _sr_fact((SRLevel(price=99.0, strength=2, type="support"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is not None
+        assert candidate.stop > 99.0
+        assert any("spacing-aware" in e.text for e in evidence)
+
+    def test_spacing_mode_preserves_anchor_gate(self) -> None:
+        """anchor_sr still enforced on spacing geometry: far-only resistance rejects."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(
+            size_mode="spacing", anchor_sr=True, max_anchor_atr=1.0, slippage_pct=0.0
+        )
+        sr = _sr_fact((SRLevel(price=130.0, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is None
+        assert any("no S/R anchor" in e.text for e in evidence)
+
+    def test_spacing_mode_anchor_rescue(self) -> None:
+        """shrink target into anchor window: resistance 0.5 ATR beyond admits."""
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(
+            size_mode="spacing",
+            anchor_sr=True,
+            max_anchor_atr=1.0,
+            min_rr=1.0,
+            min_spacing_target_gap=0.0,
+            slippage_pct=0.0,
+        )
+        sr = _sr_fact((SRLevel(price=105.4, strength=2, type="resistance"),))
+        candidate, evidence = engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=sr), view
+        )
+        assert candidate is not None
+        assert any("S/R anchor" in e.text for e in evidence)
+
     def test_anchor_sr_max_atr_controls_window(self) -> None:
         """Narrow window (0.5 ATR) rejects a level 0.9 ATR beyond target."""
         candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
@@ -922,3 +1151,67 @@ class TestRiskEngine:
         )
         assert candidate is None
         assert any("no S/R anchor" in e.text for e in evidence)
+
+
+class TestExitPlanBuilding:
+    def _build(self, **kwargs: object) -> tuple[TradeCandidate | None, tuple[EvidenceEntry, ...]]:
+        candles = [(100.0, 105.0, 95.0, 102.0, 1000.0)] * 5
+        store = _make_store(candles)
+        view = MarketView(store, cursor=4, window_size=4)
+        engine = RiskEngine(slippage_pct=0.0, **kwargs)  # type: ignore[arg-type]
+        return engine.evaluate(
+            _bullish_signal(), _facts(atr=_atr_fact(2.0), sr=_sr_fact(())), view
+        )
+
+    def test_no_exit_plan_by_default(self) -> None:
+        candidate, _evidence = self._build()
+        assert candidate is not None
+        assert candidate.exit_plan is None
+
+    def test_exit_plan_absent_when_fraction_zero(self) -> None:
+        candidate, _evidence = self._build(
+            runner_target_rr=2.0, trailing_stop_rr=0.5
+        )
+        assert candidate is not None
+        assert candidate.exit_plan is None
+
+    def test_exit_plan_built_when_fraction_set(self) -> None:
+        candidate, evidence = self._build(
+            scale_out_fraction=0.5,
+            scale_out_rr=1.0,
+            breakeven_after_scale=True,
+            runner_target_rr=2.0,
+            trailing_stop_rr=0.5,
+        )
+        assert candidate is not None
+        plan = candidate.exit_plan
+        assert plan is not None
+        assert plan.enabled is True
+        assert plan.scale_out_fraction == 0.5
+        assert plan.scale_out_rr == 1.0
+        assert plan.breakeven_after_scale is True
+        assert plan.runner_target_rr == 2.0
+        assert plan.trailing_stop_rr == 0.5
+        assert any("Exit plan" in e.text for e in evidence)
+
+    def test_exit_plan_fraction_clamped(self) -> None:
+        candidate, _evidence = self._build(scale_out_fraction=1.5)
+        assert candidate is not None
+        assert candidate.exit_plan is not None
+        assert candidate.exit_plan.scale_out_fraction < 1.0
+
+    def test_ratchet_plan_built_without_fraction(self) -> None:
+        candidate, evidence = self._build(breakeven_at_rr=0.25)
+        assert candidate is not None
+        plan = candidate.exit_plan
+        assert plan is not None
+        assert plan.enabled is True
+        assert plan.scale_out_fraction == 0.0
+        assert plan.breakeven_at_rr == 0.25
+        assert any("ratchets to breakeven" in e.text for e in evidence)
+
+    def test_ratchet_rr_clamped_negative(self) -> None:
+        candidate, _evidence = self._build(breakeven_at_rr=-0.5)
+        assert candidate is not None
+        plan = candidate.exit_plan
+        assert plan is None or plan.breakeven_at_rr == 0.0

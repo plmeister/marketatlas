@@ -237,6 +237,14 @@ def _extract_trades_json(trades: tuple) -> list[dict[str, Any]]:
                 "target": c.target,
                 "direction": c.direction.value,
                 "result": trade.result,
+                "exit_reason": (
+                    trade.exit_reason.value if trade.exit_reason is not None else None
+                ),
+                "mfe": trade.mfe,
+                "mae": trade.mae,
+                "mfe_r": trade.mfe_r,
+                "mae_r": trade.mae_r,
+                "context": trade.context,
                 "pnl": trade.pnl,
                 "source": trade.source_strategy,
                 "instrument": trade.instrument,

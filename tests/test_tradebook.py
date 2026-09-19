@@ -7,7 +7,7 @@ import pytest
 from marketatlas.data.types import Candle
 from marketatlas.facts.structural import TrendDirection
 from marketatlas.strategy.signals import TradeSignal
-from marketatlas.strategy.trade import TradeCandidate
+from marketatlas.strategy.trade import ExitPlan, ExitReason, TradeCandidate
 from marketatlas.strategy.tradebook import TradeBook
 
 pytestmark = pytest.mark.tier1
@@ -37,6 +37,7 @@ def _candidate(
     stop: float = 95.0,
     target: float = 115.0,
     size: float = 0.2,
+    exit_plan: ExitPlan | None = None,
 ) -> TradeCandidate:
         risk_amount = abs(entry - stop) * size
         reward_amount = abs(target - entry) * size
@@ -53,6 +54,7 @@ def _candidate(
             slippage_pct=0.0,
             source="test",
             evidence=(),
+            exit_plan=exit_plan,
         )
 
 
@@ -116,6 +118,7 @@ class TestTradeResolution:
         assert tb.has_no_open_trade is True
         assert tb.win_count == 1
         assert tb.closed_count == 1
+        assert tb.trades[-1].exit_reason is ExitReason.TARGET
         expected_pnl = (115.0 - 100.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
@@ -132,6 +135,7 @@ class TestTradeResolution:
 
         assert tb.has_no_open_trade is True
         assert tb.loss_count == 1
+        assert tb.trades[-1].exit_reason is ExitReason.STOP
         expected_pnl = (95.0 - 100.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
@@ -153,6 +157,7 @@ class TestTradeResolution:
         tb.resolve_at_cursor(hit_target)
 
         assert tb.win_count == 1
+        assert tb.trades[-1].exit_reason is ExitReason.TARGET
         expected_pnl = (100.0 - 85.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
@@ -175,6 +180,7 @@ class TestTradeResolution:
 
         assert tb.has_no_open_trade is True
         assert tb.loss_count == 1
+        assert tb.trades[-1].exit_reason is ExitReason.STOP
         expected_pnl = (100.0 - 105.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
@@ -193,6 +199,7 @@ class TestTradeResolution:
         assert tb.has_no_open_trade is True
         assert tb.trades[-1].result == "cancelled"
         assert tb.trades[-1].pnl == 0.0
+        assert tb.trades[-1].exit_reason is ExitReason.TIMEOUT
         assert tb.total_pnl == 0.0
 
     def test_boundary_candle_target_hit_closes_win_not_cancel(self) -> None:
@@ -211,6 +218,7 @@ class TestTradeResolution:
 
         assert tb.has_no_open_trade is True
         assert tb.trades[-1].result == "win"
+        assert tb.trades[-1].exit_reason is ExitReason.TARGET
         expected_pnl = (115.0 - 100.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
@@ -229,6 +237,7 @@ class TestTradeResolution:
 
         assert tb.has_no_open_trade is True
         assert tb.trades[-1].result == "loss"
+        assert tb.trades[-1].exit_reason is ExitReason.STOP
         expected_pnl = (95.0 - 100.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
@@ -251,6 +260,7 @@ class TestTradeResolution:
 
         assert tb.has_no_open_trade is True
         assert tb.trades[-1].result == "win"
+        assert tb.trades[-1].exit_reason is ExitReason.TARGET
         expected_pnl = (100.0 - 85.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
@@ -280,6 +290,7 @@ class TestBreakevenCount:
 
         assert tb.breakeven_count == 1
         assert tb.total_pnl == pytest.approx(0.0)
+        assert tb.trades[-1].exit_reason is None
 
     def test_max_hold_cancels_not_breakeven(self) -> None:
         tb = TradeBook(initial_balance=1000.0)
@@ -293,6 +304,7 @@ class TestBreakevenCount:
         tb.resolve_at_cursor(still_open, max_hold_days=10)
 
         assert tb.trades[-1].result == "cancelled"
+        assert tb.trades[-1].exit_reason is ExitReason.TIMEOUT
         assert tb.breakeven_count == 0
 
 
@@ -634,7 +646,9 @@ class TestMonthlySummary:
         assert monthly["2024-01"]["trades"] == 2
         assert monthly["2024-01"]["wins"] == 1
         assert monthly["2024-01"]["losses"] == 1
-        assert monthly["2024-01"]["total_pnl"] == pytest.approx((115.0 - 100.0) * 0.4 + (95.0 - 100.0) * 0.4)
+        assert monthly["2024-01"]["total_pnl"] == pytest.approx(
+            (115.0 - 100.0) * 0.4 + (95.0 - 100.0) * 0.4
+        )
         assert monthly["2024-02"]["trades"] == 1
         assert monthly["2024-02"]["wins"] == 1
         assert monthly["2024-02"]["losses"] == 0
@@ -654,3 +668,507 @@ class TestMonthlySummary:
 
     def test_empty_when_no_closed_trades(self) -> None:
         assert TradeBook(initial_balance=1000.0).monthly_summary() == {}
+
+
+class TestRBasedMetrics:
+    """R-multiple edge metrics (backlog: growth measurement).
+
+    Each trade's outcome in R units: pnl / risk_amount. `_candidate` with
+    entry=100/stop=95/target=115/size=0.2 has risk_amount=1.0, so target hit
+    -> +3.0 P&L = +3R, stop hit -> -1.0 P&L = -1R.
+    """
+
+    def test_empty_book(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        assert tb.avg_win_r == 0.0
+        assert tb.avg_loss_r == 0.0
+        assert tb.expectancy_in_r == 0.0
+        assert tb.kelly_fraction == 0.0
+        assert tb.payoff_ratio == 0.0
+        assert tb.trades_per_year == 0.0
+        assert tb.by_direction == {}
+
+    def test_win_and_loss_r(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+
+        c1 = _candidate(entry=100.0, stop=95.0, target=115.0)  # risk 1.0
+        sig = _signal()
+        tb.submit_order(c1, sig, "s", t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=99.0))  # target -> +3R
+
+        t1 = t0 + timedelta(days=5)
+        c2 = _candidate(entry=100.0, stop=95.0, target=115.0)
+        tb.submit_order(c2, _signal(), "s", t1)
+        tb.fill_order(_candle(t1, h=110.0, lo=90.0))
+        tb.resolve_at_cursor(_candle(t1 + timedelta(days=1), lo=94.0, h=101.0))  # stop -> -1R
+
+        assert tb.win_rate == 0.5
+        assert tb.avg_win_r == pytest.approx(3.0)
+        assert tb.avg_loss_r == pytest.approx(1.0)
+        assert tb.payoff_ratio == pytest.approx(3.0)
+        assert tb.expectancy_in_r == pytest.approx(0.5 * 3.0 - 0.5 * 1.0)  # 1.0
+        assert tb.kelly_fraction == pytest.approx(0.5 - 0.5 * 1.0 / 3.0)
+
+    def test_kelly_zero_without_edge(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        # Same-R win then loss: E = 0 -> Kelly 0.
+        for i in range(2):
+            c = _candidate(entry=100.0, stop=95.0, target=110.0, size=0.2)  # +2R target
+            tb.submit_order(c, _signal(), "s", t0 + timedelta(days=i))
+            tb.fill_order(_candle(t0 + timedelta(days=i), h=110.0, lo=90.0))
+            win = bool(i % 2 == 0)
+            tb.resolve_at_cursor(
+                _candle(t0 + timedelta(days=i, hours=12), h=111.0, lo=89.0)
+                if win
+                else _candle(t0 + timedelta(days=i, hours=12), h=111.0, lo=94.0)
+            )
+        assert tb.by_direction["bullish"]["trades"] == 2
+        assert tb.kelly_fraction == 0.0
+
+    def test_by_direction(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        bull = _candidate(entry=100.0, stop=95.0, target=115.0)
+        tb.submit_order(bull, _signal(), "s", t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=99.0))
+
+        t1 = t0 + timedelta(days=5)
+        bear = _candidate(direction=TrendDirection.BEARISH, entry=100.0, stop=105.0, target=85.0)
+        tb.submit_order(bear, _signal(), "s", t1)
+        tb.fill_order(_candle(t1, h=110.0, lo=90.0))  # low 90 <= 100 -> fill
+        tb.resolve_at_cursor(_candle(t1 + timedelta(days=1), h=90.0, lo=80.0))  # low 80 -> target
+
+        by_dir = tb.by_direction
+        assert by_dir["bullish"]["trades"] == 1
+        assert by_dir["bullish"]["wins"] == 1
+        assert by_dir["bullish"]["win_rate"] == 1.0
+        assert by_dir["bearish"]["trades"] == 1
+        assert by_dir["bearish"]["wins"] == 1
+        assert by_dir["bearish"]["win_rate"] == 1.0
+
+    def test_trades_per_year_spans_first_to_last_exit(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        jan = datetime(2024, 1, 1)
+        c = _candidate(entry=100.0, stop=95.0, target=115.0)
+        tb.submit_order(c, _signal(), "s", jan)
+        tb.fill_order(_candle(jan, h=110.0, lo=90.0))
+        tb.resolve_at_cursor(_candle(jan + timedelta(days=1), h=116.0, lo=99.0))  # exit day 1
+        # Second trade ~365 days later: span ~365 days, 2 trades -> ~2/yr.
+        second = jan.replace(year=2025)
+        tb.submit_order(_candidate(), _signal(), "s", second)
+        tb.fill_order(_candle(second, h=110.0, lo=90.0))
+        tb.close_trade(116.0, second + timedelta(days=1))
+        assert tb.trades_per_year == pytest.approx(2.0, rel=0.02)
+
+    def test_summary_carries_r_metrics(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        c = _candidate(entry=100.0, stop=95.0, target=115.0)
+        tb.submit_order(c, _signal(), "s", t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=99.0))  # +3R
+        s = tb.summary
+        assert s["avg_win_r"] == pytest.approx(3.0)
+        assert s["expectancy_in_r"] == pytest.approx(3.0)
+        assert s["payoff_ratio"] == float("inf")
+        assert s["by_direction"]["bullish"]["wins"] == 1  # type: ignore[index]
+
+
+def _plan(
+    fraction: float = 0.5,
+    scale_rr: float = 1.0,
+    breakeven: bool = True,
+    runner_rr: float = 0.0,
+    trail_rr: float = 0.0,
+) -> ExitPlan:
+    return ExitPlan(
+        scale_out_fraction=fraction,
+        scale_out_rr=scale_rr,
+        breakeven_after_scale=breakeven,
+        runner_target_rr=runner_rr,
+        trailing_stop_rr=trail_rr,
+    )
+
+
+def _ratchet_plan(breakeven_rr: float = 0.5) -> ExitPlan:
+    return ExitPlan(
+        scale_out_fraction=0.0,
+        scale_out_rr=1.0,
+        breakeven_after_scale=True,
+        runner_target_rr=0.0,
+        trailing_stop_rr=0.0,
+        breakeven_at_rr=breakeven_rr,
+    )
+
+
+class TestDeRiskExits:
+    """De-risk (scale-out) exits: bank a fraction at scale R, let the runner go.
+
+    Geometry: bull entry=100 stop=95 target=115 (~3R), size=0.2, risk=1.0.
+    Scale-out at 1.0R (price 105) banks 0.5 * 1R = +0.5. The remainder (size
+    0.1) runs from the breakeven/trail stop toward the runner target.
+    Scale candles keep their low above entry (101) so the freshly-armed
+    breakeven stop isn't breached on the very candle that triggers scale-out.
+    """
+
+    def _open(
+        self, plan: ExitPlan, direction: TrendDirection = TrendDirection.BULLISH
+    ) -> tuple[TradeBook, datetime, TradeCandidate]:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        if direction == TrendDirection.BULLISH:
+            c = _candidate(entry=100.0, stop=95.0, target=115.0, exit_plan=plan)
+        else:
+            c = _candidate(
+                direction=direction, entry=100.0, stop=105.0, target=85.0, exit_plan=plan
+            )
+        tb.submit_order(c, _signal(direction), "s", t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
+        return tb, t0, c
+
+    def test_scale_out_then_breakeven_banks_partial(self) -> None:
+        tb, t0, _ = self._open(_plan(fraction=0.5, scale_rr=1.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=106.0, lo=101.0))
+        assert tb.has_no_open_trade is False
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=2), h=101.0, lo=99.0, c=100.0))
+        assert tb.has_no_open_trade is True
+        assert tb.win_count == 1
+        assert tb.trades[0].pnl == pytest.approx(0.5)  # banked 0.5R, runner flat
+        assert tb.trades[0].result == "win"
+        assert tb.trades[0].exit_reason is ExitReason.STOP
+
+    def test_scale_out_then_runner_target_extends_win(self) -> None:
+        tb, t0, _ = self._open(_plan(fraction=0.5, scale_rr=1.0, runner_rr=2.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=106.0, lo=101.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=2), h=111.0, lo=101.0, c=110.0))
+        assert tb.win_count == 1
+        # banked 0.5R + runner 0.1 size * 10 pts = 1.0R
+        assert tb.trades[0].pnl == pytest.approx(1.5)
+        assert tb.trades[0].exit_reason is ExitReason.TARGET
+
+    def test_stop_before_scale_out_is_full_loss(self) -> None:
+        tb, t0, _ = self._open(_plan())
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=101.0, lo=94.0))
+        assert tb.loss_count == 1
+        assert tb.trades[0].pnl == pytest.approx(-1.0)
+        assert tb.trades[0].exit_reason is ExitReason.STOP
+
+    def test_unscaled_max_hold_still_cancels_at_zero(self) -> None:
+        tb, t0, _ = self._open(_plan(scale_rr=3.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=104.0, lo=97.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=10), h=104.0, lo=97.0), max_hold_days=10)
+        closed = tb.trades[0]
+        assert closed.result == "cancelled"
+        assert closed.pnl == pytest.approx(0.0)
+        assert closed.exit_reason is ExitReason.TIMEOUT
+
+    def test_ratchet_arms_then_breakeven_instead_of_loss(self) -> None:
+        tb, t0, _ = self._open(_ratchet_plan())
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=103.0, lo=101.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=2), h=101.0, lo=99.0, c=100.0))
+        closed = tb.trades[0]
+        assert tb.loss_count == 0
+        assert tb.breakeven_count == 1
+        assert closed.pnl == pytest.approx(0.0)
+        assert closed.result == "breakeven"
+        assert closed.exit_reason is ExitReason.STOP
+
+    def test_ratchet_arms_then_wins_unchanged(self) -> None:
+        tb, t0, _ = self._open(_ratchet_plan())
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=103.0, lo=101.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=2), h=116.0, lo=110.0, c=115.0))
+        closed = tb.trades[0]
+        assert tb.win_count == 1
+        assert closed.pnl == pytest.approx(3.0)
+        assert closed.exit_reason is ExitReason.TARGET
+
+    def test_ratchet_stop_before_arm_is_full_loss(self) -> None:
+        tb, t0, _ = self._open(_ratchet_plan())
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=101.0, lo=94.0))
+        closed = tb.trades[0]
+        assert tb.loss_count == 1
+        assert closed.pnl == pytest.approx(-1.0)
+        assert closed.exit_reason is ExitReason.STOP
+
+    def test_ratchet_poor_man_stop_after_ratchet_is_zero(self) -> None:
+        tb, t0, _ = self._open(_ratchet_plan(breakeven_rr=0.25))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=103.0, lo=101.5))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=2), h=101.0, lo=99.0, c=100.0))
+        assert tb.loss_count == 0
+        assert tb.breakeven_count == 1
+
+    def test_scaled_max_hold_closes_remainder_at_market(self) -> None:
+        tb, t0, _ = self._open(_plan(fraction=0.5, scale_rr=1.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=106.0, lo=101.0))
+        for d in range(2, 6):
+            tb.resolve_at_cursor(
+                _candle(t0 + timedelta(days=d), h=108.0, lo=100.5, c=103.0),
+                max_hold_days=5,
+            )
+        assert tb.has_no_open_trade is True
+        closed = tb.trades[0]
+        assert closed.result == "win"
+        # banked 0.5 + runner 0.1 size * (103 - 100) = 0.3 -> 0.8
+        assert closed.pnl == pytest.approx(0.8)
+        assert closed.exit_reason is ExitReason.TIMEOUT
+
+    def test_bearish_scale_out_banks_partial(self) -> None:
+        tb, t0, _ = self._open(_plan(), direction=TrendDirection.BEARISH)
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=99.0, lo=94.0))  # scale at 95
+        assert tb.has_no_open_trade is False
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=2), h=101.0, lo=99.0))  # breakeven
+        assert tb.win_count == 1
+        assert tb.trades[0].pnl == pytest.approx(0.5)
+
+    def test_trailing_stop_ratchets_runner_profit(self) -> None:
+        tb, t0, _ = self._open(_plan(fraction=0.5, scale_rr=1.0, trail_rr=0.5))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=106.0, lo=104.0))
+        assert tb.has_no_open_trade is False  # trail 103.5, low 104 survives
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=2), h=108.0, lo=106.0))  # trail 105.5
+        assert tb.has_no_open_trade is False  # low 106 > trail 105.5, survives
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=3), h=107.0, lo=103.0))  # breach
+        assert tb.has_no_open_trade is True
+        # trail = 108 - 0.5*5 = 105.5; runner 0.1 * 5.5 = 0.55; + banked 0.5
+        assert tb.trades[0].pnl == pytest.approx(1.05)
+
+    def test_trail_never_loosens_on_pullback(self) -> None:
+        tb, t0, _ = self._open(_plan(fraction=0.5, scale_rr=1.0, trail_rr=0.5))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=106.0, lo=104.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=2), h=108.0, lo=106.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=3), h=111.0, lo=109.0))  # extreme 111
+        assert tb.has_no_open_trade is False  # trail 108.5, low 109 survives
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=4), h=106.0, lo=103.0))  # breach
+        # trail stays 108.5 (never loosened to 105.5); runner 0.1 * 8.5 = 0.85; + 0.5
+        assert tb.trades[0].pnl == pytest.approx(1.35)
+
+    def test_breakeven_off_lets_remainder_run_to_max_hold(self) -> None:
+        tb, t0, _ = self._open(_plan(fraction=0.5, breakeven=False))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=106.0, lo=101.0))
+        for d in range(2, 6):
+            tb.resolve_at_cursor(
+                _candle(t0 + timedelta(days=d), h=108.0, lo=103.0, c=107.0),
+                max_hold_days=5,
+            )
+        assert tb.has_no_open_trade is True
+        # banked 0.5 + runner 0.1 * 7 = 0.7 -> 1.2
+        assert tb.trades[0].pnl == pytest.approx(1.2)
+
+    def test_r_metrics_spread_with_scale_out(self) -> None:
+        tb, t0, _ = self._open(_plan(fraction=0.5, scale_rr=1.0, runner_rr=2.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=106.0, lo=101.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=2), h=111.0, lo=101.0, c=110.0))
+        assert tb.avg_win_r == pytest.approx(1.5)
+        assert tb.expectancy_in_r == pytest.approx(1.5)
+
+    def test_default_exit_stays_byte_identical(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        c = _candidate(entry=100.0, stop=95.0, target=115.0)
+        tb.submit_order(c, _signal(), "s", t0)
+        tb.fill_order(_candle(t0, h=110.0, lo=90.0))
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=116.0, lo=99.0))
+        assert tb.trades[0].pnl == pytest.approx(3.0)
+        assert tb.trades[0].result == "win"
+        assert tb.avg_win_r == pytest.approx(3.0)
+
+
+class TestExitReasons:
+    """Exit-reason provenance (backlog 098): every close path records how the
+    trade left the book — stop/target/timeout/cancel — without disturbing the
+    existing result mapping (win/loss/breakeven/cancelled stay pnl-derived)."""
+
+    def test_pending_order_cancel_reason_cancel(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        c = _candidate(entry=100.0, stop=95.0, target=115.0)
+        tb.submit_order(c, _signal(), "s", t0)
+        # Entry never reached within max_hold_days -> pending dropped.
+        no_touch = _candle(t0 + timedelta(days=11), h=99.0, lo=97.0, c=98.0)
+        tb.resolve_at_cursor(no_touch, max_hold_days=10)
+        assert tb.has_no_open_trade is True
+        closed = tb.trades[-1]
+        assert closed.result == "cancelled"
+        assert closed.pnl == 0.0
+        assert closed.exit_reason is ExitReason.CANCEL
+
+    def test_close_trade_passthrough_reason(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1) - timedelta(days=1)
+        c = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
+        tb.submit_order(c, _signal(), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
+        close_ts = t0 + timedelta(days=2)
+        tb.close_trade(112.0, close_ts, "", ExitReason.TARGET)
+        closed = tb.trades[-1]
+        assert closed.result == "win"
+        assert closed.exit_reason is ExitReason.TARGET
+        assert closed.exit_timestamp == close_ts
+
+    def test_exit_reason_uniqueness(self) -> None:
+        assert len({r.value for r in ExitReason}) == len(ExitReason)
+
+
+class TestExcursionTracking:
+    """MFE/MAE (backlog 098): favourable/adverse excursion is tracked from fill
+    via the candles the strategy sees, stamped currency units with R multiples,
+    and survives both scheduled closes and broker timeouts."""
+
+    def _open_bullish(self, tb: TradeBook, t0: datetime) -> None:
+        c = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
+        tb.submit_order(c, _signal(), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0, c=102.0))
+
+    def test_fill_candle_sets_initial_excursion(self) -> None:
+        tb = TradeBook()
+        t0 = datetime(2024, 1, 1)
+        self._open_bullish(tb, t0)
+        # No close yet (fill alone records no outcome) — excursions surface at
+        # closure: mfe=(110-100)*0.2=2.0, mae=(100-90)*0.2=2.0.
+        tb.close_trade(112.0, t0 + timedelta(days=2), reason=ExitReason.TARGET)
+        closed = tb.trades[-1]
+        assert closed.mfe == pytest.approx(2.0)
+        assert closed.mae == pytest.approx(2.0)
+
+    def test_dip_then_rally_updates_excursion_and_r(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        self._open_bullish(tb, t0)
+        # Quiet candle: excursion unchanged.
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=2), h=106.0, lo=97.0, c=101.0))
+        # Rally candle hits target: mfe grows to (115-100)*0.2=3.0, mae pinned.
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=3), h=115.0, lo=100.0, c=113.0))
+        closed = tb.trades[-1]
+        assert closed.result == "win"
+        assert closed.mfe == pytest.approx(3.0)
+        assert closed.mae == pytest.approx(2.0)
+        assert closed.mfe_r == pytest.approx(3.0)  # risk_amount = 5*0.2 = 1.0
+        assert closed.mae_r == pytest.approx(2.0)
+
+    def test_cancelled_open_trade_keeps_excursions(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        self._open_bullish(tb, t0)
+        # Never hits stop/target before max_hold_days -> broker timeout.
+        tb.resolve_at_cursor(
+            _candle(t0 + timedelta(days=11), h=102.0, lo=99.0, c=100.0),
+            max_hold_days=10,
+        )
+        closed = tb.trades[-1]
+        assert closed.result == "cancelled"
+        assert closed.exit_reason is ExitReason.TIMEOUT
+        assert closed.mfe == pytest.approx(2.0)
+        assert closed.mae == pytest.approx(2.0)
+
+    def test_bearish_excursion_direction_flipped(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        c = _candidate(
+            direction=TrendDirection.BEARISH,
+            entry=100.0,
+            stop=105.0,
+            target=90.0,
+            size=0.2,
+        )
+        tb.submit_order(c, _signal(TrendDirection.BEARISH), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=92.0, lo=88.0, c=90.0))
+        # Short: fav = (entry - low); adv = (high - entry). Day 2 pierces the
+        # target (low 86 <= 90): mfe=(100-86)*0.2=2.8, mae=(103-100)*0.2=0.6.
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=2), h=103.0, lo=86.0, c=89.0))
+        closed = tb.trades[-1]
+        assert closed.result == "win"
+        assert closed.pnl == pytest.approx(2.0)
+        assert closed.mfe == pytest.approx(2.8)
+        assert closed.mae == pytest.approx(0.6)
+        assert closed.mfe_r == pytest.approx(2.8)
+        assert closed.mae_r == pytest.approx(0.6)
+
+
+class TestEquityCurve:
+    """Time-indexed balance series: one (close_time, balance) point per real
+    close, in order. Cancel/unrealized events contribute nothing."""
+
+    def test_curve_captures_balance_after_each_close(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        tb.submit_order(
+            _candidate(entry=100.0, stop=95.0, target=115.0, size=1.0),
+            _signal(), "s", t0,
+        )
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=112.0, lo=99.0))
+        close_ts = t0 + timedelta(days=2)
+        tb.close_trade(113.0, close_ts, reason=ExitReason.TARGET)
+        curve = tb.equity_curve
+        assert len(curve) == 1
+        ts, balance = curve[0]
+        assert ts == close_ts
+        assert balance == pytest.approx(1000.0 + (113.0 - 100.0) * 1.0)
+
+    def test_curve_multiple_closes_in_order(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        for i, target in enumerate((105.0, 110.0), start=1):
+            c = _candidate(entry=100.0, stop=95.0, target=target, size=1.0)
+            tb.submit_order(c, _signal(), "s", t0)
+            tb.fill_order(_candle(t0 + timedelta(days=1), h=108.0, lo=98.0))
+            tb.close_trade(target, t0 + timedelta(days=1 + i), reason=ExitReason.TARGET)
+        curve = tb.equity_curve
+        assert len(curve) == 2
+        assert curve[0][1] == pytest.approx(1005.0)
+        assert curve[1][1] == pytest.approx(1015.0)
+        assert curve == tuple(sorted(curve, key=lambda pt: pt[0]))
+
+    def test_filtered_by_instrument_rebuilds_curve(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        tb.submit_order(
+            _candidate(entry=100.0, stop=95.0, target=115.0, size=1.0),
+            _signal(), "s", t0, instrument="AAA",
+        )
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=112.0, lo=99.0), instrument="AAA")
+        tb.close_trade(113.0, t0 + timedelta(days=2), "AAA", ExitReason.TARGET)
+        subset = tb.filtered_by_instrument("AAA")
+        assert len(subset.trades) == 1
+        assert len(subset.equity_curve) == 1
+        assert subset.equity_curve[0][1] == pytest.approx(1000.0 + 13.0)
+
+
+class TestTradeContextCapture:
+    """Per-trade regime context (backlog 098): the dict passed at submit rides
+    the order through fill and close, and survives timeout cancellation of an
+    open trade (pending-never-filled carries nothing)."""
+
+    def test_context_rides_submit_to_close(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        ctx = {"atr_pct": 1.5, "vol_ratio": 1.1, "rng20_atr": 4.0, "trend_eff": 0.4}
+        tb.submit_order(_candidate(), _signal(), "s", t0, context=dict(ctx))
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=112.0, lo=99.0))
+        tb.close_trade(113.0, t0 + timedelta(days=2), reason=ExitReason.TARGET)
+        closed = tb.trades[-1]
+        assert closed.context == ctx
+
+    def test_context_default_none(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        tb.submit_order(_candidate(), _signal(), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=112.0, lo=99.0))
+        tb.close_trade(113.0, t0 + timedelta(days=2), reason=ExitReason.TARGET)
+        assert tb.trades[-1].context is None
+
+    def test_context_survives_open_timeout_cancel(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        ctx = {"trend_eff": -0.2}
+        tb.submit_order(_candidate(), _signal(), "s", t0, context=dict(ctx))
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=103.0, lo=99.0))
+        tb.resolve_at_cursor(
+            _candle(t0 + timedelta(days=11), h=102.0, lo=99.0, c=100.0),
+            max_hold_days=10,
+        )
+        closed = tb.trades[-1]
+        assert closed.exit_reason is ExitReason.TIMEOUT
+        assert closed.context == ctx

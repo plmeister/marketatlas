@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import cast
 
 from marketatlas.data.types import Candle
 from marketatlas.facts.structural import TrendDirection
 from marketatlas.strategy.ledger import TradeLedger
 from marketatlas.strategy.signals import TradeSignal
-from marketatlas.strategy.trade import TradeCandidate
+from marketatlas.strategy.trade import ExitPlan, ExitReason, TradeCandidate
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,30 @@ class _PendingOrder:
     source: str
     instrument: str
     timestamp: datetime
+    context: dict[str, float] | None = None
+
+
+@dataclass
+class _ExitState:
+    """Mutable open-position bookkeeping for one live trade.
+
+    Owns the scaled-out size, banked P&L, runner stop geometry, and the
+    observed favourable/adverse excursion (MFE/MAE) while the position is
+    live. The frozen ``TradeCandidate``/``TradeOutcome`` records keep the
+    reported math pure; this object is created for every filled trade (plan
+    stays None when no ``ExitPlan`` is active).
+    """
+
+    plan: ExitPlan | None = None
+    scaled_out: bool = False
+    remaining_fraction: float = 1.0
+    realized_pnl: float = 0.0
+    breakeven_active: bool = False
+    trail_stop: float | None = None
+    runner_target: float | None = None
+    extreme: float = 0.0
+    mfe: float = 0.0  # max favourable excursion, account currency (orig size)
+    mae: float = 0.0  # max adverse excursion, account currency (orig size)
 
 
 @dataclass(frozen=True)
@@ -30,6 +55,17 @@ class TradeOutcome:
     instrument: str
     pnl: float | None
     result: str | None  # "win" / "loss" / "breakeven" / "cancelled" / None
+    exit_reason: ExitReason | None = None
+    # Favourable/adverse excursion while open, in account currency (computed
+    # over the ORIGINAL position size, so R-units stay comparable across
+    # scaled-out trades) and in R units (excursion / candidate.risk_amount).
+    mfe: float | None = None
+    mae: float | None = None
+    mfe_r: float | None = None
+    mae_r: float | None = None
+    # Trade-entry regime context (atr_pct, vol_ratio, trend_eff, rng20_atr,
+    # ...) captured at the signal candle, for post-hoc regime-gate research.
+    context: dict[str, float] | None = None
 
 
 class TradeBook:
@@ -47,6 +83,7 @@ class TradeBook:
         self._trades: list[TradeOutcome] = []
         self._open_trades: dict[str, TradeOutcome] = {}
         self._pending: dict[str, _PendingOrder] = {}
+        self._exit_states: dict[str, _ExitState] = {}
 
     @property
     def balance(self) -> float:
@@ -63,6 +100,11 @@ class TradeBook:
     @property
     def trades(self) -> tuple[TradeOutcome, ...]:
         return tuple(self._trades)
+
+    @property
+    def equity_curve(self) -> tuple[tuple[datetime, float], ...]:
+        """Time-indexed balance series (close time, balance after close)."""
+        return self._ledger.equity_curve
 
     @property
     def win_count(self) -> int:
@@ -122,6 +164,123 @@ class TradeBook:
             return 0.0
         return self.total_pnl / total
 
+    # --- R-based metrics (backlog: growth measurement) -----------------------
+    # R = one unit of risk. Each trade's outcome expressed in R multiplies
+    # pnl / risk_amount, so edge, payoff and Kelly are comparable across
+    # instruments/setups regardless of nominal price or size.
+
+    @staticmethod
+    def _r_for(trade: TradeOutcome) -> float | None:
+        c = trade.candidate
+        if trade.pnl is None or not c.risk_amount:
+            return None
+        return float(trade.pnl) / c.risk_amount
+
+    @property
+    def avg_win_r(self) -> float:
+        values = [
+            r
+            for t in self._trades
+            if t.result == "win" and (r := self._r_for(t)) is not None
+        ]
+        return sum(values) / len(values) if values else 0.0
+
+    @property
+    def avg_loss_r(self) -> float:
+        """Average loss magnitude in R units (positive; payoff ratios stay sane)."""
+        values = [
+            r
+            for t in self._trades
+            if t.result == "loss" and (r := self._r_for(t)) is not None
+        ]
+        return sum(abs(v) for v in values) / len(values) if values else 0.0
+
+    @property
+    def payoff_ratio(self) -> float:
+        """Avg win (R) / avg loss (R); NaN-safe ``0.0`` when no losses.
+
+        ``inf`` is returned when losses exist but wins don't (pure losing), or
+        when the strategy has wins and no losses (pure winning, ``inf``).
+        """
+        aw = self.avg_win_r
+        al = self.avg_loss_r
+        if al == 0:
+            return float("inf") if aw > 0 else 0.0
+        return aw / al
+
+    @property
+    def expectancy_in_r(self) -> float:
+        """Edge per trade in R units: (w * avg_win_R) - (l * avg_loss_R)."""
+        w = self.win_rate
+        l = 1.0 - w
+        return w * self.avg_win_r - l * self.avg_loss_r
+
+    @property
+    def kelly_fraction(self) -> float:
+        """Full Kelly for win-rate/payoff pair, clamped to [0, 1).
+
+        Full Kelly on a decided-trades basis. Real deployment would use a
+        fraction of this (half-Kelly typical). ``0.0`` when no edge.
+        """
+        w = self.win_rate
+        if w <= 0 or w >= 1:
+            return 0.0
+        aw = self.avg_win_r
+        al = self.avg_loss_r
+        if aw <= 0 or al <= 0:
+            return 0.0
+        # Kelly: f* = (W - L / b) where b = win payoff per unit risk (avg_win_R),
+        # L = loss per unit risk (avg_loss_R). With symmetric stop sizing
+        # avg_loss_R ~ 1.0. Clamp against degenerate payoff.
+        return max(0.0, min(1.0 - 1e-9, w - (1.0 - w) * al / aw))
+
+    @property
+    def trades_per_year(self) -> float:
+        """Decided (closed) trades normalized over the run's calendar span.
+
+        Span is first submit to last exit; collapses to ``0.0`` for <2 timestamps.
+        """
+        stamps = [
+            t.exit_timestamp or t.entry_timestamp
+            for t in self._trades
+            if t.exit_timestamp is not None or t.entry_timestamp is not None
+        ]
+        if len(stamps) < 2:
+            return 0.0
+        days = (max(stamps) - min(stamps)).total_seconds() / 86400.0
+        if days <= 0:
+            return 0.0
+        return self.closed_count / (days / 365.25)
+
+    @property
+    def by_direction(self) -> dict[str, dict[str, object]]:
+        """Per-direction decided stats: trades, wins, losses, win_rate."""
+        out: dict[str, dict[str, object]] = {}
+        for trade in self._trades:
+            if trade.result not in ("win", "loss"):
+                continue
+            name = trade.candidate.direction.value
+            row = out.setdefault(
+                name, {"trades": 0, "wins": 0, "losses": 0, "gross_pnl": 0.0}
+            )
+            trades: int = int(cast(int, row["trades"]))
+            wins: int = int(cast(int, row["wins"]))
+            losses: int = int(cast(int, row["losses"]))
+            pnl: float = float(cast(float, row["gross_pnl"]))
+            row["trades"] = trades + 1
+            if trade.result == "win":
+                row["wins"] = wins + 1
+            else:
+                row["losses"] = losses + 1
+            if trade.pnl is not None:
+                row["gross_pnl"] = pnl + trade.pnl
+        for row in out.values():
+            wins = int(cast(int, row["wins"]))
+            losses = int(cast(int, row["losses"]))
+            decided = wins + losses
+            row["win_rate"] = wins / decided if decided else 0.0
+        return out
+
     @property
     def max_drawdown(self) -> float:
         pnls = tuple(float(t.pnl) for t in self._trades if t.pnl is not None)
@@ -156,6 +315,26 @@ class TradeBook:
         pending = self._pending.get(instrument)
         return pending.timestamp if pending is not None else None
 
+    def _update_excursion(self, candle: Candle, st: _ExitState, c: TradeCandidate) -> None:
+        """Track max favourable/adverse excursion of the open position.
+
+        Uses the candle the strategy actually sees (same candle visibility as
+        stop/target resolution — no lookahead). Excursion is measured against
+        the ORIGINAL position size so ``mfe_r``/``mae_r`` stay comparable
+        across scale-out trades; ``candle.high/low`` are the realistic intraday
+        extremes for a position filled at ``c.entry``.
+        """
+        if c.direction == TrendDirection.BULLISH:
+            fav = (candle.high - c.entry) * c.size
+            adv = (c.entry - candle.low) * c.size
+        else:
+            fav = (c.entry - candle.low) * c.size
+            adv = (candle.high - c.entry) * c.size
+        if fav > st.mfe:
+            st.mfe = fav
+        if adv > st.mae:
+            st.mae = adv
+
     def submit_order(
         self,
         candidate: TradeCandidate,
@@ -163,6 +342,7 @@ class TradeBook:
         source: str,
         signal_timestamp: datetime,
         instrument: str = "",
+        context: dict[str, float] | None = None,
     ) -> None:
         self._pending[instrument] = _PendingOrder(
             candidate=candidate,
@@ -170,6 +350,7 @@ class TradeBook:
             source=source,
             instrument=instrument,
             timestamp=signal_timestamp,
+            context=context,
         )
 
     def fill_order(self, candle: Candle, instrument: str = "") -> None:
@@ -203,20 +384,36 @@ class TradeBook:
             instrument=pending.instrument,
             pnl=None,
             result=None,
+            context=pending.context,
         )
+        plan = (
+            candidate.exit_plan
+            if candidate.exit_plan is not None and candidate.exit_plan.enabled
+            else None
+        )
+        self._exit_states[instrument] = _ExitState(plan=plan)
+        self._update_excursion(candle, self._exit_states[instrument], candidate)
         del self._pending[instrument]
 
     def close_trade(
-        self, exit_price: float, timestamp: datetime, instrument: str = ""
+        self,
+        exit_price: float,
+        timestamp: datetime,
+        instrument: str = "",
+        reason: ExitReason | None = None,
     ) -> None:
         trade = self._open_trades.get(instrument)
         if trade is None:
             return
         c = trade.candidate
+        st = self._exit_states.get(instrument)
+        size = c.size * (st.remaining_fraction if st is not None else 1.0)
         if c.direction == TrendDirection.BULLISH:
-            pnl = (exit_price - c.entry) * c.size
+            pnl = (exit_price - c.entry) * size
         else:
-            pnl = (c.entry - exit_price) * c.size
+            pnl = (c.entry - exit_price) * size
+        if st is not None:
+            pnl += st.realized_pnl
 
         if pnl > 0:
             result = "win"
@@ -235,9 +432,16 @@ class TradeBook:
             instrument=trade.instrument,
             pnl=pnl,
             result=result,
+            exit_reason=reason,
+            mfe=st.mfe if st is not None else None,
+            mae=st.mae if st is not None else None,
+            mfe_r=((st.mfe / c.risk_amount) if st is not None and c.risk_amount else None),
+            mae_r=((st.mae / c.risk_amount) if st is not None and c.risk_amount else None),
+            context=trade.context,
         )
         self._trades.append(closed)
-        self._ledger.apply(pnl)
+        self._ledger.apply(pnl, timestamp)
+        self._exit_states.pop(instrument, None)
         del self._open_trades[instrument]
 
     def resolve_at_cursor(
@@ -252,29 +456,193 @@ class TradeBook:
         if open_trade is None:
             return
         c = open_trade.candidate
+        st = self._exit_states.get(instrument)
+        assert st is not None  # every filled trade carries an _ExitState
+        plan = st.plan
 
-        # Stop/target are checked before the max-hold expiry below so a trade
-        # that touches either on the boundary candle realizes that outcome
-        # instead of being cancelled at pnl 0 (backlog 104 — AUDJPY 2026-01-29
-        # hit target on day 10 but was recorded cancelled).
-        if c.direction == TrendDirection.BULLISH:
-            if candle.low <= c.stop:
-                self.close_trade(c.stop, candle.timestamp, instrument)
-                return
-            if candle.high >= c.target:
-                self.close_trade(c.target, candle.timestamp, instrument)
+        self._update_excursion(candle, st, c)
+
+        if plan is not None:
+            assert st is not None
+            if plan.scale_out_fraction > 0:
+                self._resolve_scaled(candle, open_trade, st)
+            elif plan.breakeven_at_rr > 0:
+                self._resolve_ratchet(candle, open_trade, st, plan)
+            if instrument not in self._open_trades:
                 return
         else:
-            if candle.high >= c.stop:
-                self.close_trade(c.stop, candle.timestamp, instrument)
-                return
-            if candle.low <= c.target:
-                self.close_trade(c.target, candle.timestamp, instrument)
-                return
+            # Stop/target are checked before the max-hold expiry below so a
+            # trade that touches either on the boundary candle realizes that
+            # outcome instead of being cancelled at pnl 0 (backlog 104 —
+            # AUDJPY 2026-01-29 hit target on day 10 but was recorded
+            # cancelled).
+            if c.direction == TrendDirection.BULLISH:
+                if candle.low <= c.stop:
+                    self.close_trade(c.stop, candle.timestamp, instrument, ExitReason.STOP)
+                    return
+                if candle.high >= c.target:
+                    self.close_trade(c.target, candle.timestamp, instrument, ExitReason.TARGET)
+                    return
+            else:
+                if candle.high >= c.stop:
+                    self.close_trade(c.stop, candle.timestamp, instrument, ExitReason.STOP)
+                    return
+                if candle.low <= c.target:
+                    self.close_trade(c.target, candle.timestamp, instrument, ExitReason.TARGET)
+                    return
 
         days_held = (candle.timestamp - open_trade.entry_timestamp).days
         if days_held >= max_hold_days:
-            self._cancel_open(timestamp=candle.timestamp, instrument=instrument)
+            if st is not None and st.scaled_out:
+                # Remainder is live and already profitable; a synthetic pnl-0
+                # cancel would throw away banked + open runner profit. Close at
+                # the candle's market price instead (real exit).
+                self.close_trade(candle.close, candle.timestamp, instrument, ExitReason.TIMEOUT)
+            else:
+                self._cancel_open(timestamp=candle.timestamp, instrument=instrument)
+
+    def _resolve_ratchet(
+        self, candle: Candle, trade: TradeOutcome, st: _ExitState, plan: ExitPlan
+    ) -> None:
+        """Resolve a breakeven-ratchet carry (no partial fills).
+
+        While unarmed the original stop plus the submitted target govern.
+        Once price trades through ``breakeven_at_rr`` of the original stop
+        distance, the stop ratchets to entry — a stop-modification order, not
+        a position split. Any later adverse retracement exits at breakeven
+        (~0R) instead of the original -1R stop.
+        """
+        c = trade.candidate
+        bull = c.direction == TrendDirection.BULLISH
+        stop_distance = abs(c.entry - c.stop)
+        active_stop = c.entry if st.breakeven_active else c.stop
+        if (bull and candle.low <= active_stop) or (not bull and candle.high >= active_stop):
+            self.close_trade(active_stop, candle.timestamp, trade.instrument, ExitReason.STOP)
+            return
+        if not st.breakeven_active:
+            if bull:
+                armed = candle.high >= c.entry + plan.breakeven_at_rr * stop_distance
+            else:
+                armed = candle.low <= c.entry - plan.breakeven_at_rr * stop_distance
+            if armed:
+                st.breakeven_active = True
+        if (bull and candle.high >= c.target) or (not bull and candle.low <= c.target):
+            self.close_trade(c.target, candle.timestamp, trade.instrument, ExitReason.TARGET)
+
+    def _resolve_scaled(
+        self, candle: Candle, trade: TradeOutcome, st: _ExitState
+    ) -> None:
+        """Resolve a carry that has an enabled ExitPlan.
+
+        Pre-scale: the original stop governs; once price reaches the scale-R
+        level the plan banks a fraction, moves the remainder to a breakeven/
+        trailing stop, and lets it chase the runner target. A price level is
+        scaled only from the first touch (R in units of the original stop
+        distance); later touches on later trades re-scale independently.
+        """
+        assert st.plan is not None
+        c = trade.candidate
+        bull = c.direction == TrendDirection.BULLISH
+        stop_distance = abs(c.entry - c.stop)
+
+        if not st.scaled_out:
+            if (bull and candle.low <= c.stop) or (not bull and candle.high >= c.stop):
+                self.close_trade(c.stop, candle.timestamp, trade.instrument, ExitReason.STOP)
+                return
+            scale_price = (
+                c.entry + st.plan.scale_out_rr * stop_distance
+                if bull
+                else c.entry - st.plan.scale_out_rr * stop_distance
+            )
+            triggered = (bull and candle.high >= scale_price) or (
+                not bull and candle.low <= scale_price
+            )
+            if not triggered:
+                return
+            self._apply_scale_out(trade.instrument, scale_price, st)
+
+        self._update_trail(candle, st, bull, stop_distance)
+        runner_stop = self._runner_stop_price(c, st, bull)
+        if runner_stop is not None:
+            if (bull and candle.low <= runner_stop) or (
+                not bull and candle.high >= runner_stop
+            ):
+                self.close_trade(
+                    runner_stop, candle.timestamp, trade.instrument, ExitReason.STOP
+                )
+                return
+        if st.runner_target is not None:
+            if (bull and candle.high >= st.runner_target) or (
+                not bull and candle.low <= st.runner_target
+            ):
+                self.close_trade(
+                    st.runner_target, candle.timestamp, trade.instrument, ExitReason.TARGET
+                )
+                return
+
+    def _apply_scale_out(
+        self, instrument: str, scale_price: float, st: _ExitState
+    ) -> None:
+        """Bank a fraction of the position at ``scale_price`` and arm runner exits."""
+        assert st.plan is not None
+        trade = self._open_trades[instrument]
+        c = trade.candidate
+        bull = c.direction == TrendDirection.BULLISH
+        banked = (
+            (scale_price - c.entry) if bull else (c.entry - scale_price)
+        ) * c.size * st.plan.scale_out_fraction
+        st.realized_pnl = banked
+        st.remaining_fraction = 1.0 - st.plan.scale_out_fraction
+        st.scaled_out = True
+        stop_distance = abs(c.entry - c.stop)
+        if st.plan.breakeven_after_scale:
+            st.breakeven_active = True
+        if st.plan.trailing_stop_rr > 0:
+            st.extreme = scale_price
+            st.trail_stop = (
+                scale_price - st.plan.trailing_stop_rr * stop_distance
+                if bull
+                else scale_price + st.plan.trailing_stop_rr * stop_distance
+            )
+        if st.plan.runner_target_rr > 0:
+            st.runner_target = (
+                c.entry + st.plan.runner_target_rr * stop_distance
+                if bull
+                else c.entry - st.plan.runner_target_rr * stop_distance
+            )
+
+    def _update_trail(
+        self, candle: Candle, st: _ExitState, bull: bool, stop_distance: float
+    ) -> None:
+        """Ratchet the trailing stop against the newest runner extreme."""
+        if st.plan is None or st.plan.trailing_stop_rr <= 0:
+            return
+        extreme = max(st.extreme, candle.high) if bull else min(st.extreme, candle.low)
+        st.extreme = extreme
+        new_stop = (
+            extreme - st.plan.trailing_stop_rr * stop_distance
+            if bull
+            else extreme + st.plan.trailing_stop_rr * stop_distance
+        )
+        if bull:
+            if st.trail_stop is None or new_stop > st.trail_stop:
+                st.trail_stop = new_stop
+        else:
+            if st.trail_stop is None or new_stop < st.trail_stop:
+                st.trail_stop = new_stop
+
+    def _runner_stop_price(
+        self, c: TradeCandidate, st: _ExitState, bull: bool
+    ) -> float | None:
+        """Active runner stop: trailing (tightest) else breakeven else None."""
+        if st.trail_stop is not None:
+            if st.breakeven_active:
+                be = c.entry
+                return max(be, st.trail_stop) if bull else min(be, st.trail_stop)
+            return st.trail_stop
+        if st.breakeven_active:
+            return c.entry
+        return None
 
     def _cancel_pending(self, candle: Candle, instrument: str = "") -> None:
         """Drop a pending order that never reached its entry within max_hold_days.
@@ -295,6 +663,7 @@ class TradeBook:
             instrument=pending.instrument,
             pnl=0.0,
             result="cancelled",
+            exit_reason=ExitReason.CANCEL,
         )
         self._trades.append(cancelled)
         del self._pending[instrument]
@@ -309,6 +678,7 @@ class TradeBook:
         trade = self._open_trades.get(instrument)
         if trade is None:
             return
+        st = self._exit_states.get(instrument)
         cancelled = TradeOutcome(
             submit_time=trade.submit_time,
             entry_timestamp=trade.entry_timestamp,
@@ -319,8 +689,13 @@ class TradeBook:
             instrument=trade.instrument,
             pnl=0.0,
             result="cancelled",
+            exit_reason=ExitReason.TIMEOUT,
+            mfe=st.mfe if st is not None else None,
+            mae=st.mae if st is not None else None,
+            context=trade.context,
         )
         self._trades.append(cancelled)
+        self._exit_states.pop(instrument, None)
         del self._open_trades[instrument]
 
     def filtered_by_instrument(self, canonical: str) -> TradeBook:
@@ -335,7 +710,7 @@ class TradeBook:
         book._trades = subset
         for trade in subset:
             if trade.pnl is not None:
-                book._ledger.apply(trade.pnl)
+                book._ledger.apply(trade.pnl, trade.exit_timestamp)
         return book
 
     @property
@@ -360,6 +735,13 @@ class TradeBook:
             "avg_win": self.avg_win,
             "avg_loss": self.avg_loss,
             "expectancy": self.expectancy,
+            "avg_win_r": self.avg_win_r,
+            "avg_loss_r": self.avg_loss_r,
+            "payoff_ratio": self.payoff_ratio,
+            "expectancy_in_r": self.expectancy_in_r,
+            "kelly_fraction": self.kelly_fraction,
+            "trades_per_year": self.trades_per_year,
+            "by_direction": self.by_direction,
             "by_strategy": self._strategy_breakdown(),
             "by_instrument": self._instrument_breakdown(),
         }

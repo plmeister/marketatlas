@@ -12,7 +12,9 @@ from marketatlas.evidence.collector import collect_fact_evidence
 from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.frames.store import FrameStore
+from marketatlas.strategy.context import extract_atr_value, trade_context
 from marketatlas.strategy.risk import RiskEngine
+from marketatlas.strategy.trade import ExitReason
 from marketatlas.strategy.tradebook import TradeBook
 
 if TYPE_CHECKING:
@@ -112,6 +114,7 @@ class Backtester:
                             name,
                             view.current.timestamp,
                             instrument=symbol,
+                            context=trade_context(view, extract_atr_value(facts.values())),
                         )
                         break
                     # Signal passed the signal layer but the risk engine
@@ -140,6 +143,7 @@ class Backtester:
                 self._store[last_cursor].close,
                 self._store[last_cursor].timestamp,
                 symbol,
+                ExitReason.TIMEOUT,
             )
 
         return BacktestResult(

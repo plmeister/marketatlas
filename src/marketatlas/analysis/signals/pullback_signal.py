@@ -33,7 +33,7 @@ def _pullback_strength(pattern: tuple[float, ...]) -> float:
 class PullbackSignal(Signal):
     def __init__(
         self,
-        min_strength: float = 0.5,
+        min_strength: float = 0.6,
         pullback_key: str = "pullback_pattern",
         trend_key: str = "trend",
         atr_key: str = "atr_14",

@@ -18,6 +18,7 @@ class TradeSignal:
     confidence: float
     source: str
     evidence: tuple[EvidenceEntry, ...]
+    risk_multiplier: float = 1.0
 
 
 @dataclass(frozen=True)

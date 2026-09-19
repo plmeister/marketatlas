@@ -57,6 +57,45 @@ This is a data-reach finding, not a filter bug. The knob is still the right
 device — follow-up is SR reach (more/larger clusters, or daily-swing levels) so
 a meaningful number of targets can actually anchor.
 
+## Follow-up: SR reach investigation (2026-09-07)
+
+Question: are SR lines sparse because weekly swing lookback is too short, or
+because the cluster/grouping distance is too tight? Measured with a direct
+analyzer harness (store cache 2005→2026, weekly + daily, min_touches=2):
+
+- **Grouping tolerance is not the problem.** Loosening `level_tolerance_atr`
+  0.5→1.0→2.0→4.0 ATR *reduces* level counts — wider bands merge clusters
+  (AUDJPY 3L→2L). 0.5 kept.
+- **Lookback is a partial helper, not the gate.** The run fed the weekly
+  analyzer only ~53 weekly candles because the fetch range (1y) resampled W1
+  from daily; the store holds 2005→2026 history. At lookback 150–400 the level
+  count grows, but across the 6y trade set only 39/75 (52%) had *any*
+  above-target level (weekly OR daily) at all. New-high long trades (AUDJPY→107,
+  GBPJPY→198, most 2024-26 FX) structurally print single unmatched swing highs —
+  no clustered resistance above the RR2 target, and multi-touch-only clustering
+  (kept) correctly refuses them.
+- **`max_anchor_atr=1.0` was the real blocker.** Levels exist 2.8–4.0+ ATR past
+  target for trend trades; the 1.0 ATR window let through only 8/75 trades
+  (11%), all but two bearish.
+
+Window sweep: widened fetch range to 6y (2020-09-05→2026-09-05, 29 instruments,
+$100k, weekly+swing1d lookback 150) with `anchor_sr=true` and
+`max_anchor_atr` as the A/B axis:
+
+| `max_anchor_atr` | trades | W/L | P&L | PF | expectancy |
+|---|---|---|---|---|---|
+| off (baseline) | 75 | 19W/8L | +$11,467.3 | 3.32 | — |
+| 2.0 | 8 | 3W/1L | +$1,999.8 | 3.00 | $499.95 |
+| 3.0 | 9 | 4W/1L | +$3,019.8 | 4.02 | $603.96 |
+| 4.0 | **10** | **6W/1L** | **+$5,090.5** | **6.09** | **$727.21** |
+
+Monotonic: wider window → more anchored trades, higher P&L, higher PF. Kept
+`max_anchor_atr: 4.0` (best stats, closest to baseline trade count). The SR
+sparsity concern is resolved as a *window-sizing* issue, not a clustering issue.
+
+DSL state after follow-up: `swing1w`/`atr_14_series` lookback 50→150, window
+4.0, `anchor_sr: <false|true>` still the A/B knob (A = off baseline).
+
 ## Requirements
 
 - [x] `anchor_sr` and `max_anchor_atr` accepted by `RiskEngine`; default off.

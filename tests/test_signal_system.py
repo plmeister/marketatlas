@@ -381,6 +381,68 @@ class TestPullbackSignal:
         assert "strength" in result.rejections[0].text.lower()
         assert "0.20" in result.rejections[0].text
 
+    def _pullback_with_strength(self, strength: float) -> PullbackFact:
+        return PullbackFact(
+            timestamp=BASE,
+            evidence=(),
+            direction=TrendDirection.BULLISH,
+            swing_pattern=(),
+            strength=strength,
+        )
+
+    def test_default_gate_rejects_reviewed_flat_strengths(self) -> None:
+        """The tuned default floor (0.6) rejects the flat setups flagged in
+        notebook review; the reviewed low-displacement strengths 0.49/0.52 do
+        not pass the built-in gate."""
+        store = _make_store(_flat_candles())
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = PullbackSignal()
+        for flat_strength in (0.49, 0.52):
+            result = signal.evaluate_with_rejections(
+                view,
+                _keyed_facts(
+                    self._pullback_with_strength(flat_strength),
+                    _bullish_trend_fact(),
+                    _atr_fact(50.0),
+                ),
+            )
+            assert result.signal is None
+            assert len(result.rejections) == 1
+            assert f"{flat_strength:.2f}" in result.rejections[0].text
+
+    def test_default_gate_flags_time_period_judgment_case_unbounded(self) -> None:
+        """0.65 (AUDJPY 2026-01-19, \"too flat, certainly for the time
+        period\") is a range-relative judgment the plain numeric retracement
+        gate cannot classify; it passes the 0.6 floor and is left to the
+        follow-up inclination reweight."""
+        store = _make_store(_flat_candles())
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = PullbackSignal()
+        result = signal.evaluate(
+            view,
+            _keyed_facts(
+                self._pullback_with_strength(0.65),
+                _bullish_trend_fact(),
+                _atr_fact(50.0),
+            ),
+        )
+        assert result is not None
+
+    def test_default_gate_passes_strong_pattern(self) -> None:
+        store = _make_store(_flat_candles())
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = PullbackSignal()
+        result = signal.evaluate(
+            view,
+            _keyed_facts(
+                self._pullback_with_strength(0.72),
+                _bullish_trend_fact(),
+                _atr_fact(50.0),
+            ),
+        )
+        assert result is not None
+        assert result.confidence == round(0.72 * 0.7, 4)
+
     def test_fact_strength_overrides_weak_pattern(self) -> None:
         """Explicit strength wins over the pattern-based fallback, so a
         high-confidence fact passes even when the raw retracement is shallow."""
@@ -739,6 +801,28 @@ class TestBreakoutSignal:
         )
         assert result.signal is None
         assert result.rejections
+
+    def test_shallow_penetration_returns_rejection(self) -> None:
+        store = self._breakout_store()
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = BreakoutSignal(min_penetration_atr=10.0)
+        result = signal.evaluate_with_rejections(
+            view,
+            self._facts(self._channel_fact(), _bullish_trend_fact(), _atr_fact(50.0)),
+        )
+        assert result.signal is None
+        assert result.rejections
+
+    def test_deep_penetration_passes_gate(self) -> None:
+        store = self._breakout_store()
+        view = MarketView(store, cursor=49, window_size=50)
+        signal = BreakoutSignal(min_penetration_atr=0.01)
+        result = signal.evaluate(
+            view,
+            self._facts(self._channel_fact(), _bullish_trend_fact(), _atr_fact(50.0)),
+        )
+        assert result is not None
+        assert result.direction == TrendDirection.BULLISH
 
     def test_missing_facts_return_none(self) -> None:
         store = self._breakout_store()

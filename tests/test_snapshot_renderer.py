@@ -195,6 +195,87 @@ class TestSnapshotRenderer:
         assert len(pois) == 1
         assert pois[0]["symbol"] == "TEST"
 
+    def test_encode_trade_carries_exit_reason_and_ts(self):
+        from datetime import UTC, datetime, timedelta
+
+        from marketatlas.frames.jsoncodec import encode_analysis_output
+        from marketatlas.strategy.trade import ExitReason
+
+        poi = datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=120)
+        trade = _mk_trade(poi)
+        trade = trade.__class__(
+            submit_time=trade.submit_time,
+            entry_timestamp=trade.entry_timestamp,
+            exit_timestamp=trade.exit_timestamp,
+            candidate=trade.candidate,
+            signal=trade.signal,
+            source_strategy=trade.source_strategy,
+            instrument=trade.instrument,
+            pnl=trade.pnl,
+            result=trade.result,
+            exit_reason=ExitReason.STOP,
+        )
+        doc = encode_analysis_output(_with_trades(_sample_output(poi), trade))
+        row = doc["trades"][0]
+        exit_ts = poi + timedelta(days=3)
+        assert row["exit_reason"] == "stop"
+        assert row["exit_ts"] == exit_ts.isoformat()
+        assert row["r_multiple"] == pytest.approx(123.4 / 10.0)
+
+    def test_encode_trade_carries_excursion_and_context(self):
+        from datetime import UTC, datetime, timedelta
+
+        from marketatlas.frames.jsoncodec import encode_analysis_output
+
+        poi = datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=120)
+        trade = _mk_trade(poi)
+        trade = trade.__class__(
+            submit_time=trade.submit_time,
+            entry_timestamp=trade.entry_timestamp,
+            exit_timestamp=trade.exit_timestamp,
+            candidate=trade.candidate,
+            signal=trade.signal,
+            source_strategy=trade.source_strategy,
+            instrument=trade.instrument,
+            pnl=trade.pnl,
+            result=trade.result,
+            exit_reason=trade.exit_reason,
+            mfe=123.4,
+            mae=5.0,
+            mfe_r=(123.4 / 10.0),
+            mae_r=0.5,
+            context={"atr_pct": 1.2, "trend_eff": 0.3},
+        )
+        doc = encode_analysis_output(_with_trades(_sample_output(poi), trade))
+        row = doc["trades"][0]
+        assert row["mfe"] == 123.4
+        assert row["mae"] == 5.0
+        assert row["mfe_r"] == pytest.approx(12.34)
+        assert row["mae_r"] == 0.5
+        assert row["context"] == {"atr_pct": 1.2, "trend_eff": 0.3}
+
+    def test_encode_analysis_output_carries_equity_curve(self):
+        from datetime import UTC, datetime, timedelta
+
+        from marketatlas.frames.jsoncodec import encode_analysis_output
+
+        poi = datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=120)
+        out = _with_trades(_sample_output(poi), _mk_trade(poi))
+        out = out.__class__(
+            **{
+                **out.__dict__,
+                "equity_curve": (
+                    (poi, 1000.0),
+                    (poi + timedelta(days=3), 1013.0),
+                ),
+            }
+        )
+        doc = encode_analysis_output(out)
+        assert doc["equity_curve"] == [
+            {"t": poi.isoformat(), "balance": 1000.0},
+            {"t": (poi + timedelta(days=3)).isoformat(), "balance": 1013.0},
+        ]
+
     def test_locate_pois_finds_pattern_and_rejection(self):
         from datetime import UTC, datetime, timedelta
 
@@ -337,7 +418,9 @@ def _empty_summary():
         total_return_pct=12.34, total_trades=1, wins=1, losses=0, breakevens=0,
         win_rate=1.0, peak_balance=1123.4, max_drawdown=0.0, gross_profit=123.4,
         gross_loss=0.0, profit_factor=1.0, avg_win=123.4, avg_loss=0.0,
-        expectancy=123.4, by_strategy={}, by_instrument={},
+        expectancy=123.4, avg_win_r=1.0, avg_loss_r=0.0, payoff_ratio=0.0,
+        expectancy_in_r=1.0, kelly_fraction=0.0, trades_per_year=0.0,
+        by_direction={}, by_strategy={}, by_instrument={},
     )
 
 

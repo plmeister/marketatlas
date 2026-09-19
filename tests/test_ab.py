@@ -160,6 +160,14 @@ class TestVariantIdentity:
         assert len(templates) == 2
         assert variant_labels(templates) == ["max_stop_atr=3", "max_stop_atr=5"]
 
+    def test_anchor_sr_choice_toggles_variant(self) -> None:
+        templates = self._templates(
+            "ema := ema { period: 20 }\n"
+            "risk := manage_risk { anchor_sr: <false | true> }"
+        )
+        assert len(templates) == 2
+        assert variant_labels(templates) == ["anchor_sr=False", "anchor_sr=True"]
+
     def test_multi_dimension_cartesian_labels(self) -> None:
         templates = self._templates(
             "ema := ema { period: <20 | 50> }\n"
