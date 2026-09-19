@@ -48,7 +48,7 @@
 > **Architecture note (067):** `AnalysisGraph.run_with_evidence()` (replaces `run()` internally) also returns analyzer evidence from frames that produced no fact; `Backtester` threads this loose evidence onto the frame so gated/rejected patterns are observable in backtests.
 - [x] 068 — CLI unified symbol resolution (`--symbol` canonical, per-instrument provider priority chain, canonical-keyed DataStore; unknown symbol → WARNING passthrough)
 - [x] 087 — Signal registry (decoupled signal registration from Strategy class via `analysis/signals/registry.py` `SIGNAL_TYPES` dict; AST registry derives from same source)
-- [x] 106 — SR-anchored target sizing (`RiskEngine` `anchor_sr` mode: target must sit within `max_anchor_atr`×ATR beneath a resistance/support level beyond it, else SR rejection; `manage_risk { anchor_sr: true }` DSL + `--ab` toggle; off by default keeps existing sizing byte-identical)
+- [x] 106 — SR-anchored target sizing (`RiskEngine` `anchor_sr` mode: target must sit within `max_anchor_atr`×ATR beneath a resistance/support level beyond it, else SR rejection; `manage_risk { anchor_sr: true }` DSL + `--ab` toggle; off by default keeps existing sizing byte-identical; window tuned to 4.0 ATR after 6y sweep — 1.0 ATR anchored 0 trades since new-high longs rarely cluster resistance beyond the RR2 target, 4.0 anchored 10 trades 6W/1L +$5090 PF 6.09; `swing1w` lookback 50→150)
 
 ## Review Layer
 

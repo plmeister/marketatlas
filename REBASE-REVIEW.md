@@ -84,3 +84,27 @@ match either implementation. All kept.
 2. 106: epic's buffer-lift + first-anchor design dropped in favor of main's
    nearest-anchor design — confirm that is acceptable or re-port.
 3. WORKLOG.md has no 106 entry (dropped). Add one for the kept implementation if wanted.
+
+---
+
+# Rebase Review Required
+
+Rebase of `epic/strategy` onto `main` could not be resolved automatically.
+
+**1** file(s) still conflicted. The rebase was aborted to keep the repository usable.
+
+What to do:
+
+1. Inspect any notes recorded below by the resolution agent.
+2. Resolve manually:
+
+   ```
+   git checkout epic/strategy
+   git rebase main
+   ```
+
+3. For each conflicted file, pick the correct content, `git add <file>`, then `git rebase --continue`.
+4. Once the rebase is complete and you are satisfied, **delete this file**. Its presence keeps the working tree dirty so automated runs stay blocked until a human has reviewed.
+
+---
+(File written by tend. It intentionally stays untracked so CleanWorkingTree blocks further runs.)
