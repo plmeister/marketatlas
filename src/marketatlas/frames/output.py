@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from marketatlas.data.types import Candle
@@ -142,6 +143,7 @@ class AnalysisOutput:
     window_size: int
     max_hold_days: int
     title: str = ""
+    equity_curve: tuple[tuple[datetime, float], ...] = ()
 
     @classmethod
     def from_backtest_result(cls, result: BacktestResult) -> AnalysisOutput:
@@ -174,6 +176,7 @@ class AnalysisOutput:
             window_size=result.window_size,
             max_hold_days=result.max_hold_days,
             title=title,
+            equity_curve=result.tradebook.equity_curve,
         )
 
     @classmethod
@@ -204,6 +207,7 @@ class AnalysisOutput:
             window_size=window_size,
             max_hold_days=max_hold_days,
             title=title,
+            equity_curve=tradebook.equity_curve,
         )
 
 
@@ -246,6 +250,7 @@ class PortfolioOutput:
     window_size: int
     max_hold_days: int
     title: str = ""
+    equity_curve: tuple[tuple[datetime, float], ...] = ()
 
     @classmethod
     def from_portfolio_result(
@@ -272,5 +277,6 @@ class PortfolioOutput:
             instruments=tuple(i.canonical for i in result.instruments),
             window_size=result.window_size,
             max_hold_days=result.max_hold_days,
+            equity_curve=result.tradebook.equity_curve,
             title=", ".join(i.canonical for i in result.instruments),
         )

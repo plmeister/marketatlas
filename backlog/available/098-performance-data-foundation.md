@@ -47,33 +47,44 @@ yet (downstream metrics are subsequent backlogs).
       were already present).
 
 ### MFE / MAE
-- [ ] Add `mfe` / `mae` fields to `TradeOutcome` (in account currency).
-- [ ] Backtester hook at each cursor while a trade is open: mark the open
+- [x] Add `mfe` / `mae` fields to `TradeOutcome` (in account currency).
+- [x] Backtester hook at each cursor while a trade is open: mark the open
       position's high/low against entry to track max favourable excursion and
       max adverse excursion. Intra-trade observation point must respect
       realistic fill (only evaluate on candle open/close the strategy sees —
       no lookahead; reuse existing candle-visibility discipline).
-- [ ] MFE/MAE in **R units** too (mfe/risk_amount, mae/risk_amount) so exit
+- [x] MFE/MAE in **R units** too (mfe/risk_amount, mae/risk_amount) so exit
       quality is comparable across trades.
-- [ ] Only update MFE/MAE while position is open during the loop; freeze at
+- [x] Only update MFE/MAE while position is open during the loop; freeze at
       exit.
 
 ### Realized R + enriched payload
-- [ ] Compute realized R per closed trade = `pnl / candidate.risk_amount`
-      (guard risk_amount == 0 → None).
-- [ ] Add to JSON `_trade_to_dict`: `exit_ts`, `size`, `risk_amount`, `r`,
-      `mfe`, `mae`, `mfe_r`, `mae_r`, `exit_reason`.
-- [ ] Keep `rr_ratio` (planned R:R) distinct from realized `r`.
-- [ ] HTML trade payload (`interactive.py _extract_trades_json`) picks up same
+- [x] Compute realized R per closed trade = `pnl / candidate.risk_amount`
+      (guard risk_amount == 0 → None). — carried in JSON `r_multiple` +
+      `mfe_r`/`mae_r` (realized R for the whole-trade series).
+- [x] Add to JSON `_trade_to_dict`: `exit_ts`, `size`, `risk_amount`, `r`,
+      `mfe`, `mae`, `mfe_r`, `mae_r`, `exit_reason`. (`size`/`risk_amount`/
+      `r_multiple` were already present.)
+- [x] Keep `rr_ratio` (planned R:R) distinct from realized `r`.
+- [x] HTML trade payload (`interactive.py _extract_trades_json`) picks up same
       new fields for consistency (single source of truth = JSON codec).
 
 ### Equity curve
-- [ ] `TradeLedger` records a time-indexed balance series (per closed-trade or
-      per-candle, decide granularity; enough for annualization + drawdown).
-- [ ] Expose the equity curve (timestamps + balance) through the JSON output so
-      renderers/computations can consume it.
-- [ ] Keep existing `balance`, `peak_balance`, `total_pnl`, `max_drawdown`
+- [x] `TradeLedger` records a time-indexed balance series (per closed-trade or
+      per-candle, decide granularity; enough for annualization + drawdown). —
+      per-closed-trade: `apply(pnl, timestamp)` appends `(timestamp, balance)`.
+- [x] Expose the equity curve (timestamps + balance) through the JSON output so
+      renderers/computations can consume it. — `AnalysisOutput`/`PortfolioOutput`
+      carry `equity_curve`; `encode_*` emit `[{t, balance}]`.
+- [x] Keep existing `balance`, `peak_balance`, `total_pnl`, `max_drawdown`
       behaviour unchanged (additive).
+
+### Per-trade regime context (098a addendum, 107-known-gap)
+- [x] Snapshot cheap regime features at submit onto each order: `atr_pct`,
+      `vol_ratio`, `rng20_atr`, `trend_eff` (signed Kaufman, 63-candle) —
+      `strategy/context.py::trade_context`; threaded via `submit_order(context=)`
+      from both backtesters. ATR looked up by type (`ATRFact`), so fact naming
+      does not matter.
 
 ## Data flow change
 ```

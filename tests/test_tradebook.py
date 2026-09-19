@@ -1010,3 +1010,165 @@ class TestExitReasons:
 
     def test_exit_reason_uniqueness(self) -> None:
         assert len({r.value for r in ExitReason}) == len(ExitReason)
+
+
+class TestExcursionTracking:
+    """MFE/MAE (backlog 098): favourable/adverse excursion is tracked from fill
+    via the candles the strategy sees, stamped currency units with R multiples,
+    and survives both scheduled closes and broker timeouts."""
+
+    def _open_bullish(self, tb: TradeBook, t0: datetime) -> None:
+        c = _candidate(entry=100.0, stop=95.0, target=115.0, size=0.2)
+        tb.submit_order(c, _signal(), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0, c=102.0))
+
+    def test_fill_candle_sets_initial_excursion(self) -> None:
+        tb = TradeBook()
+        t0 = datetime(2024, 1, 1)
+        self._open_bullish(tb, t0)
+        # No close yet (fill alone records no outcome) — excursions surface at
+        # closure: mfe=(110-100)*0.2=2.0, mae=(100-90)*0.2=2.0.
+        tb.close_trade(112.0, t0 + timedelta(days=2), reason=ExitReason.TARGET)
+        closed = tb.trades[-1]
+        assert closed.mfe == pytest.approx(2.0)
+        assert closed.mae == pytest.approx(2.0)
+
+    def test_dip_then_rally_updates_excursion_and_r(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        self._open_bullish(tb, t0)
+        # Quiet candle: excursion unchanged.
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=2), h=106.0, lo=97.0, c=101.0))
+        # Rally candle hits target: mfe grows to (115-100)*0.2=3.0, mae pinned.
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=3), h=115.0, lo=100.0, c=113.0))
+        closed = tb.trades[-1]
+        assert closed.result == "win"
+        assert closed.mfe == pytest.approx(3.0)
+        assert closed.mae == pytest.approx(2.0)
+        assert closed.mfe_r == pytest.approx(3.0)  # risk_amount = 5*0.2 = 1.0
+        assert closed.mae_r == pytest.approx(2.0)
+
+    def test_cancelled_open_trade_keeps_excursions(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        self._open_bullish(tb, t0)
+        # Never hits stop/target before max_hold_days -> broker timeout.
+        tb.resolve_at_cursor(
+            _candle(t0 + timedelta(days=11), h=102.0, lo=99.0, c=100.0),
+            max_hold_days=10,
+        )
+        closed = tb.trades[-1]
+        assert closed.result == "cancelled"
+        assert closed.exit_reason is ExitReason.TIMEOUT
+        assert closed.mfe == pytest.approx(2.0)
+        assert closed.mae == pytest.approx(2.0)
+
+    def test_bearish_excursion_direction_flipped(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        c = _candidate(
+            direction=TrendDirection.BEARISH,
+            entry=100.0,
+            stop=105.0,
+            target=90.0,
+            size=0.2,
+        )
+        tb.submit_order(c, _signal(TrendDirection.BEARISH), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=92.0, lo=88.0, c=90.0))
+        # Short: fav = (entry - low); adv = (high - entry). Day 2 pierces the
+        # target (low 86 <= 90): mfe=(100-86)*0.2=2.8, mae=(103-100)*0.2=0.6.
+        tb.resolve_at_cursor(_candle(t0 + timedelta(days=2), h=103.0, lo=86.0, c=89.0))
+        closed = tb.trades[-1]
+        assert closed.result == "win"
+        assert closed.pnl == pytest.approx(2.0)
+        assert closed.mfe == pytest.approx(2.8)
+        assert closed.mae == pytest.approx(0.6)
+        assert closed.mfe_r == pytest.approx(2.8)
+        assert closed.mae_r == pytest.approx(0.6)
+
+
+class TestEquityCurve:
+    """Time-indexed balance series: one (close_time, balance) point per real
+    close, in order. Cancel/unrealized events contribute nothing."""
+
+    def test_curve_captures_balance_after_each_close(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        tb.submit_order(
+            _candidate(entry=100.0, stop=95.0, target=115.0, size=1.0),
+            _signal(), "s", t0,
+        )
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=112.0, lo=99.0))
+        close_ts = t0 + timedelta(days=2)
+        tb.close_trade(113.0, close_ts, reason=ExitReason.TARGET)
+        curve = tb.equity_curve
+        assert len(curve) == 1
+        ts, balance = curve[0]
+        assert ts == close_ts
+        assert balance == pytest.approx(1000.0 + (113.0 - 100.0) * 1.0)
+
+    def test_curve_multiple_closes_in_order(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        for i, target in enumerate((105.0, 110.0), start=1):
+            c = _candidate(entry=100.0, stop=95.0, target=target, size=1.0)
+            tb.submit_order(c, _signal(), "s", t0)
+            tb.fill_order(_candle(t0 + timedelta(days=1), h=108.0, lo=98.0))
+            tb.close_trade(target, t0 + timedelta(days=1 + i), reason=ExitReason.TARGET)
+        curve = tb.equity_curve
+        assert len(curve) == 2
+        assert curve[0][1] == pytest.approx(1005.0)
+        assert curve[1][1] == pytest.approx(1015.0)
+        assert curve == tuple(sorted(curve, key=lambda pt: pt[0]))
+
+    def test_filtered_by_instrument_rebuilds_curve(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        tb.submit_order(
+            _candidate(entry=100.0, stop=95.0, target=115.0, size=1.0),
+            _signal(), "s", t0, instrument="AAA",
+        )
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=112.0, lo=99.0), instrument="AAA")
+        tb.close_trade(113.0, t0 + timedelta(days=2), "AAA", ExitReason.TARGET)
+        subset = tb.filtered_by_instrument("AAA")
+        assert len(subset.trades) == 1
+        assert len(subset.equity_curve) == 1
+        assert subset.equity_curve[0][1] == pytest.approx(1000.0 + 13.0)
+
+
+class TestTradeContextCapture:
+    """Per-trade regime context (backlog 098): the dict passed at submit rides
+    the order through fill and close, and survives timeout cancellation of an
+    open trade (pending-never-filled carries nothing)."""
+
+    def test_context_rides_submit_to_close(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        ctx = {"atr_pct": 1.5, "vol_ratio": 1.1, "rng20_atr": 4.0, "trend_eff": 0.4}
+        tb.submit_order(_candidate(), _signal(), "s", t0, context=dict(ctx))
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=112.0, lo=99.0))
+        tb.close_trade(113.0, t0 + timedelta(days=2), reason=ExitReason.TARGET)
+        closed = tb.trades[-1]
+        assert closed.context == ctx
+
+    def test_context_default_none(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        tb.submit_order(_candidate(), _signal(), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=112.0, lo=99.0))
+        tb.close_trade(113.0, t0 + timedelta(days=2), reason=ExitReason.TARGET)
+        assert tb.trades[-1].context is None
+
+    def test_context_survives_open_timeout_cancel(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        ctx = {"trend_eff": -0.2}
+        tb.submit_order(_candidate(), _signal(), "s", t0, context=dict(ctx))
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=103.0, lo=99.0))
+        tb.resolve_at_cursor(
+            _candle(t0 + timedelta(days=11), h=102.0, lo=99.0, c=100.0),
+            max_hold_days=10,
+        )
+        closed = tb.trades[-1]
+        assert closed.exit_reason is ExitReason.TIMEOUT
+        assert closed.context == ctx

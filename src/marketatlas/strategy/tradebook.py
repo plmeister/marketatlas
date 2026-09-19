@@ -18,16 +18,18 @@ class _PendingOrder:
     source: str
     instrument: str
     timestamp: datetime
+    context: dict[str, float] | None = None
 
 
 @dataclass
 class _ExitState:
-    """Mutable partial-exit bookkeeping for one open position.
+    """Mutable open-position bookkeeping for one live trade.
 
-    Only populated when the candidate carries an enabled ``ExitPlan``. The
-    frozen ``TradeCandidate``/``TradeOutcome`` records keep the reported math
-    pure; this object owns the scaled-out size, banked P&L, and runner stop
-    geometry while the position is live.
+    Owns the scaled-out size, banked P&L, runner stop geometry, and the
+    observed favourable/adverse excursion (MFE/MAE) while the position is
+    live. The frozen ``TradeCandidate``/``TradeOutcome`` records keep the
+    reported math pure; this object is created for every filled trade (plan
+    stays None when no ``ExitPlan`` is active).
     """
 
     plan: ExitPlan | None = None
@@ -38,6 +40,8 @@ class _ExitState:
     trail_stop: float | None = None
     runner_target: float | None = None
     extreme: float = 0.0
+    mfe: float = 0.0  # max favourable excursion, account currency (orig size)
+    mae: float = 0.0  # max adverse excursion, account currency (orig size)
 
 
 @dataclass(frozen=True)
@@ -52,6 +56,16 @@ class TradeOutcome:
     pnl: float | None
     result: str | None  # "win" / "loss" / "breakeven" / "cancelled" / None
     exit_reason: ExitReason | None = None
+    # Favourable/adverse excursion while open, in account currency (computed
+    # over the ORIGINAL position size, so R-units stay comparable across
+    # scaled-out trades) and in R units (excursion / candidate.risk_amount).
+    mfe: float | None = None
+    mae: float | None = None
+    mfe_r: float | None = None
+    mae_r: float | None = None
+    # Trade-entry regime context (atr_pct, vol_ratio, trend_eff, rng20_atr,
+    # ...) captured at the signal candle, for post-hoc regime-gate research.
+    context: dict[str, float] | None = None
 
 
 class TradeBook:
@@ -86,6 +100,11 @@ class TradeBook:
     @property
     def trades(self) -> tuple[TradeOutcome, ...]:
         return tuple(self._trades)
+
+    @property
+    def equity_curve(self) -> tuple[tuple[datetime, float], ...]:
+        """Time-indexed balance series (close time, balance after close)."""
+        return self._ledger.equity_curve
 
     @property
     def win_count(self) -> int:
@@ -296,6 +315,26 @@ class TradeBook:
         pending = self._pending.get(instrument)
         return pending.timestamp if pending is not None else None
 
+    def _update_excursion(self, candle: Candle, st: _ExitState, c: TradeCandidate) -> None:
+        """Track max favourable/adverse excursion of the open position.
+
+        Uses the candle the strategy actually sees (same candle visibility as
+        stop/target resolution — no lookahead). Excursion is measured against
+        the ORIGINAL position size so ``mfe_r``/``mae_r`` stay comparable
+        across scale-out trades; ``candle.high/low`` are the realistic intraday
+        extremes for a position filled at ``c.entry``.
+        """
+        if c.direction == TrendDirection.BULLISH:
+            fav = (candle.high - c.entry) * c.size
+            adv = (c.entry - candle.low) * c.size
+        else:
+            fav = (c.entry - candle.low) * c.size
+            adv = (candle.high - c.entry) * c.size
+        if fav > st.mfe:
+            st.mfe = fav
+        if adv > st.mae:
+            st.mae = adv
+
     def submit_order(
         self,
         candidate: TradeCandidate,
@@ -303,6 +342,7 @@ class TradeBook:
         source: str,
         signal_timestamp: datetime,
         instrument: str = "",
+        context: dict[str, float] | None = None,
     ) -> None:
         self._pending[instrument] = _PendingOrder(
             candidate=candidate,
@@ -310,6 +350,7 @@ class TradeBook:
             source=source,
             instrument=instrument,
             timestamp=signal_timestamp,
+            context=context,
         )
 
     def fill_order(self, candle: Candle, instrument: str = "") -> None:
@@ -343,6 +384,7 @@ class TradeBook:
             instrument=pending.instrument,
             pnl=None,
             result=None,
+            context=pending.context,
         )
         plan = (
             candidate.exit_plan
@@ -350,6 +392,7 @@ class TradeBook:
             else None
         )
         self._exit_states[instrument] = _ExitState(plan=plan)
+        self._update_excursion(candle, self._exit_states[instrument], candidate)
         del self._pending[instrument]
 
     def close_trade(
@@ -390,9 +433,14 @@ class TradeBook:
             pnl=pnl,
             result=result,
             exit_reason=reason,
+            mfe=st.mfe if st is not None else None,
+            mae=st.mae if st is not None else None,
+            mfe_r=((st.mfe / c.risk_amount) if st is not None and c.risk_amount else None),
+            mae_r=((st.mae / c.risk_amount) if st is not None and c.risk_amount else None),
+            context=trade.context,
         )
         self._trades.append(closed)
-        self._ledger.apply(pnl)
+        self._ledger.apply(pnl, timestamp)
         self._exit_states.pop(instrument, None)
         del self._open_trades[instrument]
 
@@ -409,8 +457,10 @@ class TradeBook:
             return
         c = open_trade.candidate
         st = self._exit_states.get(instrument)
-        plan = st.plan if st is not None else None
-        assert plan is None or st is not None
+        assert st is not None  # every filled trade carries an _ExitState
+        plan = st.plan
+
+        self._update_excursion(candle, st, c)
 
         if plan is not None:
             assert st is not None
@@ -628,6 +678,7 @@ class TradeBook:
         trade = self._open_trades.get(instrument)
         if trade is None:
             return
+        st = self._exit_states.get(instrument)
         cancelled = TradeOutcome(
             submit_time=trade.submit_time,
             entry_timestamp=trade.entry_timestamp,
@@ -639,6 +690,9 @@ class TradeBook:
             pnl=0.0,
             result="cancelled",
             exit_reason=ExitReason.TIMEOUT,
+            mfe=st.mfe if st is not None else None,
+            mae=st.mae if st is not None else None,
+            context=trade.context,
         )
         self._trades.append(cancelled)
         self._exit_states.pop(instrument, None)
@@ -656,7 +710,7 @@ class TradeBook:
         book._trades = subset
         for trade in subset:
             if trade.pnl is not None:
-                book._ledger.apply(trade.pnl)
+                book._ledger.apply(trade.pnl, trade.exit_timestamp)
         return book
 
     @property

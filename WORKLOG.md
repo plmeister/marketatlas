@@ -2,6 +2,30 @@
 
 ## Completed
 
+- **098b** — MFE/MAE + equity curve + per-trade regime context (second slice of
+  098, unlocks 099/100/101/102): `TradeBook` tracks max favourable/adverse
+  excursion in account currency on fill candle + every open cursor using the
+  candle it actually sees (same no-lookahead visibility as stop/target
+  resolution), against ORIGINAL position size so R compares across scale-outs;
+  frozen at close. `TradeOutcome` gains `mfe`/`mae`/`mfe_r`/`mae_r`/`context`;
+  timeout-cancelled open trades keep their excursions, pending-never-filled
+  carries none. `TradeLedger.apply(pnl, timestamp)` now appends a time-indexed
+  balance series — `equity_curve` property on ledger + `TradeBook` (+
+  `filtered_by_instrument` rebuilds hits) and on `AnalysisOutput`/`PortfolioOutput`.
+  New `strategy/context.py`: `trade_context(view, atr_value)` snapshots
+  `atr_pct`/`vol_ratio`/`rng20_atr`/`trend_eff` (signed Kaufman, 63-candle) at
+  submit; `extract_atr_value` finds the scalar ATR by type. Both backtesters
+  thread context via `submit_order(context=)`. JSON codec + interactive HTML
+  payload now carry `mfe`/`mae`/`mfe_r`/`mae_r`/`context` and `equity_curve`
+  (`[{t, balance}]`). Result mapping still pnl-derived. New tests: `TestExcursionTracking`
+  (init, dip-then-rally R-units, timeout keeps excursions, bearish flip),
+  `TestEquityCurve` (per-close points, ordering, instrument subset),
+  `TestTradeContextCapture` (submit→close ride, default None, timeout survival),
+  `tests/test_context.py` (feature math + ATR-by-type), jsoncodec schema tests.
+  895 tier1+tier2 pass; ruff/mypy clean on touched files (pre-existing E501/E741/
+  pyarrow/numpy-noise + one pre-existing snapshot kinds-filter test untouched).
+  Backlog 098 sections ticked.
+
 - **098a** — Exit-reason capture (first slice of 098): new `ExitReason`
   str-enum (`stop`/`target`/`timeout`/`cancel`, `reversal` reserved) in
   `strategy/trade.py`; `TradeOutcome.exit_reason` field (default None,

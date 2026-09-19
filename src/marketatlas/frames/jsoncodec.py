@@ -139,6 +139,11 @@ def _trade_to_dict(trade: Any) -> dict[str, Any]:
         "submit_ts": trade.submit_time.isoformat(),
         "entry_ts": trade.entry_timestamp.isoformat(),
         "exit_ts": exit_ts,
+        "mfe": trade.mfe,
+        "mae": trade.mae,
+        "mfe_r": trade.mfe_r,
+        "mae_r": trade.mae_r,
+        "context": trade.context,
         "entry": c.entry,
         "stop": c.stop,
         "target": c.target,
@@ -186,6 +191,14 @@ def _rejections_by_ts(frames: Any) -> dict[str, list[dict[str, str]]]:
     return by_ts
 
 
+def _equity_curve(output: Any) -> list[dict[str, Any]]:
+    """Encode the time-indexed balance series as ``[{t, balance}]`` in order."""
+    curve = getattr(output, "equity_curve", ())
+    return [
+        {"t": ts.isoformat(), "balance": balance} for ts, balance in curve
+    ]
+
+
 def encode_analysis_output(output: Any) -> dict[str, Any]:
     """Encode one instrument's renderable payload.
 
@@ -210,6 +223,7 @@ def encode_analysis_output(output: Any) -> dict[str, Any]:
         "patterns_by_ts": _patterns_by_ts(output.frames),
         "rejections_by_ts": _rejections_by_ts(output.frames),
         "trades": [_trade_to_dict(t) for t in output.trades],
+        "equity_curve": _equity_curve(output),
     }
 
 
@@ -226,6 +240,7 @@ def encode_portfolio(po: Any) -> dict[str, Any]:
         "window_size": po.window_size,
         "max_hold_days": po.max_hold_days,
         "title": po.title,
+        "equity_curve": _equity_curve(po),
     }
 
 
