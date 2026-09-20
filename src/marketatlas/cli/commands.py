@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from marketatlas.analysis.ast.instrument import TemplateGraph
     from marketatlas.data.store import MarketStore
+    from marketatlas.frames.output import PortfolioOutput
 
 from marketatlas.cli.formatting import _ab_row
 from marketatlas.data.datastore import DataStore
@@ -325,7 +326,9 @@ def run_command(args: argparse.Namespace) -> None:
         _emit_json_and_snapshots(port, args)
 
 
-def _emit_json_and_snapshots(port, args: argparse.Namespace) -> None:
+def _emit_json_and_snapshots(
+    port: PortfolioOutput, args: argparse.Namespace
+) -> None:
     """Write typed structured JSON and/or annotated trade-snapshot PNGs."""
     if args.output_json:
         import json
@@ -903,11 +906,13 @@ def _write_review_notebook(
     entries: list[tuple[dict[str, Any], Path]] = []
     existing: dict[str, str] = {}
     for name, png in sorted(png_by_name.items()):
-        poi = poi_by_basename.get(name)
+        poi_rec = poi_by_basename.get(name)
         text = notes.read_note(png)
         if text:
             existing[name] = text
-        entries.append((poi or {"kind": "unknown", "symbol": "?", "ts": ""}, png))
+        entries.append(
+            (poi_rec or {"kind": "unknown", "symbol": "?", "ts": ""}, png)
+        )
 
     nb = build_notebook(entries, notes=existing)
     out = write_notebook(nb, notebook_out)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pyarrow.parquet as pq  # type: ignore[import-untyped]
+import pyarrow.parquet as pq
 
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 

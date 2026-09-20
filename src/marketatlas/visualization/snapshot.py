@@ -91,11 +91,15 @@ def _facts_at(source: Any, poi: datetime) -> dict[str, Any] | None:
 
 
 def _symbol_from_input(source: Any) -> str:
-    return source["symbol"] if isinstance(source, dict) else source.symbol
+    value = source["symbol"] if isinstance(source, dict) else source.symbol
+    assert isinstance(value, str)
+    return value
 
 
 def _timeframe_from_input(source: Any) -> str:
-    return source["timeframe"] if isinstance(source, dict) else source.timeframe
+    value = source["timeframe"] if isinstance(source, dict) else source.timeframe
+    assert isinstance(value, str)
+    return value
 
 
 def _window(
@@ -369,7 +373,7 @@ def overlay_series(
 
     from marketatlas.facts.primitive import ATRFact, EMAFact, SMAFact
 
-    over_type: dict[str, type] = {}
+    over_type: dict[str, type[EMAFact] | type[SMAFact] | type[ATRFact]] = {}
     for name in overlays:
         for cls in (EMAFact, SMAFact, ATRFact):
             if cls.__name__.lower().startswith(name.lower()):
@@ -394,9 +398,9 @@ def overlay_series(
         idx = min((i for i, t in enumerate(ts_list) if t >= ts), default=-1)
         if idx < 0:
             continue
-        for name, cls in over_type.items():
+        for name, overlay_cls in over_type.items():
             for f in facts.values():
-                if isinstance(f, cls):
+                if isinstance(f, overlay_cls):
                     result[name][0].append(idx)
                     result[name][1].append(f.value)
                     break
@@ -565,6 +569,28 @@ def render_trade_snapshot(
     return out
 
 
+def _split_kinds(raw: str | set[str]) -> tuple[set[str], set[str]]:
+    """Normalize a kinds filter into (include, exclude).
+
+    Accepts a comma-separated string (``"trade,!pattern"``), a set of names,
+    or a single string name; entries prefixed with ``!`` land in the exclude
+    set. Quietly drops empty tokens — unlike the CLI's ``parse_kinds`` this is
+    a library helper and does not validate against ``VALID_SNAPSHOT_KINDS``.
+    """
+    tokens: set[str] = raw if isinstance(raw, set) else set(raw.split(","))
+    include: set[str] = set()
+    exclude: set[str] = set()
+    for token in tokens:
+        name = token.strip()
+        if not name:
+            continue
+        if name.startswith("!"):
+            exclude.add(name[1:])
+        else:
+            include.add(name)
+    return include, exclude
+
+
 def locate_pois(
     struct: Any,
     *,
@@ -596,16 +622,14 @@ def locate_pois(
         }
 
     if kinds:
-        raw: set[str] = kinds if isinstance(kinds, set) else set([kinds])
-        want = {k for k in raw if not k.startswith("!")}
-        exclude = {k[1:] for k in raw if k.startswith("!")}
+        want, neg = _split_kinds(kinds)
+        exclude = neg
     else:
         want = {"trade", "rejection", "pattern", "sr", "swing"}
         exclude = set()
     if exclude_kinds:
-        exclude |= (
-            exclude_kinds if isinstance(exclude_kinds, set) else set([exclude_kinds])
-        )
+        extra_excl, extra_neg = _split_kinds(exclude_kinds)
+        exclude |= extra_excl | extra_neg
     want -= exclude
 
     pois: list[dict[str, Any]] = []
@@ -681,7 +705,8 @@ def snapshot_basename(poi: dict[str, Any]) -> str:
 def _per_instrument(struct: Any) -> dict[str, Any]:
     """Normalize a portfolio doc (typed or schema) to ``{canonical: dict}``."""
     if isinstance(struct, dict) and "per_instrument" in struct:
-        return struct["per_instrument"]
+        per: dict[str, Any] = struct["per_instrument"]
+        return per
     from marketatlas.frames.jsoncodec import encode_analysis_output
 
     return {

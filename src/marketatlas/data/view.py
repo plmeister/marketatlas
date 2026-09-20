@@ -46,7 +46,7 @@ class MarketView:
 
     @property
     def history(self) -> tuple[Candle, ...]:
-        cached = object.__getattribute__(self, "_history_cache")
+        cached = self._history_cache
         if cached is not None:
             return cached
         if self.view_timeframe is None:
@@ -66,7 +66,7 @@ class MarketView:
 
     @property
     def prices(self) -> tuple[float, ...]:
-        cached = object.__getattribute__(self, "_prices_cache")
+        cached = self._prices_cache
         if cached is not None:
             return cached
         result = tuple(c.close for c in self.history) + (self.current.close,)
@@ -75,7 +75,7 @@ class MarketView:
 
     @property
     def volumes(self) -> tuple[float, ...]:
-        cached = object.__getattribute__(self, "_volumes_cache")
+        cached = self._volumes_cache
         if cached is not None:
             return cached
         result = tuple(c.volume for c in self.history) + (self.current.volume,)
@@ -84,7 +84,7 @@ class MarketView:
 
     @property
     def highs(self) -> tuple[float, ...]:
-        cached = object.__getattribute__(self, "_highs_cache")
+        cached = self._highs_cache
         if cached is not None:
             return cached
         result = tuple(c.high for c in self.history) + (self.current.high,)
@@ -93,7 +93,7 @@ class MarketView:
 
     @property
     def lows(self) -> tuple[float, ...]:
-        cached = object.__getattribute__(self, "_lows_cache")
+        cached = self._lows_cache
         if cached is not None:
             return cached
         result = tuple(c.low for c in self.history) + (self.current.low,)
@@ -102,7 +102,7 @@ class MarketView:
 
     @property
     def timestamps(self) -> tuple[datetime, ...]:
-        cached = object.__getattribute__(self, "_timestamps_cache")
+        cached = self._timestamps_cache
         if cached is not None:
             return cached
         result = tuple(c.timestamp for c in self.history) + (self.current.timestamp,)

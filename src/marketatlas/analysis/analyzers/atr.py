@@ -26,7 +26,7 @@ class ATRAnalyzer(Analyzer):
         return (self._make_key(self.instance_key),)
 
     def _compute_full(
-        self, highs: tuple, lows: tuple, closes: tuple
+        self, highs: tuple[float, ...], lows: tuple[float, ...], closes: tuple[float, ...]
     ) -> tuple[float, float]:
         """Returns (atr_value, running_sum_of_true_ranges)."""
         if len(highs) < 2:

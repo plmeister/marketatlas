@@ -219,7 +219,7 @@ def _extract_facts_per_frame(
     return result, swing_points
 
 
-def _extract_trades_json(trades: tuple) -> list[dict[str, Any]]:
+def _extract_trades_json(trades: tuple[Any, ...]) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for trade in trades:
         c = trade.candidate
