@@ -57,6 +57,7 @@
 ## Metrics Layer
 
 - [x] 099 — Trade-level statistics in R units (`metrics/trades.py::trade_metrics` consumes the 098 enriched trade JSON → dict dashboard: counts, win rate both denominators, avg win/loss R, expectancy R incl./excl. cancels, profit factor R, R distribution (p1-p99/skew/kurtosis/histogram), duration by outcome, MFE-exit-quality, MAE distribution, exit-reason breakdown, frequency, 1R-4R reach by realized/MFE per direction; Pure helpers in `metrics/stats.py` — percentiles/histogram/skew/kurtosis, no I/O, JSON-serializable)
+- [x] 100 — Portfolio/equity performance metrics (`metrics/portfolio.py::portfolio_metrics` reduces 098 curve+trades → summary, CAGR/monthly-annual returns, compounded-vs-simple drag, max/avg drawdown w/ dates+durations+recovery (`metrics/drawdown.py`), vol/Sharpe/Sortino/Calmar + empirical ruin heuristic, consecutive streaks, largest peak-to-trough loss, normalized curve for rendering, exposure (max simultaneous count/risk-%, time-weighted avg, per-instrument); annualization basis documented — explicit periods-per-year > timeframe bars-per-year table > observed closes/yr > 252, risk-free 0 default; `jsoncodec` trades now carry `instrument`; `stats.py` adds log-returns/vol/sharpe/sortino/cagr shared with 101/102)
 
 ## Portfolio Layer
 

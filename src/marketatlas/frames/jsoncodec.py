@@ -155,6 +155,7 @@ def _trade_to_dict(trade: Any) -> dict[str, Any]:
         "risk_amount": c.risk_amount,
         "r_multiple": (float(trade.pnl) / c.risk_amount) if trade.pnl is not None and c.risk_amount else None,
         "source": trade.source_strategy,
+        "instrument": trade.instrument,
     }
 
 
