@@ -49,6 +49,14 @@ warn_unused_configs = true
 module = ["pyarrow", "pyarrow.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["yaml", "yaml.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["matplotlib", "matplotlib.*"]
+ignore_missing_imports = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
