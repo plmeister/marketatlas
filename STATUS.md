@@ -54,6 +54,10 @@
 
 - [x] 097 — Review agent (`src/marketatlas/review/`: `iter_review` joins `notes` sidecars ↔ `locate_pois` POIs via `snapshot_basename`, trims fact context from JSON, reports orphans/unreviewed; `review/prompt.py` builds tuning-advisor prompts; `marketatlas review` CLI in `cli/commands.py` with `--snapshots/--output-json/--strategy/--json`, auto-finds single JSON beside snapshots dir, `NullProvider` deterministic fallback when `MARKETATLAS_REVIEW_PROVIDER` unset)
 
+## Metrics Layer
+
+- [x] 099 — Trade-level statistics in R units (`metrics/trades.py::trade_metrics` consumes the 098 enriched trade JSON → dict dashboard: counts, win rate both denominators, avg win/loss R, expectancy R incl./excl. cancels, profit factor R, R distribution (p1-p99/skew/kurtosis/histogram), duration by outcome, MFE-exit-quality, MAE distribution, exit-reason breakdown, frequency, 1R-4R reach by realized/MFE per direction; Pure helpers in `metrics/stats.py` — percentiles/histogram/skew/kurtosis, no I/O, JSON-serializable)
+
 ## Portfolio Layer
 
 - [x] 069 — Portfolio instrument file & data loading (`PortfolioSpec`/`load_portfolio`, shared `fetch_instrument_data` helper, `run --instruments <file>` loads all instruments over identical start/end into the canonical-keyed store, per-instrument abort with context)
