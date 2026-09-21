@@ -131,6 +131,11 @@ def _candle_to_dict(candle: Any) -> dict[str, Any]:
     }
 
 
+def encode_trade(trade: Any) -> dict[str, Any]:
+    """Encode one ``TradeOutcome`` to the enriched trade dict (098 schema)."""
+    return _trade_to_dict(trade)
+
+
 def _trade_to_dict(trade: Any) -> dict[str, Any]:
     c = trade.candidate
     exit_ts = trade.exit_timestamp.isoformat() if trade.exit_timestamp is not None else None

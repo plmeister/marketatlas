@@ -10,8 +10,6 @@ from marketatlas.data.instrument import Instrument, InstrumentRegistry
 from marketatlas.data.providers.base import SymbolNotFoundError, UnsupportedTimeframeError
 from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 
-
-
 pytestmark = pytest.mark.tier2
 @pytest.fixture(autouse=True)
 def _isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -30,6 +28,70 @@ def _make_candles(n: int = 5, base_price: float = 100.0) -> tuple[Candle, ...]:
             Candle(timestamp=ts, open=p, high=p + 2, low=p - 1, close=p + 1, volume=1000.0 + i)
         )
     return tuple(candles)
+
+
+_COST_TRADE_WIN: dict[str, object] = {
+    "submit_ts": "2024-01-01T00:00:00",
+    "entry_ts": "2024-01-01T00:00:00",
+    "exit_ts": "2024-01-02T00:00:00",
+    "entry": 100.0,
+    "stop": 97.0,
+    "target": 106.0,
+    "direction": "bullish",
+    "result": "win",
+    "exit_reason": "target",
+    "pnl": 60.0,
+    "risk_amount": 30.0,
+    "r_multiple": 2.0,
+}
+_COST_TRADE_LOSS: dict[str, object] = {
+    "submit_ts": "2024-01-03T00:00:00",
+    "entry_ts": "2024-01-03T00:00:00",
+    "exit_ts": "2024-01-04T00:00:00",
+    "entry": 100.0,
+    "stop": 97.0,
+    "target": 100.0,
+    "direction": "bullish",
+    "result": "loss",
+    "exit_reason": "stop",
+    "pnl": -30.0,
+    "risk_amount": 30.0,
+    "r_multiple": -1.0,
+}
+
+
+class _FakeDir:
+    value = "bullish"
+
+
+class _FakeCandidate:
+    entry = 100.0
+    stop = 97.0
+    target = 106.0
+    rr_ratio = 2.0
+    risk_amount = 30.0
+    direction = _FakeDir()
+
+
+class _FakeTrade:
+    """Minimal TradeOutcome-shaped record for run --costs output smoke test."""
+
+    instrument = "TEST"
+    source_strategy = "test"
+    candidate = _FakeCandidate()
+    mfe = None
+    mae = None
+    mfe_r = None
+    mae_r = None
+    context = None
+    exit_reason = None
+
+    def __init__(self, result: str, r: float) -> None:
+        self.result = result
+        self.pnl = r * 30.0
+        self.entry_timestamp = datetime(2024, 1, 1, tzinfo=UTC)
+        self.exit_timestamp = datetime(2024, 1, 2, tzinfo=UTC)
+        self.submit_time = datetime(2024, 1, 1, tzinfo=UTC)
 
 
 def _make_market_data(
@@ -223,6 +285,95 @@ class TestRunCommand:
         mock_bt.run_with_progress.assert_called_once()
         mock_renderer_cls.assert_called_once()
         mock_renderer_cls.return_value.render.assert_called_once_with(output_html)
+
+    @patch(
+        "marketatlas.frames.jsoncodec.encode_trade",
+        side_effect=[_COST_TRADE_WIN, _COST_TRADE_LOSS],
+    )
+    @patch("marketatlas.visualization.interactive.InteractiveRenderer")
+    @patch("marketatlas.backtesting.backtester.Backtester")
+    @patch("marketatlas.strategy.bundle.StrategyBundle")
+    @patch("marketatlas.strategy.strategy.Strategy")
+    @patch("marketatlas.strategy.loader.load_strategy")
+    @patch("marketatlas.cli.YahooProvider")
+    def test_run_with_costs_reports_net_section(
+        self,
+        mock_yahoo_cls: MagicMock,
+        mock_load: MagicMock,
+        mock_strategy_cls: MagicMock,
+        mock_bundle_cls: MagicMock,
+        mock_bt_cls: MagicMock,
+        mock_renderer_cls: MagicMock,
+        _mock_encode: MagicMock,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        strategy_file = tmp_path / "strat.yaml"
+        strategy_file.write_text("strategy:\n  name: test\n")
+
+        config = MagicMock()
+        config.name = "test"
+        config.version = "1.0"
+        config.analyzers = [1, 2]
+        config.signals = [1]
+        mock_load.return_value = config
+
+        mock_provider = MagicMock()
+        mock_provider.fetch.return_value = _make_market_data(n=200)
+        mock_yahoo_cls.return_value = mock_provider
+        mock_strategy_cls.return_value = MagicMock()
+        mock_bundle_cls.return_value = MagicMock()
+
+        mock_bt = MagicMock()
+        mock_bt.frame_count = 100
+        mock_bt._max_hold_days = 10
+        mock_tradebook = MagicMock()
+        mock_tradebook.initial_balance = 1000.0
+        mock_tradebook.summary = {
+            "initial_balance": 1000.0,
+            "final_balance": 1030.0,
+            "total_pnl": 30.0,
+            "total_return_pct": 3.0,
+            "total_trades": 2,
+            "wins": 1,
+            "losses": 1,
+            "breakevens": 0,
+            "win_rate": 0.5,
+            "max_drawdown": 0.03,
+            "profit_factor": 2.0,
+            "expectancy": 15.0,
+            "by_strategy": {"test": {"wins": 1, "losses": 1, "total_pnl": 30.0}},
+        }
+        mock_tradebook.trades = [_FakeTrade("win", 2.0), _FakeTrade("loss", -1.0)]
+        mock_bt.run_with_progress.return_value = _mock_backtest_result(mock_tradebook)
+        mock_bt_cls.return_value = mock_bt
+
+        output_html = tmp_path / "out.html"
+        _run_main(
+            "run",
+            "--strategy",
+            str(strategy_file),
+            "--symbol",
+            "BTC-USD",
+            "--interval",
+            "1d",
+            "--start",
+            "2024-01-01",
+            "--end",
+            "2025-01-01",
+            "--output",
+            str(output_html),
+            "--costs",
+            '{"commission_flat": 5.0, "exit_slippage_pct": 0.1}',
+        )
+
+        captured = capsys.readouterr()
+        assert "NET RESULTS" in captured.out
+        assert "Cost schedule:" in captured.out
+        assert "Net total P&L" in captured.out
+        # Gross section untouched alongside net.
+        assert "RESULTS" in captured.out
+        assert "commission_flat" in captured.out
 
     def test_run_strategy_not_found(self, tmp_path: Path) -> None:
         nonexistent = tmp_path / "nope.yaml"
