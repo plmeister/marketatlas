@@ -252,6 +252,9 @@ def run_command(args: argparse.Namespace) -> None:
     print(f"  Profit factor:   {summary['profit_factor']:.2f}")
     print(f"  Expectancy:      ${summary['expectancy']:.2f}")
 
+    if getattr(args, "costs", ""):
+        _print_net_section(args, tradebook, store.timeframe.value)
+
     by_strat = summary["by_strategy"]
     if by_strat and isinstance(by_strat, dict):
         print("\n  By strategy:")
@@ -324,6 +327,109 @@ def run_command(args: argparse.Namespace) -> None:
             title=output.title,
         )
         _emit_json_and_snapshots(port, args)
+
+
+def _print_net_section(args: argparse.Namespace, tradebook: Any, timeframe: str) -> None:
+    """Report net performance alongside the gross run results (backlog 101).
+
+    Activated by ``--costs``; gross printing is untouched. Parses the cost
+    schedule, confers the enriched trade dicts through the cost pass and prints
+    the cost summary + drags + sign flips + break-even win rate.
+    """
+    from marketatlas.frames import jsoncodec
+    from marketatlas.metrics.costs import CostSchedule, net_metrics
+
+    schedule = CostSchedule.parse(args.costs)
+    trades = [jsoncodec.encode_trade(t) for t in tradebook.trades]
+    try:
+        result = net_metrics(
+            trades,
+            schedule,
+            initial_balance=tradebook.initial_balance,
+            timeframe=timeframe,
+        )
+    except Exception as exc:  # noqa: BLE001 — report malformed schedules, keep gross run
+        print(f"\nError computing net metrics: {exc}", file=sys.stderr)
+        return
+
+    costs = result["costs"]
+    net = result["net"]
+    drags = result["drags"]
+    be = result["break_even_win_rate"]
+    assert isinstance(costs, dict)
+    assert isinstance(drags, dict)
+    assert isinstance(be, dict)
+    assert isinstance(net, dict) and isinstance(net["portfolio"], dict)
+    assert isinstance(net["trades"], dict)
+    net_pm = net["portfolio"]
+    net_returns = net_pm["returns"]
+    net_tm = net["trades"]
+    net_expectancy = net_tm["expectancy"]
+    net_pf = net_tm["profit_factor"]
+    net_wr = net_tm["win_rate"]
+    net_summary = net_pm["summary"]
+
+    print(f"\n{'=' * 60}")
+    print(f"NET RESULTS (cost schedule: {schedule.source})")
+    print("=" * 60)
+    print(f"  Cost schedule:   {schedule.to_dict()}")
+    print(
+        f"  Costs paid:      ${costs['total_cost']:+.2f} "
+        f"({costs['costed_count']}/{costs['filled_count']} filled trades, "
+        f"avg ${costs['avg_cost_per_filled']:.2f} = {costs['avg_cost_r']}R)"
+    )
+    if costs["dropped_count"]:
+        print(f"  Dropped by lot rounding: {costs['dropped_count']} trade(s)")
+    print(
+        f"  Net total P&L:   ${net_summary['total_pnl']:+.2f} "
+        f"({net_summary['total_return_pct']:+.1f}%)"
+    )
+    cagr = net_returns.get("cagr_pct")
+    cagr_text = f"{cagr:.1f}%" if isinstance(cagr, int | float) else "n/a"
+    print(f"  Net CAGR:        {cagr_text}")
+    exp_r = net_expectancy.get("expectancy_r")
+    exp_text = f"{exp_r:.3f}R" if isinstance(exp_r, int | float) else "n/a"
+    pf = net_pf.get("profit_factor_r")
+    pf_text = f"{pf:.2f}" if isinstance(pf, int | float) else "n/a"
+    wr = net_wr.get("decided")
+    wr_text = f"{wr:.1%}" if isinstance(wr, int | float) else "n/a"
+    print(f"  Net expectancy:  {exp_text} (PF {pf_text}, win rate {wr_text})")
+
+    print("\n  Drag vs gross:")
+    ret_drag = drags["return_drag_pct"]
+    ret_text = f"{ret_drag:+.2f}pp" if isinstance(ret_drag, int | float) else "n/a"
+    cagr_drag = drags["cagr_drag_pct"]
+    cagr_text_drag = f"{cagr_drag:+.2f}pp" if isinstance(cagr_drag, int | float) else "n/a"
+    exp_drag = drags["expectancy_drag_r"]
+    exp_text_drag = f"{exp_drag:+.3f}R" if isinstance(exp_drag, int | float) else "n/a"
+    pf_drag = drags["profit_factor_drag"]
+    pf_text_drag = f"{pf_drag:.2f}" if isinstance(pf_drag, int | float) else "n/a"
+    wr_drag = drags["win_rate_drag_pp"]
+    wr_text_drag = f"{wr_drag:+.1f}pp" if isinstance(wr_drag, int | float) else "n/a"
+    print(f"    Return:     {ret_text}")
+    print(f"    CAGR:       {cagr_text_drag}")
+    print(f"    Expectancy: {exp_text_drag}")
+    print(f"    Profit fac: {pf_text_drag}")
+    print(f"    Win rate:   {wr_text_drag}")
+
+    flips = result["sign_flips"]
+    assert isinstance(flips, list)
+    if flips:
+        print("\n  Sign flips after costs:")
+        for flip in flips:
+            assert isinstance(flip, dict)
+            print(f"    {flip['signal']}")
+
+    be_net = be.get("net")
+    be_lift = be.get("required_lift_pp")
+    if isinstance(be_net, int | float):
+        lift = float(be_lift) if isinstance(be_lift, int | float) else None
+        lift_text = (
+            f" (needs {abs(lift):.1f}pp {'above' if lift > 0 else 'below'} current win rate)"
+            if lift is not None
+            else ""
+        )
+        print(f"\n  Break-even win rate at current costs: {be_net:.1%}{lift_text}")
 
 
 def _emit_json_and_snapshots(

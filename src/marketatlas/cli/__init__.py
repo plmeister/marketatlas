@@ -121,6 +121,14 @@ def main() -> None:
         default="",
         help="Path to instruments registry YAML (default: data/instruments.yaml)",
     )
+    run_parser.add_argument(
+        "--costs",
+        default="",
+        help="Cost schedule (backlog 101): inline JSON like "
+        "'{\"commission_flat\": 1.5, \"entry_slippage_pct\": 0.05}' or a path "
+        "to a JSON file. When set, net performance is reported alongside the "
+        "gross results (default: gross only, zero costs)",
+    )
 
     snap_parser = subparsers.add_parser(
         "snapshot",
