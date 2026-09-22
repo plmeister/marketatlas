@@ -8,6 +8,7 @@ from marketatlas.cli.commands import (  # noqa: F401 — re-export for test patc
     fetch_command,
     instruments_add_command,
     instruments_list_command,
+    report_command,
     review_command,
     run_command,
     run_portfolio_command,
@@ -25,6 +26,7 @@ __all__ = [
     "instruments_add_command",
     "instruments_list_command",
     "main",
+    "report_command",
     "review_command",
     "run_command",
     "run_portfolio_command",
@@ -209,6 +211,62 @@ def main() -> None:
         "snapshot chart with tagged feedback cells (spike)",
     )
 
+    report_parser = subparsers.add_parser(
+        "report",
+        help="Assemble the 098-102 metrics dashboard (trade/portfolio/costs/"
+        "robustness + the 'does it double?' verdict) from a run's structured JSON",
+    )
+    report_parser.add_argument(
+        "--json",
+        required=True,
+        help="Path to structured JSON produced by `run --output-json`",
+    )
+    report_parser.add_argument(
+        "--costs",
+        default="",
+        help="Cost schedule (backlog 101): inline JSON or path to a JSON file. "
+        "When set, the net-after-costs layer is included in the report",
+    )
+    report_parser.add_argument(
+        "--format",
+        default="text",
+        choices=("text", "json"),
+        help="Output format: table dashboard (text) or full machine payload "
+        "(json) (default: text)",
+    )
+    report_parser.add_argument(
+        "--output",
+        "-o",
+        default="",
+        help="Write the report to this file instead of stdout",
+    )
+    report_parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Deterministic RNG seed for Monte-Carlo re-sampling (default: 42)",
+    )
+    report_parser.add_argument(
+        "--sims",
+        type=int,
+        default=1000,
+        help="Monte-Carlo iteration count (default: 1000)",
+    )
+    report_parser.add_argument(
+        "--risk-fraction",
+        type=float,
+        default=0.0,
+        help="Fixed fraction of balance risked per MC trade (default: estimated "
+        "from mean risk_amount / initial balance)",
+    )
+    report_parser.add_argument(
+        "--target-cagr",
+        type=float,
+        default=100.0,
+        help="Annual return target for the 'does it double?' verdict "
+        "(default: 100%/yr)",
+    )
+
     instr_parser = subparsers.add_parser("instruments", help="Manage instrument registry")
     instr_sub = instr_parser.add_subparsers(dest="instr_command", help="Instrument command")
 
@@ -251,6 +309,8 @@ def main() -> None:
         snapshot_command(args)
     elif args.command == "review":
         review_command(args)
+    elif args.command == "report":
+        report_command(args)
     else:
         parser.print_help()
 

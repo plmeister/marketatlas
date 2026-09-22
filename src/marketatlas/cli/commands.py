@@ -1145,3 +1145,91 @@ def review_command(args: argparse.Namespace) -> None:
             json.dump(payload, f, indent=2)
         print(f"Review report: {out_path}")
 
+
+def report_command(args: argparse.Namespace) -> None:
+    """Assemble the 098-102 metrics stack from a run's structured JSON (102-B).
+
+    Input is a ``run --output-json`` document (single-instrument or portfolio
+    shape); optionally a cost schedule (101) to add the net layer. Output is
+    either the human text dashboard (--format text) or the full machine
+    payload (--format json). No data fetching, no provider — pure compute over
+    the enriched trades already in the JSON.
+    """
+    import json
+
+    from marketatlas.metrics.costs import CostSchedule
+    from marketatlas.metrics.report import build_report, format_report_text
+
+    src_path = Path(args.json)
+    if not src_path.exists():
+        print(f"Error: output JSON not found: {src_path}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        with open(src_path) as f:
+            doc = json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"Error: {src_path} is not valid JSON: {e}", file=sys.stderr)
+        sys.exit(1)
+    if not isinstance(doc, dict):
+        print(f"Error: {src_path} must be a JSON object", file=sys.stderr)
+        sys.exit(1)
+
+    from marketatlas.metrics.report import report_source_from_json
+
+    trades, curve, instruments, timeframe = report_source_from_json(doc)
+    if not trades:
+        print("Error: no trades found in the source JSON", file=sys.stderr)
+        sys.exit(1)
+
+    trades_by_instrument: dict[str, list[dict[str, Any]]] = {}
+    per_instrument = doc.get("per_instrument")
+    if isinstance(per_instrument, Mapping):
+        for canonical, out in per_instrument.items():
+            if isinstance(out, Mapping) and isinstance(out.get("trades"), list):
+                trades_by_instrument[str(canonical)] = [
+                    t for t in out["trades"] if isinstance(t, dict)
+                ]
+
+    schedule: CostSchedule | None = None
+    if getattr(args, "costs", ""):
+        try:
+            schedule = CostSchedule.parse(args.costs)
+        except ValueError as e:
+            print(f"Error parsing cost schedule: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    try:
+        result = build_report(
+            trades,
+            equity_curve=curve,
+            timeframe=timeframe,
+            cost_schedule=schedule,
+            seed=int(getattr(args, "seed", 42) or 42),
+            n_sims=int(getattr(args, "sims", 1000) or 1000),
+            risk_fraction=(float(getattr(args, "risk_fraction", 0) or 0) or None),
+            target_cagr_pct=float(getattr(args, "target_cagr", 100.0) or 100.0),
+            trades_by_instrument=trades_by_instrument,
+        )
+    except Exception as exc:  # noqa: BLE001 — surface compute errors cleanly
+        print(f"Error computing report: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    fmt = getattr(args, "format", "text") or "text"
+    out_path = Path(args.output) if getattr(args, "output", "") else None
+    if fmt == "json":
+        payload = json.dumps(result, indent=2)
+        if out_path:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(payload + "\n")
+            print(f"Report JSON: {out_path}")
+        else:
+            print(payload)
+    else:
+        text = format_report_text(result)
+        if out_path:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(text + "\n")
+            print(f"Report text: {out_path}")
+        else:
+            print(text)
+
