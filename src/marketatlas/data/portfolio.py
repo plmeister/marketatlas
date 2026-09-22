@@ -82,7 +82,10 @@ def load_portfolio(path: Path, registry: InstrumentRegistry) -> PortfolioSpec:
     canonical (naming the instrument and its index), or a missing registry.
     """
     if registry is None:
-        raise PortfolioError("no instrument registry available (data/instruments.yaml)")
+        raise PortfolioError(
+            "no instrument registry available (look in ~/.config/marketatlas/"
+            "instruments.yaml or data/instruments.yaml)"
+        )
     if not path.exists():
         raise PortfolioError(f"portfolio file not found: {path}")
     raw = path.read_text()

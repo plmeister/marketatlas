@@ -44,7 +44,7 @@ def main() -> None:
     fetch_parser.add_argument(
         "--registry",
         default="",
-        help="Path to instruments registry YAML (default: data/instruments.yaml)",
+        help="Path to instruments registry YAML (default: ~/.config/marketatlas)",
     )
 
     run_parser = subparsers.add_parser("run", help="Run a strategy backtest")
@@ -119,7 +119,7 @@ def main() -> None:
     run_parser.add_argument(
         "--registry",
         default="",
-        help="Path to instruments registry YAML (default: data/instruments.yaml)",
+        help="Path to instruments registry YAML (default: ~/.config/marketatlas)",
     )
     run_parser.add_argument(
         "--costs",

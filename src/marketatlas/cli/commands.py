@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from marketatlas.frames.output import PortfolioOutput
 
 from marketatlas.cli.formatting import _ab_row
+from marketatlas.config import instruments_registry_path
 from marketatlas.data.datastore import DataStore
 from marketatlas.data.instrument import Instrument, InstrumentRegistry
 from marketatlas.data.portfolio import (
@@ -26,8 +27,6 @@ from marketatlas.data.providers.base import DataProvider
 from marketatlas.data.providers.chain import ProviderChain
 from marketatlas.data.providers.registry import get as get_provider_cls
 from marketatlas.data.types import MarketData, Symbol, Timeframe
-
-DEFAULT_REGISTRY_PATH = Path("data/instruments.yaml")
 
 VALID_SNAPSHOT_KINDS = frozenset({"trade", "rejection", "pattern", "sr", "swing"})
 
@@ -68,7 +67,7 @@ def parse_kinds(raw: str) -> tuple[set[str], set[str]]:
 
 def _registry_path(args: argparse.Namespace) -> Path:
     path = getattr(args, "registry", "") or ""
-    return Path(path) if path else DEFAULT_REGISTRY_PATH
+    return Path(path) if path else instruments_registry_path()
 
 
 def _load_registry(args: argparse.Namespace) -> InstrumentRegistry | None:

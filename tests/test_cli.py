@@ -1216,8 +1216,16 @@ class TestRunPortfolio:
         mock_duka_cls: MagicMock,
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         strategy_file, _, portfolio_path = self._setup(tmp_path, mock_load, ["GBPUSD"])
+        xdg = tmp_path / "xdg"
+        (xdg / "marketatlas").mkdir(parents=True)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+        _write_registry(
+            xdg / "marketatlas" / "instruments.yaml",
+            [Instrument("GBPUSD", "forex", "Pound", providers={"yahoo": "GBPUSD=X"})],
+        )
 
         provider = MagicMock()
 
