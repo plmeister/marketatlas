@@ -264,7 +264,7 @@ def main() -> None:
         type=float,
         default=100.0,
         help="Annual return target for the 'does it double?' verdict "
-        "(default: 100%/yr)",
+        "default: 100% per year",
     )
 
     instr_parser = subparsers.add_parser("instruments", help="Manage instrument registry")
