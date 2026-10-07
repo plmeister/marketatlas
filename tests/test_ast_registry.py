@@ -165,7 +165,7 @@ class TestDefaultRegistry:
     def test_list_providers_count(self) -> None:
         r = create_default_registry()
         providers = r.list_providers()
-        assert len(providers) == 13
+        assert len(providers) == 15
 
     def test_default_params_present(self) -> None:
         r = create_default_registry()

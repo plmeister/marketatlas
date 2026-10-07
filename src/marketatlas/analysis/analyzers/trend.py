@@ -25,7 +25,7 @@ class TrendAnalyzer(Analyzer):
 
     @property
     def instance_key(self) -> str:
-        return "trend"
+        return self._name or "trend"
 
     def requires(self) -> tuple[FactKey, ...]:
         return (

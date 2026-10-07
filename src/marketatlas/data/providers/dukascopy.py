@@ -17,6 +17,7 @@ from marketatlas.data.providers.base import (
     FeedUnavailableError,
     NoDataAvailableError,
     RateLimitError,
+    SymbolNotFoundError,
     UnsupportedTimeframeError,
 )
 from marketatlas.data.providers.registry import register
@@ -175,6 +176,31 @@ class DukascopyProvider(DataProvider):
 
         return MarketData(symbol=symbol, timeframe=timeframe, candles=tuple(all_candles))
 
+    @staticmethod
+    def _validate_rows(rows: object, instrument: str) -> list[list[float]]:
+        """Reject payloads that mean "no such instrument" or "malformed".
+
+        The json3 API answers an instrument it does not carry with a bare
+        ``[null]`` payload rather than a 404. Unhandled, that reached
+        ``fetch`` as ``rows[0][0]`` and surfaced as
+        ``TypeError: 'NoneType' object is not subscriptable``, hiding the real
+        cause and defeating ProviderChain fallback. An unknown instrument is a
+        capability gap (SymbolNotFoundError -> try the next provider), not a
+        transient feed failure.
+        """
+        if not isinstance(rows, list):
+            raise FeedUnavailableError(
+                f"Dukascopy returned a non-list payload for {instrument}"
+            )
+        if any(row is None for row in rows):
+            raise SymbolNotFoundError(Symbol(instrument))
+        for row in rows:
+            if not isinstance(row, list) or len(row) < 6:
+                raise FeedUnavailableError(
+                    f"Dukascopy returned a malformed row for {instrument}: {row!r}"
+                )
+        return cast(list[list[float]], rows)
+
     def _fetch_page(
         self,
         instrument: str,
@@ -193,7 +219,7 @@ class DukascopyProvider(DataProvider):
         last_error: Exception | None = None
         for attempt in range(self._max_retries):
             try:
-                rows = self._request(url)
+                rows = self._validate_rows(self._request(url), instrument)
                 if cache_path is not None:
                     self._write_cache(cache_path, rows)
                 return rows

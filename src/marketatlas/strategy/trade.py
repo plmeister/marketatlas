@@ -76,3 +76,11 @@ class TradeCandidate:
     evidence: tuple[EvidenceEntry, ...]
     min_rr: float = 0.0
     exit_plan: ExitPlan | None = None
+    # Entry execution model (backlog: EOD → next-open fills). ``entry_at_open``
+    # fills the order at the next candle's open (broker processes post-close
+    # orders at market open) instead of waiting for a touch of ``entry``;
+    # ``reference_price`` is the signal close the gap guard measures against;
+    # ``max_open_gap`` is the largest |open - reference| band tolerated (0 = off).
+    entry_at_open: bool = False
+    reference_price: float | None = None
+    max_open_gap: float = 0.0

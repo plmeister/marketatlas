@@ -226,8 +226,10 @@ def create_default_registry() -> ProviderRegistry:
     from marketatlas.analysis.analyzers.atr_series import ATRSeriesAnalyzer
     from marketatlas.analysis.analyzers.channel import ChannelAnalyzer
     from marketatlas.analysis.analyzers.ema import EMAAnalyzer
+    from marketatlas.analysis.analyzers.range_position import RangePositionAnalyzer
     from marketatlas.analysis.analyzers.sr import SupportResistanceAnalyzer
     from marketatlas.analysis.analyzers.swing_basic import BasicSwingAnalyzer
+    from marketatlas.analysis.analyzers.swing_magnitude import MagnitudeSwingAnalyzer
     from marketatlas.analysis.analyzers.swing_structure import SwingStructureAnalyzer
     from marketatlas.analysis.analyzers.trend import TrendAnalyzer
     from marketatlas.analysis.patterns import PullbackPatternAnalyzer
@@ -238,11 +240,28 @@ def create_default_registry() -> ProviderRegistry:
     _register_timeframe(registry)
     registry.register("ema", EMAAnalyzer, default_params={"period": 20})
     registry.register("atr", ATRAnalyzer, default_params={"period": 14})
-    registry.register("atr_series", ATRSeriesAnalyzer, default_params={"period": 14, "lookback": 50})
+    registry.register(
+        "atr_series", ATRSeriesAnalyzer, default_params={"period": 14, "lookback": 50}
+    )
     registry.register("trend", TrendAnalyzer)
     registry.register("channel", ChannelAnalyzer, default_params={"period": 20})
     registry.register("swingstructure", SwingStructureAnalyzer, default_params={"window": 50})
     registry.register("swings", BasicSwingAnalyzer, default_params={"lookback": 50})
+    registry.register(
+        "magnitudeswings",
+        MagnitudeSwingAnalyzer,
+        default_params={"left_bars": 2, "right_bars": 2, "min_travel_atr": 3.0},
+    )
+    registry.register(
+        "rangeposition",
+        RangePositionAnalyzer,
+        default_params={
+            "swing_key": "magnitude_swings_3",
+            "higher_timeframe": "1w",
+            "range_bars": 12,
+            "confirmation_lag": 2,
+        },
+    )
     registry.register("sr", SupportResistanceAnalyzer)
     registry.register("pullbackpattern", PullbackPatternAnalyzer)
     _pullback_signal = SIGNAL_TYPES.get("PullbackSignal")

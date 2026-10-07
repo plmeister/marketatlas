@@ -37,7 +37,9 @@ class TestDeriveParamSchema:
     def test_ema_schema(self) -> None:
         schema = {s.name: s for s in derive_param_schema(EMAAnalyzer)}
         assert schema["period"] == ParamSpec(name="period", required=False, expected_type=int)
-        assert set(schema) == {"period"}
+        # Inherited Analyzer slots are DSL-visible: EMAAnalyzer forwards
+        # **kwargs, so timeframe/bindings/name/fact_name are constructible.
+        assert set(schema) == {"period", "timeframe", "bindings", "name", "fact_name"}
 
     def test_swing_schema(self) -> None:
         schema = {s.name: s for s in derive_param_schema(SwingStructureAnalyzer)}
@@ -148,8 +150,20 @@ class TestRegistryParamSchema:
 class TestDefaultRegistrySchemas:
     def test_builtin_schemas_present(self) -> None:
         r = create_default_registry()
-        assert {s.name for s in r.param_schema("ema") or ()} == {"period"}
-        assert {s.name for s in r.param_schema("atr") or ()} == {"period"}
+        assert {s.name for s in r.param_schema("ema") or ()} == {
+            "period",
+            "timeframe",
+            "bindings",
+            "name",
+            "fact_name",
+        }
+        assert {s.name for s in r.param_schema("atr") or ()} == {
+            "period",
+            "timeframe",
+            "bindings",
+            "name",
+            "fact_name",
+        }
         assert "window" in {s.name for s in r.param_schema("swingstructure") or ()}
         assert "level_tolerance_atr" in {s.name for s in r.param_schema("sr") or ()}
         risk = {s.name for s in r.param_schema("manage_risk") or ()}

@@ -103,6 +103,105 @@ class TestCloseTradeNoop:
         assert tb.balance == tb.initial_balance
 
 
+def _at_open_candidate(
+    direction: TrendDirection = TrendDirection.BULLISH,
+    entry: float = 100.0,
+    stop: float = 95.0,
+    target: float = 115.0,
+    size: float = 0.2,
+) -> TradeCandidate:
+    return _candidate(direction=direction, entry=entry, stop=stop, target=target, size=size)
+class TestAtOpenFill:
+    """EOD → next-open execution (entry_at_open)."""
+
+    def test_fills_at_next_candle_open(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        cand = _at_open_candidate()
+        cand = replace(cand, entry_at_open=True, reference_price=100.0)
+
+        tb.submit_order(cand, _signal(), "s", t0)
+        # Next day opens at 102 -> fill 102, not the planned 100.
+        tb.fill_order(_candle(t0 + timedelta(days=1), o=102.0, h=110.0, lo=95.0))
+        assert tb.has_no_open_trade is False
+        open_trade = tb._open_trades[""]
+        assert open_trade.entry_timestamp == t0 + timedelta(days=1)
+        assert open_trade.candidate.entry == pytest.approx(102.0)
+
+    def test_gap_guard_skips_big_gap(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        cand = replace(
+            _at_open_candidate(),
+            entry_at_open=True,
+            reference_price=100.0,
+            max_open_gap=5.0,
+        )
+        tb.submit_order(cand, _signal(), "s", t0)
+        # Open gapped +8 from the reference close -> beyond the 5.0 band.
+        tb.fill_order(_candle(t0 + timedelta(days=1), o=108.0, h=112.0, lo=100.0))
+        assert tb.has_pending_order is False
+        assert tb.has_no_open_trade is True
+        assert any(t.result == "cancelled" for t in tb.trades)
+
+    def test_gap_within_band_fills(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        cand = replace(
+            _at_open_candidate(),
+            entry_at_open=True,
+            reference_price=100.0,
+            max_open_gap=5.0,
+        )
+        tb.submit_order(cand, _signal(), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), o=102.0, h=110.0, lo=95.0))
+        assert tb.has_no_open_trade is False
+
+    def test_open_beyond_stop_declined(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        cand = replace(_at_open_candidate(), entry_at_open=True)
+        tb.submit_order(cand, _signal(), "s", t0)
+        # Open below the 95 stop -> entry never existed.
+        tb.fill_order(_candle(t0 + timedelta(days=1), o=93.0, h=98.0, lo=92.0))
+        assert tb.has_no_open_trade is True
+        assert any(t.result == "cancelled" for t in tb.trades)
+
+    def test_open_beyond_target_declined(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        cand = replace(_at_open_candidate(), entry_at_open=True)
+        tb.submit_order(cand, _signal(), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), o=118.0, h=120.0, lo=100.0))
+        assert tb.has_no_open_trade is True
+        assert any(t.result == "cancelled" for t in tb.trades)
+
+    def test_reanchor_preserves_risk_and_rr(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        cand = replace(_at_open_candidate(), entry_at_open=True)
+        # Planned stop 95 -> stop distance 5; risk_amount = 5 * 0.2 = 1.0.
+        assert cand.risk_amount == pytest.approx(1.0)
+        tb.submit_order(cand, _signal(), "s", t0)
+        # Open at 102 -> stop distance 7; size shrinks to keep risk = 1.0.
+        tb.fill_order(_candle(t0 + timedelta(days=1), o=102.0, h=110.0, lo=95.0))
+        open_c = tb._open_trades[""].candidate
+        assert open_c.entry == pytest.approx(102.0)
+        assert open_c.stop == pytest.approx(95.0)
+        assert open_c.risk_amount == pytest.approx(1.0)
+        assert open_c.size == pytest.approx(1.0 / 7.0)
+        assert open_c.rr_ratio == pytest.approx(cand.rr_ratio)
+        assert open_c.target == pytest.approx(102.0 + cand.rr_ratio * 7.0)
+
+    def test_touch_model_untouched_by_new_fields(self) -> None:
+        tb = TradeBook(initial_balance=1000.0)
+        t0 = datetime(2024, 1, 1)
+        cand = _candidate()
+        tb.submit_order(cand, _signal(), "s", t0)
+        tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
+        assert tb._open_trades[""].candidate.entry == pytest.approx(100.0)
+
+
 class TestTradeResolution:
     def test_bullish_win(self) -> None:
         tb = TradeBook(initial_balance=1000.0)

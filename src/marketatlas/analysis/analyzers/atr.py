@@ -17,7 +17,7 @@ class ATRAnalyzer(Analyzer):
 
     @property
     def instance_key(self) -> str:
-        return f"atr_{self._period}"
+        return self._name or f"atr_{self._period}"
 
     def requires(self) -> tuple[FactKey, ...]:
         return ()

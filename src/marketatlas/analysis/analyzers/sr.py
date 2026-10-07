@@ -30,7 +30,7 @@ class SupportResistanceAnalyzer(Analyzer):
 
     @property
     def instance_key(self) -> str:
-        return "sr"
+        return self._name or "sr"
 
     def requires(self) -> tuple[FactKey, ...]:
         return (

@@ -22,7 +22,7 @@ class SwingStructureAnalyzer(Analyzer):
 
     @property
     def instance_key(self) -> str:
-        return "swing_structure"
+        return self._name or "swing_structure"
 
     def requires(self) -> tuple[FactKey, ...]:
         return (self._make_key(self._swing_key),)

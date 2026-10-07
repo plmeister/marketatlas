@@ -223,6 +223,104 @@ class TestConfirmationGate:
         result = analyzer.analyze(_view(7, data), {STRUCTURE_KEY: _bullish_structure()})
         assert len(result.facts) == 1
 
+
+class TestConfirmationWindowAndRetest:
+    """Backlog: EOD confirmation window (W2).
+
+    ``window_days`` widens the actionable confirmation window beyond the single
+    candle after the swing; ``retest`` keeps an undercutting final low/high
+    structurally valid as long as it holds the prior-prior (leg) level, so a
+    second dip within the window can re-confirm.
+    """
+
+    def test_window_default_still_single_candle(self) -> None:
+        data = _bullish_zigzag()
+        analyzer = _analyzer()
+        # Candle 8 is outside the default 1-candle window -> missed.
+        result = analyzer.analyze(_view(8, data), {STRUCTURE_KEY: _bullish_structure()})
+        assert result.facts == ()
+        assert any("entry window missed" in e.text for e in result.evidence)
+
+    def test_window_day_2_confirms_after_first_copy_is_weak(self) -> None:
+        # Candle 7 (the literal entry candle) is weak; candle 8 confirms.
+        data = list(_bullish_zigzag())
+        data[7] = (100.0, 108.0, 100.0, 104.0)  # body 4/8 = 0.5 < 0.6
+        analyzer = _analyzer(window_days=3)
+        result = analyzer.analyze(_view(8, data), {STRUCTURE_KEY: _bullish_structure()})
+        assert len(result.facts) == 1
+        assert isinstance(result.facts[0], PullbackFact)
+        assert result.facts[0].direction == TrendDirection.BULLISH
+
+    def test_window_expired_after_last_day(self) -> None:
+        data = list(_bullish_zigzag())
+        data[7] = (100.0, 108.0, 100.0, 104.0)
+        # Candle 8 is day 2 of a 2-candle window; candle 9 is past it.
+        analyzer = _analyzer(window_days=2)
+        result = analyzer.analyze(_view(9, data), {STRUCTURE_KEY: _bullish_structure()})
+        assert result.facts == ()
+        assert any("entry window missed" in e.text for e in result.evidence)
+
+    def test_retest_undercut_holds_prior_prior_low(self) -> None:
+        # Retest structure: last low (98) undercuts the prior low (99) but holds
+        # the prior-prior (leg) low (97). Higher highs intact -> still bullish.
+        base = _bullish_structure()
+        pts = list(base.points)
+        pts[-1] = SwingPoint(
+            price=98.0,
+            index=pts[-1].index,
+            type=SwingType.LOW,
+            timestamp=pts[-1].timestamp,
+        )
+        struct = SwingStructureFact(timestamp=base.timestamp, evidence=(), points=tuple(pts))
+        data = list(_bullish_zigzag())
+        # Entry candle (7) fails confirmation (weak body); the retest candle
+        # (8) dips to 97.8 but holds above the prior-prior low and confirms.
+        data[7] = (98.0, 108.0, 98.0, 102.0)
+        data[8] = (99.0, 112.0, 97.8, 108.0)
+        analyzer = _analyzer(window_days=3, retest=True)
+        result = analyzer.analyze(_view(8, data), {STRUCTURE_KEY: struct})
+        assert len(result.facts) == 1
+        assert isinstance(result.facts[0], PullbackFact)
+        assert result.facts[0].direction == TrendDirection.BULLISH
+
+    def test_retest_off_rejects_undercut_below_prior_low(self) -> None:
+        base = _bullish_structure()
+        pts = list(base.points)
+        pts[-1] = SwingPoint(
+            price=98.0,
+            index=pts[-1].index,
+            type=SwingType.LOW,
+            timestamp=pts[-1].timestamp,
+        )
+        struct = SwingStructureFact(timestamp=base.timestamp, evidence=(), points=tuple(pts))
+        data = list(_bullish_zigzag())
+        data[7] = (98.0, 108.0, 98.0, 102.0)
+        data[8] = (99.0, 112.0, 97.8, 108.0)
+        # retest=False: the undercut low breaks the rising-lows pattern.
+        analyzer = _analyzer(window_days=3, retest=False)
+        result = analyzer.analyze(_view(8, data), {STRUCTURE_KEY: struct})
+        assert result.facts == ()
+
+    def test_retest_breaking_prior_prior_low_stays_neutral(self) -> None:
+        # Undercut below the prior-prior (leg) low (97) breaks HH/HL structure
+        # even with retest=True -> no pullback.
+        base = _bullish_structure()
+        pts = list(base.points)
+        pts[-1] = SwingPoint(
+            price=96.0,  # below the leg low (97)
+            index=pts[-1].index,
+            type=SwingType.LOW,
+            timestamp=pts[-1].timestamp,
+        )
+        struct = SwingStructureFact(timestamp=base.timestamp, evidence=(), points=tuple(pts))
+        data = list(_bullish_zigzag())
+        data[7] = (98.0, 108.0, 98.0, 102.0)
+        data[8] = (99.0, 112.0, 95.5, 108.0)
+        analyzer = _analyzer(window_days=3, retest=True)
+        result = analyzer.analyze(_view(8, data), {STRUCTURE_KEY: struct})
+        assert result.facts == ()
+        assert any("trend is neutral" in e.text for e in result.evidence)
+
     def test_flat_candle_body_ratio_zero(self) -> None:
         data = list(_bullish_zigzag())
         data[7] = (101.0, 101.0, 101.0, 101.0)

@@ -203,3 +203,52 @@ class TestTrendAnalyzer:
         facts = _make_ema_facts(view, 10, 30)
         result = TrendAnalyzer(fast_key="ema_10", slow_key="ema_30").analyze(view, facts)
         assert isinstance(result.facts[0], TrendFact)
+
+
+class TestFactNameAlias:
+    """``name=`` aliases a produced fact without renaming the consumer input.
+
+    ``trend`` requires fixed input names ``ema_20``/``ema_50``, so a
+    timeframe-scaled EMA (e.g. period 480 on 1h bars) could not previously be
+    wired into it. ``name=`` publishes the scaled EMA under the contract name,
+    making timeframe parity expressible in the DSL instead of by code change.
+    """
+
+    def test_alias_replaces_default_fact_name(self) -> None:
+        analyzer = EMAAnalyzer(480, name="ema_20")
+        assert analyzer.instance_key == "ema_20"
+        assert analyzer.produces() == (FactKey("ema_20"),)
+
+    def test_no_alias_keeps_derived_name(self) -> None:
+        assert EMAAnalyzer(480).instance_key == "ema_480"
+        assert EMAAnalyzer(30).instance_key == "ema_30"
+
+    def test_scaled_ema_satisfies_fixed_trend_inputs(self) -> None:
+        # Enough history for a 480/1200 pair to have a measurable slope; with a
+        # short series both EMAs sit on price and trend is legitimately neutral.
+        closes = _rising_closes(800)
+        view = MarketView(_make_store(closes), cursor=len(closes) - 1, window_size=800)
+        fast = EMAAnalyzer(480, name="ema_20")
+        slow = EMAAnalyzer(1200, name="ema_50")
+        atr = ATRAnalyzer(14, name="atr_14")
+        facts = {
+            FactKey("ema_20"): fast.analyze(view, {}).facts[0],
+            FactKey("ema_50"): slow.analyze(view, {}).facts[0],
+            FactKey("atr_14"): atr.analyze(view, {}).facts[0],
+        }
+        assert TrendAnalyzer().requires() == (
+            FactKey("ema_20"),
+            FactKey("ema_50"),
+            FactKey("atr_14"),
+        )
+        result = TrendAnalyzer().analyze(view, facts)
+        assert len(result.facts) == 1
+        trend_fact = result.facts[0]
+        assert isinstance(trend_fact, TrendFact)
+        assert trend_fact.direction == TrendDirection.BULLISH
+
+    def test_alias_distinguishes_two_scaled_windows(self) -> None:
+        assert EMAAnalyzer(480, name="ema_20").instance_key != (
+            EMAAnalyzer(20, name="ema_20b").instance_key
+        )
+        assert EMAAnalyzer(20).instance_key == "ema_20"

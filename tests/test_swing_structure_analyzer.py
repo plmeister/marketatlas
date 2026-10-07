@@ -344,3 +344,162 @@ class TestSwingStructureAnalyzer:
         result = analyzer.analyze(_view(candles), {FactKey("swing_custom"): swing_fact})
         assert isinstance(result.facts[0], SwingStructureFact)
         assert len(result.facts[0].points) == 5
+
+
+class TestSwingAlternationCollapse:
+    """Coarse neighbourhoods emit runs of same-type pivots (backlog: 1h parity).
+
+    With a wide pivot window every push in a trend is a new local high, so the
+    strict local-extremum test returns consecutive highs and ``swingstructure``
+    rejects the whole pattern. ``enforce_alternation`` collapses each run to
+    its most extreme member. Default is off, so daily behaviour is unchanged.
+    """
+
+    def test_default_is_off_and_preserves_runs(self) -> None:
+        analyzer = BasicSwingAnalyzer()
+        assert analyzer._enforce_alternation is False
+
+    def test_alternating_input_unchanged(self) -> None:
+        candles = _zigzag_candles()
+        raw = BasicSwingAnalyzer._find_raw_swings(
+            tuple(
+                Candle(
+                    timestamp=BASE,
+                    open=o,
+                    high=h,
+                    low=lo,
+                    close=c,
+                    volume=1000.0,
+                )
+                for o, h, lo, c in candles
+            ),
+            0,
+            1,
+            1,
+            len(candles),
+            True,
+        )
+        collapsed = BasicSwingAnalyzer._collapse_to_alternating(raw)
+        assert collapsed == raw
+        assert all(
+            collapsed[i].type != collapsed[i - 1].type
+            for i in range(1, len(collapsed))
+        )
+
+    def test_collapse_keeps_highest_of_a_high_run(self) -> None:
+        candles = tuple(
+            Candle(timestamp=BASE, open=p, high=p, low=p, close=p, volume=1000.0)
+            for p in (10.0, 12.0, 11.0, 13.0, 10.5, 14.0, 9.0)
+        )
+        raw = [
+            SwingPoint(price=12.0, index=1, type=SwingType.HIGH, timestamp=BASE),
+            SwingPoint(price=13.0, index=3, type=SwingType.HIGH, timestamp=BASE),
+            SwingPoint(price=14.0, index=5, type=SwingType.HIGH, timestamp=BASE),
+        ]
+        collapsed = BasicSwingAnalyzer._collapse_to_alternating(raw)
+        assert [s.index for s in collapsed] == [5]
+        assert collapsed[0].price == 14.0
+
+    def test_collapse_keeps_lowest_of_a_low_run(self) -> None:
+        raw = [
+            SwingPoint(price=12.0, index=1, type=SwingType.LOW, timestamp=BASE),
+            SwingPoint(price=11.0, index=3, type=SwingType.LOW, timestamp=BASE),
+            SwingPoint(price=10.0, index=5, type=SwingType.LOW, timestamp=BASE),
+            SwingPoint(price=13.0, index=7, type=SwingType.HIGH, timestamp=BASE),
+        ]
+        collapsed = BasicSwingAnalyzer._collapse_to_alternating(raw)
+        assert [(s.index, s.type) for s in collapsed] == [
+            (5, SwingType.LOW),
+            (7, SwingType.HIGH),
+        ]
+
+    def test_less_extreme_pivot_does_not_replace(self) -> None:
+        raw = [
+            SwingPoint(price=13.0, index=3, type=SwingType.HIGH, timestamp=BASE),
+            SwingPoint(price=12.0, index=5, type=SwingType.HIGH, timestamp=BASE),
+            SwingPoint(price=14.0, index=7, type=SwingType.HIGH, timestamp=BASE),
+        ]
+        collapsed = BasicSwingAnalyzer._collapse_to_alternating(raw)
+        assert [(s.index, s.price) for s in collapsed] == [(7, 14.0)]
+
+    def test_output_is_a_subsequence_and_strictly_alternating(self) -> None:
+        raw = [
+            SwingPoint(price=10.0, index=0, type=SwingType.LOW, timestamp=BASE),
+            SwingPoint(price=13.0, index=2, type=SwingType.HIGH, timestamp=BASE),
+            SwingPoint(price=14.0, index=4, type=SwingType.HIGH, timestamp=BASE),
+            SwingPoint(price=15.0, index=6, type=SwingType.HIGH, timestamp=BASE),
+            SwingPoint(price=11.0, index=8, type=SwingType.LOW, timestamp=BASE),
+            SwingPoint(price=12.0, index=10, type=SwingType.LOW, timestamp=BASE),
+        ]
+        collapsed = BasicSwingAnalyzer._collapse_to_alternating(raw)
+        assert all(
+            collapsed[i].type != collapsed[i - 1].type
+            for i in range(1, len(collapsed))
+        )
+        it = iter(raw)
+        assert all(any(s == r for r in it) for s in collapsed)
+
+
+class TestOutsideBarDualTag:
+    """A bar can be a strict local high and a strict local low at once.
+
+    Such an outside bar was previously reduced to its HIGH only, because the
+    peak branch short-circuited the trough test. That silently dropped 3.3% of
+    pivots on Dukascopy daily FX, concentrated on the widest-range bars -- the
+    largest moves in the sample, i.e. the ones a magnitude-aware study cares
+    about most.
+    """
+
+    # index 3 is an outside bar: its high beats every neighbour's high and its
+    # low is below every neighbour's low, with left=2 right=1.
+    OUTSIDE = [
+        (10.0, 10.5, 9.5, 10.0),
+        (10.0, 10.4, 9.6, 10.0),
+        (10.0, 10.3, 9.7, 10.0),
+        (10.0, 12.0, 8.0, 10.0),
+        (10.0, 10.6, 9.4, 10.0),
+    ]
+
+    def _candles(self) -> tuple[Candle, ...]:
+        return tuple(
+            Candle(timestamp=BASE, open=o, high=h, low=lo, close=c, volume=1000.0)
+            for o, h, lo, c in self.OUTSIDE
+        )
+
+    def test_outside_bar_yields_both_high_and_low(self) -> None:
+        raw = BasicSwingAnalyzer._find_raw_swings(
+            self._candles(), 0, 2, 1, 100, False
+        )
+        assert [(s.index, s.type) for s in raw] == [
+            (3, SwingType.HIGH),
+            (3, SwingType.LOW),
+        ]
+
+    def test_dual_tag_prices_come_from_high_and_low(self) -> None:
+        raw = BasicSwingAnalyzer._find_raw_swings(
+            self._candles(), 0, 2, 1, 100, False
+        )
+        assert raw[0].price == 12.0
+        assert raw[1].price == 8.0
+
+    def test_single_tagged_bar_still_yields_one_pivot(self) -> None:
+        candles = tuple(
+            Candle(timestamp=BASE, open=p, high=p, low=p, close=p, volume=1000.0)
+            for p in (10.0, 11.0, 12.0, 11.5, 10.5, 10.0)
+        )
+        raw = BasicSwingAnalyzer._find_raw_swings(candles, 0, 2, 1, 100, False)
+        assert [(s.index, s.type) for s in raw] == [(2, SwingType.HIGH)]
+
+    def test_collapse_still_yields_alternating_sequence(self) -> None:
+        raw = BasicSwingAnalyzer._find_raw_swings(
+            self._candles(), 0, 2, 1, 100, True
+        )
+        assert all(
+            raw[i].type != raw[i - 1].type for i in range(1, len(raw))
+        )
+
+    def test_base_index_offsets_both_tags(self) -> None:
+        raw = BasicSwingAnalyzer._find_raw_swings(
+            self._candles(), 100, 2, 1, 100, False
+        )
+        assert [s.index for s in raw] == [103, 103]

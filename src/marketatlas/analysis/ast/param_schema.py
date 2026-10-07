@@ -28,12 +28,47 @@ def derive_param_schema(cls: type) -> tuple[ParamSpec, ...]:
     parameters keep their resolved type; unannotated parameters accept any
     value. Introspection is best-effort — opaque constructors yield an empty
     schema rather than an error.
+
+    Parameters inherited from a base ``__init__`` are included when the most
+    derived constructor forwards ``**kwargs`` (the convention every analyzer
+    uses). That makes the common ``Analyzer`` slots — ``timeframe``,
+    ``bindings``, ``name``, ``fact_name`` — visible as DSL parameters instead
+    of being silently unrepresentable. A subclass that does not forward
+    ``**kwargs`` gets only its own explicit parameters, so the schema never
+    advertises something the constructor will reject.
     """
-    try:
-        signature = inspect.signature(cls.__init__)  # type: ignore[misc]
-        hints = typing.get_type_hints(cls.__init__)  # type: ignore[misc]
-    except Exception:
+    own = _specs_from_init(cls.__dict__.get("__init__"))
+    if own is None:
         return ()
+
+    merged: dict[str, ParamSpec] = {s.name: s for s in own}
+    if _accepts_var_keyword(cls.__dict__.get("__init__")):
+        for klass in reversed(cls.__mro__[1:]):
+            specs = _specs_from_init(klass.__dict__.get("__init__"))
+            if specs:
+                for s in specs:
+                    merged.setdefault(s.name, s)
+
+    required_names = {s.name for s in own if s.required}
+    return tuple(
+        ParamSpec(
+            name=s.name,
+            required=s.name in required_names,
+            expected_type=s.expected_type,
+        )
+        for s in merged.values()
+    )
+
+
+def _specs_from_init(init: object) -> tuple[ParamSpec, ...] | None:
+    """ParamSpecs for one ``__init__`` function, or ``None`` if not introspectable."""
+    if init is None:
+        return None
+    try:
+        signature = inspect.signature(init)  # type: ignore[arg-type]
+        hints = typing.get_type_hints(init)
+    except Exception:
+        return None
 
     specs: list[ParamSpec] = []
     for name, param in signature.parameters.items():
@@ -44,6 +79,18 @@ def derive_param_schema(cls: type) -> tuple[ParamSpec, ...]:
         required = param.default is inspect.Parameter.empty
         specs.append(ParamSpec(name=name, required=required, expected_type=hints.get(name)))
     return tuple(specs)
+
+
+def _accepts_var_keyword(init: object) -> bool:
+    if init is None:
+        return False
+    try:
+        signature = inspect.signature(init)  # type: ignore[arg-type]
+    except Exception:
+        return False
+    return any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in signature.parameters.values()
+    )
 
 
 def _is_union(expected: object) -> bool:

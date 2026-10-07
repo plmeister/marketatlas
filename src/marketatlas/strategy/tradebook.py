@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import cast
 
@@ -354,19 +354,32 @@ class TradeBook:
         )
 
     def fill_order(self, candle: Candle, instrument: str = "") -> None:
-        """Fill a pending order once the candle trades through its entry.
+        """Fill a pending order.
 
-        On a bullish entry the order fills when price rises to the entry
-        (``candle.high >= entry``); on bearish, when price falls to it
-        (``candle.low <= entry``). Until price crosses the entry the order
-        stays pending — a gap that never returns to the entry never fills. The
-        fill price is the submitted entry; stop/target/size/risk are untouched.
+        Two execution models, selected by ``TradeCandidate.entry_at_open``:
+
+        * ``touch`` (default): the order fills once the candle trades through
+          the submitted entry (bullish: ``candle.high >= entry``; bearish:
+          ``candle.low <= entry``). Until price crosses the entry the order
+          stays pending — a gap that never returns to the entry never fills.
+          The fill price is the submitted entry; stop/target/size/risk are
+          untouched.
+        * ``at_open`` (EOD → next-open workflow): the broker processes the
+          post-close order at the next market open, so the order fills at the
+          next candle's ``open`` (with slippage). A ``max_open_gap`` band
+          rejected the open outright (skips the trade); otherwise the
+          candidate is re-anchored at the open so the swing-anchored stop and
+          fixed $ risk are preserved, and an open already past the stop or
+          target closes immediately at that open.
         """
         pending = self._pending.get(instrument)
         if pending is None or pending.candidate is None:
             return
         candidate = pending.candidate
         if pending.signal is None:
+            return
+        if candidate.entry_at_open:
+            self._fill_at_open(candle, instrument, pending)
             return
         if candidate.direction == TrendDirection.BULLISH:
             if candle.high < candidate.entry:
@@ -394,6 +407,92 @@ class TradeBook:
         self._exit_states[instrument] = _ExitState(plan=plan)
         self._update_excursion(candle, self._exit_states[instrument], candidate)
         del self._pending[instrument]
+
+    def _fill_at_open(
+        self, candle: Candle, instrument: str, pending: _PendingOrder
+    ) -> None:
+        """Fill an ``at_open`` pending order at the next candle's open.
+
+        EOD workflow: the order was submitted after candle close and the broker
+        processes it at the next market open, so the fill price is the next
+        candle's ``open`` (plus slippage against the entry direction). The
+        order is declined (recorded as a cancel) when the open falls outside
+        the approved geometry — a ``max_open_gap`` band against the signal
+        close skipped the trade outright, or the open gapped through the stop
+        or target (no position exists pre-open, so there is nothing to stop
+        out — the entry itself was invalid). Otherwise the candidate is
+        re-anchored at the open — swing-anchored stop and fixed $ risk are
+        preserved — and the bar's own intraday range resolves stop/target.
+        """
+        candidate = pending.candidate
+        if (
+            candidate.max_open_gap > 0
+            and candidate.reference_price is not None
+            and abs(candle.open - candidate.reference_price) > candidate.max_open_gap
+        ):
+            self._cancel_pending(candle, instrument)
+            return
+        slip = candidate.slippage_pct / 100
+        raw_open = candle.open
+        if candidate.direction == TrendDirection.BULLISH:
+            open_fill = raw_open * (1 + slip)
+            crossed = open_fill <= candidate.stop or open_fill >= candidate.target
+        else:
+            open_fill = raw_open * (1 - slip)
+            crossed = open_fill >= candidate.stop or open_fill <= candidate.target
+        if crossed:
+            # Open beyond stop/target = the intended entry never existed.
+            self._cancel_pending(candle, instrument)
+            return
+        c = self._reanchor_at_open(candidate, open_fill)
+        self._open_trades[instrument] = TradeOutcome(
+            submit_time=pending.timestamp or candle.timestamp,
+            entry_timestamp=candle.timestamp,
+            exit_timestamp=None,
+            candidate=c,
+            signal=pending.signal,
+            source_strategy=pending.source,
+            instrument=pending.instrument,
+            pnl=None,
+            result=None,
+            context=pending.context,
+        )
+        plan = (
+            c.exit_plan
+            if c.exit_plan is not None and c.exit_plan.enabled
+            else None
+        )
+        self._exit_states[instrument] = _ExitState(plan=plan)
+        self._update_excursion(candle, self._exit_states[instrument], c)
+        del self._pending[instrument]
+
+    @staticmethod
+    def _reanchor_at_open(candidate: TradeCandidate, open_fill: float) -> TradeCandidate:
+        """Re-base a touched-candidate's geometry at the realized open fill.
+
+        Keeps the swing-anchored stop level, the submitted RR, and the fixed $
+        risk amount; recomputes size/target from the actual open so an open
+        drift does not silently change the risk/reward the trade was approved
+        with. A gap in the open's favour narrows the stop distance and grows
+        the size; a gap against widens the stop distance and shrinks it —
+        either way one unit of risk stays the risk envelope.
+        """
+        stop_distance = abs(open_fill - candidate.stop)
+        if stop_distance <= 0 or candidate.risk_amount <= 0:
+            return candidate
+        size = candidate.risk_amount / stop_distance
+        rr = candidate.rr_ratio if candidate.rr_ratio > 0 else 1.0
+        if candidate.direction == TrendDirection.BULLISH:
+            target = open_fill + rr * stop_distance
+        else:
+            target = open_fill - rr * stop_distance
+        return replace(
+            candidate,
+            entry=open_fill,
+            target=target,
+            size=size,
+            reward_amount=rr * candidate.risk_amount,
+        )
 
     def close_trade(
         self,

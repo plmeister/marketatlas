@@ -75,6 +75,8 @@ class RiskEngine:
         max_vol_ratio: float = 0.0,
         min_trend_eff: float = 0.0,
         trend_eff_lookback: int = 63,
+        entry_at_open: bool = False,
+        gap_guard_atr: float = 0.0,
         bindings: dict[str, str] | None = None,
     ) -> None:
         self._risk_pct = risk_pct
@@ -107,6 +109,8 @@ class RiskEngine:
         self._max_vol_ratio = max_vol_ratio
         self._min_trend_eff = min_trend_eff
         self._trend_eff_lookback = max(trend_eff_lookback, 2)
+        self._entry_at_open = entry_at_open
+        self._gap_guard_atr = max(gap_guard_atr, 0.0)
         self._atr_key = atr_key
         self._sr_key = sr_key
         self._swing_key = swing_key
@@ -343,7 +347,7 @@ class RiskEngine:
                         return self._candidate(
                             signal, balance, entry, stop, target, rr_ratio,
                             stop_distance, atr_val, anchor_sp, stop_anchor, spacing=True,
-                            risk_multiplier=risk_multiplier,
+                            risk_multiplier=risk_multiplier, reference=close_price,
                         )
                 rejection.append(
                     EvidenceEntry(
@@ -372,7 +376,7 @@ class RiskEngine:
                     return self._candidate(
                         signal, balance, entry, stop, target, rr_ratio,
                         stop_distance, atr_val, anchor_sp, stop_anchor, spacing=True,
-                        risk_multiplier=risk_multiplier,
+                        risk_multiplier=risk_multiplier, reference=close_price,
                     )
             blockers = self._blocking_sr(signal.direction, entry, stop_distance, sr_fact, atr_val)
             blocks = (
@@ -435,7 +439,7 @@ class RiskEngine:
                         return self._candidate(
                             signal, balance, entry, stop, target, rr_ratio,
                             stop_distance, atr_val, anchor, stop_anchor, spacing=True,
-                            risk_multiplier=risk_multiplier,
+                            risk_multiplier=risk_multiplier, reference=close_price,
                         )
                 rejection.append(
                     EvidenceEntry(
@@ -454,6 +458,7 @@ class RiskEngine:
         return self._candidate(
             signal, balance, entry, stop, target, rr_ratio, stop_distance,
             atr_val, anchor, stop_anchor, risk_multiplier=risk_multiplier,
+            reference=close_price,
         )
 
     def _candidate(
@@ -470,6 +475,7 @@ class RiskEngine:
         stop_anchor: float | None,
         spacing: bool = False,
         risk_multiplier: float = 1.0,
+        reference: float | None = None,
     ) -> tuple[TradeCandidate, tuple[EvidenceEntry, ...]]:
         """Build sized candidate + evidence. ``spacing=True`` marks the
         spacing-aware fallback geometry (stop may sit inside the last swing)."""
@@ -528,6 +534,30 @@ class RiskEngine:
                     source="RiskEngine",
                 ),
             )
+
+        if self._entry_at_open:
+            evidence.append(
+                EvidenceEntry(
+                    text=(
+                        "Entry: market order filled at next open (EOD workflow); "
+                        f"planned entry {_fmt_p(entry)} kept for S/R geometry"
+                    ),
+                    level=EvidenceLevel.INFO,
+                    source="RiskEngine",
+                ),
+            )
+            if self._gap_guard_atr > 0 and reference is not None:
+                evidence.append(
+                    EvidenceEntry(
+                        text=(
+                            f"Entry: open-gap guard {self._gap_guard_atr:.1f} ATR "
+                            f"({self._gap_guard_atr * atr_val:.4f}) vs signal close "
+                            f"{_fmt_p(reference)}"
+                        ),
+                        level=EvidenceLevel.INFO,
+                        source="RiskEngine",
+                    ),
+                )
 
         if self._stop_width_mult != 1.0:
             evidence.append(
@@ -589,6 +619,9 @@ class RiskEngine:
             evidence=tuple(evidence),
             min_rr=self._min_rr,
             exit_plan=exit_plan,
+            entry_at_open=self._entry_at_open,
+            reference_price=reference if self._entry_at_open else None,
+            max_open_gap=self._gap_guard_atr * atr_val if self._entry_at_open else 0.0,
         ), tuple(evidence)
 
     def _spacing_candidate(

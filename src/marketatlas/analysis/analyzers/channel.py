@@ -25,7 +25,7 @@ class ChannelAnalyzer(Analyzer):
 
     @property
     def instance_key(self) -> str:
-        return f"channel_{self._period}"
+        return self._name or f"channel_{self._period}"
 
     def requires(self) -> tuple[FactKey, ...]:
         return ()

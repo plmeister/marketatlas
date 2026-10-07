@@ -25,6 +25,8 @@ class PullbackPatternAnalyzer(Analyzer):
         confirm_beyond_swing: bool = True,
         lookback_swings: int = 5,
         compact_candles: int = 40,
+        window_days: int = 1,
+        retest: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -33,10 +35,12 @@ class PullbackPatternAnalyzer(Analyzer):
         self._confirm_beyond_swing = confirm_beyond_swing
         self._lookback_swings = lookback_swings
         self._compact_candles = compact_candles
+        self._window_days = max(int(window_days), 1)
+        self._retest = retest
 
     @property
     def instance_key(self) -> str:
-        return "pullback_pattern"
+        return self._name or "pullback_pattern"
 
     def requires(self) -> tuple[FactKey, ...]:
         return (self._make_key(self._swingstructure_key),)
@@ -105,7 +109,17 @@ class PullbackPatternAnalyzer(Analyzer):
         elif all_lower_lows and all_lower_highs:
             # this is a bearish pullback pattern
             direction = TrendDirection.BEARISH
-        else:
+        elif self._retest:
+            # Second-dip tolerance (backlog: W2 retest window): a pullback that
+            # undercuts its own last swing low is still actionable while the
+            # HIGHER-HIGH development of the trend legs is intact — the final
+            # low may dip below the prior low only if it holds the prior-prior
+            # (leg) low, preserving the HH/HL structure two swings back.
+            if all_higher_highs and len(lows) >= 3 and lows[-1].price > lows[-3].price:
+                direction = TrendDirection.BULLISH
+            elif all_lower_highs and len(highs) >= 3 and highs[-1].price < highs[-3].price:
+                direction = TrendDirection.BEARISH
+        if direction == TrendDirection.NEUTRAL:
             # no clear pullback pattern detected
             evidence = (
                 EvidenceEntry(
@@ -121,11 +135,14 @@ class PullbackPatternAnalyzer(Analyzer):
 
         last_swing = points[-1]
 
-        # Entry-day gating (backlog 067): the pullback is only actionable on
-        # the candle that follows the final swing point. The follow-up candle
-        # is located by timestamp in the consumer's own timeframe, so the gate
-        # works across timeframes (1w structure → 1d confirmation) where raw
-        # indices are per-timeframe and not comparable.
+        # Entry-day gating (backlog 067): the pullback is only actionable
+        # within ``window_days`` candles of the final swing point. The follow-up
+        # candle is located by timestamp in the consumer's own timeframe, so the
+        # gate works across timeframes (1w structure → 1d confirmation) where
+        # raw indices are per-timeframe and not comparable. ``window_days=1``
+        # restores the original single-candle gate. Widening the window lets a
+        # retest (second dip) re-confirm on a later candle while ``retest=True``
+        # keeps the structure valid through the dip.
         entry_idx = self._entry_day_index(view, last_swing)
         if entry_idx is None:
             evidence = (
@@ -142,12 +159,13 @@ class PullbackPatternAnalyzer(Analyzer):
                 facts=(),
                 evidence=evidence,
             )
-        if entry_idx < view.index:
+        if view.index >= entry_idx + self._window_days:
             evidence = (
                 EvidenceEntry(
                     text=(
                         "Pullback entry window missed — swing at "
-                        f"{last_swing.price:.2f} not confirmed on entry candle"
+                        f"{last_swing.price:.2f} not confirmed within "
+                        f"{self._window_days} candle{'s' if self._window_days > 1 else ''}"
                     ),
                     level=EvidenceLevel.INFO,
                     source="PullbackDetector",

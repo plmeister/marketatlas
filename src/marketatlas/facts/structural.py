@@ -50,3 +50,18 @@ class SRFact(Fact):
 @dataclass(frozen=True)
 class SwingStructureFact(Fact):
     points: tuple[SwingPoint, ...]
+
+
+@dataclass(frozen=True)
+class RangePositionFact(Fact):
+    """Where a reference price sits inside a completed higher-timeframe range.
+
+    ``position`` is ``0.0`` at the range low and ``1.0`` at the range high, and
+    may fall outside that interval when the price has broken beyond the last
+    completed bar's extremes. ``None`` when no higher-timeframe bar has completed
+    yet, in which case no filter decision can be made.
+    """
+
+    high: float
+    low: float
+    position: float | None

@@ -28,8 +28,10 @@ __all__ = [
     "PullbackPattern",
     "EMA",
     "GenerateSignal",
+    "MagnitudeSwings",
     "ManageRisk",
     "ProviderConstructionError",
+    "RangePosition",
     "SR",
     "SwingStructure",
     "Swings",
@@ -220,6 +222,20 @@ def Swings(  # noqa: N802
 ) -> Definition:
     """Definition for the ``swings`` provider (default lookback 50)."""
     return construct("swings", name, **params)
+
+
+def MagnitudeSwings(  # noqa: N802
+    name: str | None = None, **params: Any
+) -> Definition:
+    """Definition for the ``magnitudeswings`` provider (default 2/2 bars, 3 ATR floor)."""
+    return construct("magnitudeswings", name, **params)
+
+
+def RangePosition(  # noqa: N802
+    name: str | None = None, **params: Any
+) -> Definition:
+    """Definition for the ``rangeposition`` provider (default 12x 1w, lag 2)."""
+    return construct("rangeposition", name, **params)
 
 
 def SR(  # noqa: N802

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from datetime import UTC, datetime
 from email.message import Message
 from pathlib import Path
@@ -12,6 +13,7 @@ from marketatlas.data.providers.base import (
     FeedUnavailableError,
     NoDataAvailableError,
     RateLimitError,
+    SymbolNotFoundError,
 )
 from marketatlas.data.providers.dukascopy import DukascopyProvider
 from marketatlas.data.types import MarketData, Symbol, Timeframe
@@ -200,6 +202,70 @@ class TestDukascopyProvider:
                     datetime(2024, 1, 15, tzinfo=UTC),
                     datetime(2024, 1, 15, 23, 59, tzinfo=UTC),
                 )
+
+    def test_unknown_instrument_null_payload_raises_symbol_not_found(self) -> None:
+        """json3 answers an unknown instrument with ``[null]``, not a 404.
+
+        Unhandled it reached ``rows[0][0]`` and surfaced as
+        ``TypeError: 'NoneType' object is not subscriptable``, hiding the cause
+        and defeating ProviderChain fallback. Dukascopy carries FX and metals
+        only, so COPPER/indices/stocks hit this path.
+        """
+        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = _mock_response(b"probe_cb([null]);")
+
+            provider = DukascopyProvider()
+            with pytest.raises(SymbolNotFoundError):
+                provider.fetch(
+                    Symbol("COPPER"),
+                    Timeframe.D1,
+                    datetime(2024, 1, 1, tzinfo=UTC),
+                    datetime(2024, 2, 1, tzinfo=UTC),
+                )
+
+    def test_empty_payload_still_raises_no_data(self) -> None:
+        """An empty list is a valid answer meaning "no rows in range"."""
+        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = _mock_response(b"probe_cb([]);")
+
+            provider = DukascopyProvider()
+            with pytest.raises(NoDataAvailableError):
+                provider.fetch(
+                    Symbol("EURUSD"),
+                    Timeframe.D1,
+                    datetime(2024, 1, 1, tzinfo=UTC),
+                    datetime(2024, 2, 1, tzinfo=UTC),
+                )
+
+    def test_malformed_row_raises_feed_unavailable(self) -> None:
+        with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = _mock_response(
+                b"probe_cb([[1700000000000, 1.0, 2.0]]);"
+            )
+
+            provider = DukascopyProvider()
+            with pytest.raises(FeedUnavailableError):
+                provider.fetch(
+                    Symbol("EURUSD"),
+                    Timeframe.D1,
+                    datetime(2024, 1, 1, tzinfo=UTC),
+                    datetime(2024, 2, 1, tzinfo=UTC),
+                )
+
+    def test_null_payload_is_not_cached(self) -> None:
+        """A rejected instrument must not poison the page cache."""
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("marketatlas.data.providers.dukascopy.urlopen") as mock_urlopen:
+                mock_urlopen.return_value = _mock_response(b"probe_cb([null]);")
+                provider = DukascopyProvider(cache_dir=Path(tmp))
+                with pytest.raises(SymbolNotFoundError):
+                    provider.fetch(
+                        Symbol("COPPER"),
+                        Timeframe.D1,
+                        datetime(2024, 1, 1, tzinfo=UTC),
+                        datetime(2024, 2, 1, tzinfo=UTC),
+                    )
+            assert not any(Path(tmp).rglob("*.json"))
 
     def test_rate_limit_retries_then_raises(self) -> None:
         from urllib.error import HTTPError
