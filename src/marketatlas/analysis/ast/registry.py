@@ -256,7 +256,7 @@ def create_default_registry() -> ProviderRegistry:
         "rangeposition",
         RangePositionAnalyzer,
         default_params={
-            "swing_key": "magnitude_swings_3",
+            "swing_key": "magnitude_swings_3.5",
             "higher_timeframe": "1w",
             "range_bars": 12,
             "confirmation_lag": 2,
