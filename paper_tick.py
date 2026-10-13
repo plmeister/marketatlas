@@ -215,6 +215,16 @@ def main():
     if last >= today:
         with open(events_path, 'a') as f:
             f.write(json.dumps({'type':'heartbeat','ts':now_dt.isoformat()})+'\n')
+        summary_path = state_dir / 'summary.json'
+        with open(summary_path, 'w') as f:
+            json.dump({
+                'capital': state['capital'],
+                'peak': state['peak'],
+                'maxdd': state['maxdd'],
+                'trade_count': state['trade_count'],
+                'last_processed': state['last_processed'],
+                'open_positions': len(state['open_positions'])
+            }, f, indent=2)
         return
 
     for proc_date in daterange(last+timedelta(days=1), today):
@@ -223,6 +233,18 @@ def main():
     state['last_processed'] = today.isoformat()
     with open(state_path,'w') as f:
         json.dump(state,f,indent=2)
+
+    # write summary
+    summary_path = state_dir / 'summary.json'
+    with open(summary_path, 'w') as f:
+        json.dump({
+            'capital': state['capital'],
+            'peak': state['peak'],
+            'maxdd': state['maxdd'],
+            'trade_count': state['trade_count'],
+            'last_processed': state['last_processed'],
+            'open_positions': len(state['open_positions'])
+        }, f, indent=2)
 
 
 if __name__ == '__main__':
