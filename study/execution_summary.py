@@ -1,5 +1,11 @@
 """Results summary for the four remaining items.
 
+NOTE (2026-10-13): numbers below predate the timeout-semantics fix. Max-hold
+expiry with neither stop nor target touched is now a CANCEL at R=0 (no cost),
+matching TradeBook._cancel_open — it is NOT a market close. Re-run
+`study/battery.py` for current figures (full causal: n=1595, cancel=371,
+win 81.2% of decided, E[R] +1.035 incl cancels / +1.349 excl).
+
 Item 1 (bid/ask): MF=0.753% ATR (EURUSD-like). Cost in R = spread/(1.5*MF).
   10 pip (0.0010): costR=0.0886 -> E[R]=+1.240, win 83.2% (n=1402 full)
   20 pip: 0.1771 -> +1.151, 82.5%
