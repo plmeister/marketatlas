@@ -71,36 +71,47 @@ def main():
             ax.plot([t,t],[ol,oh],'w', linewidth=0.8)
             ax.add_patch(Rectangle((t-width/2, min(oc,c)), width, abs(c-oc), facecolor='#ef5350', edgecolor='white', linewidth=0.3))
 
-    # load state to get SL/TP levels
     state_path = Path.home() / '.local/share/marketatlas/paper-logs' / args.tag / 'state.json'
     if state_path.exists():
         with open(state_path) as f:
             state = json.load(f)
         for pos in state.get('open_positions', []):
             if pos['sym'] != args.symbol.upper(): continue
-            # draw horizontal lines
             ax.axhline(y=pos['entry'], color='#4caf50', linestyle='-', alpha=0.6, linewidth=1.5, label='_nolegend_')
             ax.axhline(y=pos['stop'], color='#f44336', linestyle='--', alpha=0.8, linewidth=1.5, label='_nolegend_')
             ax.axhline(y=pos['target'], color='#2196f3', linestyle='--', alpha=0.8, linewidth=1.5, label='_nolegend_')
             ax.text(dates[-1], pos['entry'], f"Entry {pos['entry']:.5f}", color='#4caf50', va='bottom')
             ax.text(dates[-1], pos['stop'], f"SL {pos['stop']:.5f}", color='#f44336', va='top')
             ax.text(dates[-1], pos['target'], f"TP {pos['target']:.5f}", color='#2196f3', va='bottom')
-            # zone box if requested
             if args.show_zone:
                 try:
-                    # find opened date
-                    opened = datetime.fromisoformat(pos['opened']).date()
-                    # find idx
+                    opened_dt = datetime.fromisoformat(pos['opened']).date()
+                    # find open idx
+                    t_open = dates[0]
                     for i,t in enumerate(ts[start_idx:end_idx+1], start_idx):
-                        if t.date() == opened:
+                        if t.date() == opened_dt:
                             t_open = mdates.date2num(t)
                             break
+                    max_dt = opened_dt + timedelta(days=15)
+                    t_max = dates[-1]
+                    for i,t in enumerate(ts[start_idx:end_idx+1], start_idx):
+                        if t.date() == max_dt:
+                            t_max = mdates.date2num(t)
+                            break
+                        if t.date() > max_dt:
+                            t_max = mdates.date2num(ts[i].to_pydatetime()) if i < len(ts) else dates[-1]
+                            break
+                    dirn = pos['dir']
+                    if dirn >= 0:
+                        rect1 = Rectangle((t_open, pos['entry']), t_max-t_open, pos['target']-pos['entry'], facecolor='#4caf50', alpha=0.15, edgecolor=None)
+                        rect2 = Rectangle((t_open, pos['stop']), t_max-t_open, pos['target']-pos['stop'], facecolor='#f44336', alpha=0.15, edgecolor=None)
+                        ax.add_patch(rect2)
+                        ax.add_patch(rect1)
                     else:
-                        t_open = dates[0]
-                    t_close = dates[-1]  # up to now
-                    y0 = min(pos['stop'], pos['target'])
-                    y1 = max(pos['stop'], pos['target'])
-                    ax.add_patch(Rectangle((t_open, y0), t_close-t_open if t_close>t_open else width, y1-y0, facecolor='red' if pos['dir']<0 else 'green', alpha=0.1, edgecolor='gray', linewidth=0.5))
+                        rect1 = Rectangle((t_open, pos['target']), t_max-t_open, pos['entry']-pos['target'], facecolor='#4caf50', alpha=0.15, edgecolor=None)
+                        rect2 = Rectangle((t_open, pos['stop']), t_max-t_open, pos['entry']-pos['stop'], facecolor='#f44336', alpha=0.15, edgecolor=None)
+                        ax.add_patch(rect2)
+                        ax.add_patch(rect1)
                 except Exception:
                     pass
 
