@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-"""Stateful EOD paper trading tick."""
+"""Stateful EOD paper trading tick.
+
+Advances by *bar* (not calendar day). Each run:
+  1. loads available candles per symbol,
+  2. finds bars newer than the last processed bar,
+  3. for each new bar (oldest first): first resolves exits on any open
+     position for that symbol, then looks for a new entry whose confirmation
+     bar (ci) is exactly this bar,
+  4. records entries/exits with the *bar* date and persists state.
+
+Only data up to and including the current bar is ever consulted, so the
+decision path matches what a live EOD trader could have known at that close.
+"""
 import sys
 sys.path.insert(0, 'study')
 
@@ -21,178 +33,163 @@ SHORT_WPOS_THR = 0.8
 RISK_PCT = 1.0
 
 try:
-    allt=[]
+    allt = []
     for s in SYMS[:3]:
-        d,w = load(s), load(s,'1w')
-        if len(d['close'])>=100:
-            wc = weekly_context(d,w)
-            lg,atr = build_prod_causal(d)
+        d, w = load(s), load(s, '1w')
+        if len(d['close']) >= 100:
+            wc = weekly_context(d, w)
+            lg, atr = build_prod_causal(d)
             from execution import sim_base
-            allt += sim_base(d,lg,atr,wc)
-    atrp=[]
+            allt += sim_base(d, lg, atr, wc)
+    atrp = []
     for t in allt[:500]:
         try:
             c = load(t['sym'])['close'][t['ci']]
-            if t['atr']>0: atrp.append(t['atr']/c)
-        except: pass
-    COST_R = 0.0010/(1.5*(st.median(atrp) if atrp else 0.001))
+            if t['atr'] > 0:
+                atrp.append(t['atr'] / c)
+        except Exception:
+            pass
+    COST_R = 0.0010 / (1.5 * (st.median(atrp) if atrp else 0.001))
 except Exception:
     COST_R = 0.089
 
 
-def daterange(s,e):
-    cur = s
-    while cur < e:
-        yield cur
-        cur += timedelta(days=1)
+def new_state():
+    return {
+        'capital': 100.0,
+        'peak': 100.0,
+        'maxdd': 0.0,
+        'last_bar_date': None,
+        'open_positions': [],
+        'trade_count': 0,
+    }
 
 
-def find_idx_by_date(d, ts):
-    # ts is list of timestamps in UTC
-    for i,t in enumerate(ts):
-        if t.date() == d: return i
-    # fallback: find last <= d
-    for i,t in enumerate(ts):
-        if t.date() > d: return i-1
-    return len(ts)-1
+def append_event(events_path, ev):
+    with open(events_path, 'a') as f:
+        f.write(json.dumps(ev) + '\n')
 
 
-def process_day(proc_date, state, events_path):
-    """Process a single day: close open positions if hit, then look for new signals."""
-    # First, check and close open positions
-    to_close = []
+def resolve_exits(state, sym, d, idx, events_path):
+    """Check open position for `sym` against bar `idx`; close if hit.
+
+    Returns True if a position was closed on this bar (so no new entry may
+    open on the same bar, matching the one-position-per-symbol rule).
+    """
     remaining = []
+    closed = False
     for pos in state['open_positions']:
-        sym = pos['sym']
-        try:
-            d = load(sym)
-        except Exception:
+        if pos['sym'] != sym:
             remaining.append(pos)
             continue
-        idx = find_idx_by_date(proc_date, d['timestamp'])
-        if idx < pos['entry_idx']:
-            remaining.append(pos)
-            continue
-        # check if stopped out or taken profit or timeout
-        entry = pos['entry']
-        stop = pos['stop']
-        tgt = pos['target']
         dirn = pos['dir']
-        # scan from entry_idx+1 to idx
-        exited = False
+        low = d['low'][idx]
+        high = d['high'][idx]
         exit_px = None
-        exit_reason = None
-        for j in range(pos['entry_idx']+1, idx+1):
-            low = d['low'][j]; high = d['high'][j]
-            if dirn > 0:
-                if low <= stop:
-                    exited, exit_px, exit_reason = True, stop, 'stop'
-                    break
-                if high >= tgt:
-                    exited, exit_px, exit_reason = True, tgt, 'target'
-                    break
-            else:
-                if high >= stop:
-                    exited, exit_px, exit_reason = True, stop, 'stop'
-                    break
-                if low <= tgt:
-                    exited, exit_px, exit_reason = True, tgt, 'target'
-                    break
-        if not exited and idx >= pos['entry_idx'] + HORIZON:
-            # timeout - exit at close
-            exit_px = float(d['close'][idx])
-            exit_reason = 'timeout'
-            exited = True
-        if exited:
-            r = dirn * (exit_px - entry) / pos['atr_stop_unit'] if pos['atr_stop_unit'] > 0 else 0
-            r_net = r - COST_R
-            state['capital'] *= (1.0 + RISK_PCT/100.0 * r_net)
-            state['trade_count'] += 1
-            state['peak'] = max(state['peak'], state['capital'])
-            if state['peak'] > 0:
-                dd = (state['peak'] - state['capital']) / state['peak'] * 100.0
-                state['maxdd'] = max(state['maxdd'], dd)
-            ev = {
-                'type':'exit',
-                'date':proc_date.isoformat(),
-                'sym':sym,
-                'r':r,
-                'r_net':r_net,
-                'reason':exit_reason,
-                'capital':state['capital']
-            }
-            with open(events_path,'a') as f:
-                f.write(json.dumps(ev)+'\n')
-            # closed
+        reason = None
+        if dirn > 0:
+            if low <= pos['stop']:
+                exit_px, reason = pos['stop'], 'stop'
+            elif high >= pos['target']:
+                exit_px, reason = pos['target'], 'target'
         else:
+            if high >= pos['stop']:
+                exit_px, reason = pos['stop'], 'stop'
+            elif low <= pos['target']:
+                exit_px, reason = pos['target'], 'target'
+        if exit_px is None and idx >= pos['entry_idx'] + HORIZON:
+            exit_px, reason = float(d['close'][idx]), 'timeout'
+        if exit_px is None:
             remaining.append(pos)
+            continue
+        unit = pos['atr_stop_unit']
+        r = dirn * (exit_px - pos['entry']) / unit if unit > 0 else 0.0
+        r_net = r - COST_R
+        state['capital'] *= (1.0 + RISK_PCT / 100.0 * r_net)
+        state['trade_count'] += 1
+        state['peak'] = max(state['peak'], state['capital'])
+        if state['peak'] > 0:
+            dd = (state['peak'] - state['capital']) / state['peak'] * 100.0
+            state['maxdd'] = max(state['maxdd'], dd)
+        append_event(events_path, {
+            'type': 'exit',
+            'date': d['timestamp'][idx].date().isoformat(),
+            'sym': sym,
+            'dir': dirn,
+            'r': round(r, 4),
+            'r_net': round(r_net, 4),
+            'reason': reason,
+            'capital': round(state['capital'], 2),
+        })
+        closed = True
     state['open_positions'] = remaining
+    return closed
 
-    # Look for new signals at proc_date? Entry is at ci=ni+2; we need to detect signals where ci == idx of proc_date?
-    # But pivots are detected from causal build on available history. For safety, only look if it's end of day and we want to enter next? 
-    # The strategy enters at close of confirmation bar (ci). So if ci corresponds to proc_date, the trade is entered at close of proc_date.
-    # To be conservative with daily bars, we enter on confirmation close.
-    for sym in SYMS:
-        try:
-            d = load(sym)
-            w = load(sym,'1w')
-        except Exception:
+
+def find_new_entries(state, sym, d, idx, lg, atr, wc, events_path):
+    """Open a position if a pivot transition confirms exactly on bar `idx`."""
+    if any(p['sym'] == sym for p in state['open_positions']):
+        return
+    for i in range(len(lg) - 1):
+        cur_i, cur_t, _ = lg[i]
+        ni, ntyp, _ = lg[i + 1]
+        if ntyp == cur_t:
             continue
-        idx = find_idx_by_date(proc_date, d['timestamp'])
-        if idx < 0: continue
-        # need wpos
-        try:
-            wc = weekly_context(d,w)
-        except Exception:
+        ci = ni + 2
+        if ci != idx:
             continue
-        # build pivots causally on full data up to len(d)? but d is full; causal is fine
-        lg, atr = build_prod_causal(d)
-        # look for transitions ending at pivot ni such that ci = ni+2 == idx?
-        for i in range(len(lg)-1):
-            ni, ntyp, _ = lg[i+1]
-            ci = ni + 2
-            if ci != idx: continue
-            # check if taken
-            # direction
-            typ_cur = lg[i][1]
-            if lg[i+1][1] == typ_cur: continue
-            direction = 1 if lg[i+1][1] == 'L' else -1
-            # check if we already have position in this sym? or just busy
-            # busy: if any open pos for sym and entry_idx <= idx <= exit_idx? not tracked; keep simple - don't open if already have open pos in same sym
-            has_open = any(p['sym']==sym for p in state['open_positions'])
-            if has_open: continue
-            # short filter
-            if direction < 0:
-                wpv = wc[ci] if hasattr(wc, '__getitem__') else None
-                # wc is list
-                try:
-                    wpv = wc[ci] if ci < len(wc) else wc[-1]
-                except:
-                    wpv = None
-                if wpv is None or wpv >= SHORT_WPOS_THR:
-                    continue
-            a = atr[ni] if ni < len(atr) else atr[-1]
-            if a <= 0: continue
-            entry = float(d['close'][ci])
-            sp = STOP_ATR * a
-            tp = TP_ATR * a
-            stop_px = entry - direction * sp
-            tgt_px = entry + direction * tp
-            # open position
-            pos = {
-                'sym': sym,
-                'dir': direction,
-                'entry': entry,
-                'entry_idx': ci,
-                'stop': stop_px,
-                'target': tgt_px,
-                'atr_stop_unit': sp,
-                'opened': proc_date.isoformat()
-            }
-            state['open_positions'].append(pos)
-            ev = {'type':'entry','date':proc_date.isoformat(),'sym':sym,'dir':direction,'entry':entry}
-            with open(events_path,'a') as f:
-                f.write(json.dumps(ev)+'\n')
+        direction = 1 if ntyp == 'L' else -1
+        if direction < 0:
+            wpv = wc[ci] if ci < len(wc) else (wc[-1] if wc else None)
+            if wpv is None or wpv >= SHORT_WPOS_THR:
+                continue
+        a = atr[ni] if ni < len(atr) else atr[-1]
+        if a <= 0:
+            continue
+        entry = float(d['close'][ci])
+        sp = STOP_ATR * a
+        tp = TP_ATR * a
+        pos = {
+            'sym': sym,
+            'dir': direction,
+            'entry': entry,
+            'entry_idx': ci,
+            'stop': entry - direction * sp,
+            'target': entry + direction * tp,
+            'atr_stop_unit': sp,
+            'opened': d['timestamp'][ci].date().isoformat(),
+        }
+        state['open_positions'].append(pos)
+        append_event(events_path, {
+            'type': 'entry',
+            'date': d['timestamp'][ci].date().isoformat(),
+            'sym': sym,
+            'dir': direction,
+            'entry': entry,
+            'stop': pos['stop'],
+            'target': pos['target'],
+        })
+        return
+
+
+def process_bar(state, sym, d, idx, wc, events_path):
+    closed = resolve_exits(state, sym, d, idx, events_path)
+    if closed:
+        return
+    lg, atr = build_prod_causal({k: v[:idx + 1] for k, v in d.items() if hasattr(v, '__len__')})
+    find_new_entries(state, sym, d, idx, lg, atr, wc, events_path)
+
+
+def write_summary(state, state_dir):
+    with open(state_dir / 'summary.json', 'w') as f:
+        json.dump({
+            'capital': round(state['capital'], 2),
+            'peak': round(state['peak'], 2),
+            'maxdd': round(state['maxdd'], 2),
+            'trade_count': state['trade_count'],
+            'last_bar_date': state['last_bar_date'],
+            'open_positions': len(state['open_positions']),
+        }, f, indent=2)
 
 
 def main():
@@ -205,46 +202,53 @@ def main():
     if state_path.exists():
         with open(state_path) as f:
             state = json.load(f)
+        state.setdefault('last_bar_date', state.pop('last_processed', None))
     else:
-        state = {'capital':100.0,'peak':100.0,'maxdd':0.0,'last_processed':None,'open_positions':[],'trade_count':0}
+        state = new_state()
 
-    now_dt = datetime.now(timezone.utc)
-    today = now_dt.date()
-    last = date.fromisoformat(state['last_processed']) if state['last_processed'] else today - timedelta(days=7)
+    cold_start = state['last_bar_date'] is None
 
-    if last >= today:
-        with open(events_path, 'a') as f:
-            f.write(json.dumps({'type':'heartbeat','ts':now_dt.isoformat()})+'\n')
-        summary_path = state_dir / 'summary.json'
-        with open(summary_path, 'w') as f:
-            json.dump({
-                'capital': state['capital'],
-                'peak': state['peak'],
-                'maxdd': state['maxdd'],
-                'trade_count': state['trade_count'],
-                'last_processed': state['last_processed'],
-                'open_positions': len(state['open_positions'])
-            }, f, indent=2)
+    # Build the set of bars to process across all symbols, ordered by date.
+    # On cold start, only walk a recent warmup window (don't replay history).
+    work = []  # (bar_date, sym, idx, d, wc)
+    latest = None
+    for sym in SYMS:
+        try:
+            d = load(sym)
+            w = load(sym, '1w')
+        except Exception:
+            continue
+        if len(d['timestamp']) == 0:
+            continue
+        try:
+            wc = weekly_context(d, w)
+        except Exception:
+            continue
+        sym_latest = d['timestamp'][-1].date()
+        if latest is None or sym_latest > latest:
+            latest = sym_latest
+        for idx, t in enumerate(d['timestamp']):
+            bd = t.date()
+            if cold_start:
+                if (sym_latest - bd).days <= 40:
+                    work.append((bd, sym, idx, d, wc))
+            elif bd > date.fromisoformat(state['last_bar_date']):
+                work.append((bd, sym, idx, d, wc))
+
+    work.sort(key=lambda x: (x[0], x[1]))
+
+    if not work:
+        append_event(events_path, {'type': 'heartbeat', 'ts': datetime.now(timezone.utc).isoformat()})
+        write_summary(state, state_dir)
         return
 
-    for proc_date in daterange(last+timedelta(days=1), today):
-        process_day(proc_date, state, events_path)
+    for bd, sym, idx, d, wc in work:
+        process_bar(state, sym, d, idx, wc, events_path)
+        state['last_bar_date'] = bd.isoformat()
 
-    state['last_processed'] = today.isoformat()
-    with open(state_path,'w') as f:
-        json.dump(state,f,indent=2)
-
-    # write summary
-    summary_path = state_dir / 'summary.json'
-    with open(summary_path, 'w') as f:
-        json.dump({
-            'capital': state['capital'],
-            'peak': state['peak'],
-            'maxdd': state['maxdd'],
-            'trade_count': state['trade_count'],
-            'last_processed': state['last_processed'],
-            'open_positions': len(state['open_positions'])
-        }, f, indent=2)
+    with open(state_path, 'w') as f:
+        json.dump(state, f, indent=2)
+    write_summary(state, state_dir)
 
 
 if __name__ == '__main__':

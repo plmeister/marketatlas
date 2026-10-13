@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Pro charting with SL/TP overlays and zones."""
+"""Pro chart: candlesticks + entry/stop/target lines + trade zones.
+
+Zones are split at the entry so profit (green) and loss (red) rectangles
+never overlap (overlapping translucent green+red looked muddy yellow).
+"""
 import sys
 sys.path.insert(0, 'study')
 
@@ -16,6 +20,44 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.patches import Rectangle
 
+GREEN = '#00e676'
+RED = '#ff1744'
+BLUE = '#40c4ff'
+
+
+def load_trades(tag, symbol):
+    events = Path.home() / '.local/share/marketatlas/paper-logs' / tag / 'events.jsonl'
+    entries = []
+    exits = []
+    if not events.exists():
+        return entries, exits
+    for line in events.read_text().splitlines():
+        try:
+            ev = json.loads(line)
+        except Exception:
+            continue
+        if ev.get('sym') != symbol.upper():
+            continue
+        if ev.get('type') == 'entry':
+            entries.append(ev)
+        elif ev.get('type') == 'exit':
+            exits.append(ev)
+    return entries, exits
+
+
+def pair_trades(entries, exits):
+    trades = []
+    used = set()
+    for e in sorted(entries, key=lambda x: x['date']):
+        match = None
+        for j, x in enumerate(sorted(exits, key=lambda x: x['date'])):
+            if x['sym'] == e['sym'] and x['date'] >= e['date'] and id(x) not in used:
+                match = x
+                used.add(id(x))
+                break
+        trades.append((e, match))
+    return trades
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -24,7 +66,8 @@ def main():
     parser.add_argument('--end', type=str)
     parser.add_argument('--days', type=int, default=60)
     parser.add_argument('--tag', default='paper-test-v1-causal')
-    parser.add_argument('--show-zone', action='store_true', help='Show trade zone boxes')
+    parser.add_argument('--show-zone', action='store_true')
+    parser.add_argument('--no-candles', action='store_true')
     args = parser.parse_args()
 
     d = load(args.symbol)
@@ -33,96 +76,83 @@ def main():
     end_dt = datetime.strptime(args.end, '%Y-%m-%d').date() if args.end else ts[-1].date()
     start_dt = datetime.strptime(args.start, '%Y-%m-%d').date() if args.start else end_dt - timedelta(days=args.days)
 
-    start_idx = end_idx = None
-    for i,t in enumerate(ts):
-        if t.date() >= start_dt and start_idx is None:
-            start_idx = i
-        if t.date() > end_dt:
-            end_idx = i-1
-            break
-    if end_idx is None: end_idx = len(ts)-1
-    if start_idx is None: start_idx = max(0,end_idx-args.days)
+    start_idx = next((i for i, t in enumerate(ts) if t.date() >= start_dt), 0)
+    end_idx = next((i for i, t in enumerate(ts) if t.date() > end_dt), len(ts)) - 1
 
-    events = Path.home() / '.local/share/marketatlas/paper-logs' / args.tag / 'events.jsonl'
-    entries = []; exits = []
-    if events.exists():
-        for line in events.read_text().splitlines():
-            try:
-                ev = json.loads(line)
-                if ev.get('type') in ('entry','exit') and ev.get('sym')==args.symbol.upper():
-                    evdt = datetime.fromisoformat(ev['date']).date()
-                    if evdt >= start_dt and evdt <= end_dt:
-                        (entries if ev['type']=='entry' else exits).append(ev)
-            except Exception:
-                pass
+    def dnum(dt):
+        return mdates.date2num(dt)
+
+    entries, exits = load_trades(args.tag, args.symbol)
+    trades = pair_trades(entries, exits)
 
     plt.style.use('dark_background')
-    fig, ax = plt.subplots(figsize=(14,8))
+    fig, ax = plt.subplots(figsize=(15, 8))
 
-    dates = [mdates.date2num(t) for t in ts[start_idx:end_idx+1]]
     width = 0.6
-    closes = d['close'][start_idx:end_idx+1]
-    for i,(t,oc,oh,ol) in enumerate(zip(dates, d['open'][start_idx:end_idx+1], d['high'][start_idx:end_idx+1], d['low'][start_idx:end_idx+1])):
-        c = closes[i]
-        if oc <= c:
-            ax.plot([t,t],[ol,oh],'w', linewidth=0.8)
-            ax.add_patch(Rectangle((t-width/2, min(oc,c)), width, abs(c-oc), facecolor='#26a69a', edgecolor='white', linewidth=0.3))
-        else:
-            ax.plot([t,t],[ol,oh],'w', linewidth=0.8)
-            ax.add_patch(Rectangle((t-width/2, min(oc,c)), width, abs(c-oc), facecolor='#ef5350', edgecolor='white', linewidth=0.3))
+    for i in range(start_idx, end_idx + 1):
+        t = dnum(ts[i].date())
+        o, h, l, c = d['open'][i], d['high'][i], d['low'][i], d['close'][i]
+        col = GREEN if c >= o else RED
+        ax.plot([t, t], [l, h], color=col, linewidth=0.8, zorder=2)
+        ax.add_patch(Rectangle((t - width / 2, min(o, c)), width, abs(c - o) or 1e-9,
+                               facecolor=col, edgecolor=col, linewidth=0.4, zorder=2))
 
-    state_path = Path.home() / '.local/share/marketatlas/paper-logs' / args.tag / 'state.json'
-    if state_path.exists():
-        with open(state_path) as f:
-            state = json.load(f)
-        for pos in state.get('open_positions', []):
-            if pos['sym'] != args.symbol.upper(): continue
-            ax.axhline(y=pos['entry'], color='#4caf50', linestyle='-', alpha=0.6, linewidth=1.5, label='_nolegend_')
-            ax.axhline(y=pos['stop'], color='#f44336', linestyle='--', alpha=0.8, linewidth=1.5, label='_nolegend_')
-            ax.axhline(y=pos['target'], color='#2196f3', linestyle='--', alpha=0.8, linewidth=1.5, label='_nolegend_')
-            ax.text(dates[-1], pos['entry'], f"Entry {pos['entry']:.5f}", color='#4caf50', va='bottom')
-            ax.text(dates[-1], pos['stop'], f"SL {pos['stop']:.5f}", color='#f44336', va='top')
-            ax.text(dates[-1], pos['target'], f"TP {pos['target']:.5f}", color='#2196f3', va='bottom')
-            if args.show_zone:
-                try:
-                    opened_dt = datetime.fromisoformat(pos['opened']).date()
-                    # find open idx
-                    t_open = dates[0]
-                    for i,t in enumerate(ts[start_idx:end_idx+1], start_idx):
-                        if t.date() == opened_dt:
-                            t_open = mdates.date2num(t)
-                            break
-                    max_dt = opened_dt + timedelta(days=15)
-                    t_max = dates[-1]
-                    for i,t in enumerate(ts[start_idx:end_idx+1], start_idx):
-                        if t.date() == max_dt:
-                            t_max = mdates.date2num(t)
-                            break
-                        if t.date() > max_dt:
-                            t_max = mdates.date2num(ts[i].to_pydatetime()) if i < len(ts) else dates[-1]
-                            break
-                    dirn = pos['dir']
-                    if dirn >= 0:
-                        rect1 = Rectangle((t_open, pos['entry']), t_max-t_open, pos['target']-pos['entry'], facecolor='#4caf50', alpha=0.15, edgecolor=None)
-                        rect2 = Rectangle((t_open, pos['stop']), t_max-t_open, pos['target']-pos['stop'], facecolor='#f44336', alpha=0.15, edgecolor=None)
-                        ax.add_patch(rect2)
-                        ax.add_patch(rect1)
-                    else:
-                        rect1 = Rectangle((t_open, pos['target']), t_max-t_open, pos['entry']-pos['target'], facecolor='#4caf50', alpha=0.15, edgecolor=None)
-                        rect2 = Rectangle((t_open, pos['stop']), t_max-t_open, pos['entry']-pos['stop'], facecolor='#f44336', alpha=0.15, edgecolor=None)
-                        ax.add_patch(rect2)
-                        ax.add_patch(rect1)
-                except Exception:
-                    pass
+    max_label_x = end_dt
+    for entry, exit_ev in trades:
+        opened = datetime.fromisoformat(entry['date']).date()
+        if opened < start_dt or opened > end_dt:
+            continue
+        t_open = dnum(opened)
+        if exit_ev:
+            closed = datetime.fromisoformat(exit_ev['date']).date()
+            t_close = dnum(closed)
+        else:
+            t_close = None
+        max_span = opened + timedelta(days=15)
+        # cap display at maxspan even if a trade ran longer
+        cap = min(max_span, end_dt)
+        if t_close is None or t_close > dnum(cap):
+            t_close = dnum(cap)
+
+        e = entry['entry']
+        s = entry['stop']
+        tp = entry['target']
+        dirn = entry['dir']
+
+        ax.plot([t_open, t_close], [e, e], color=GREEN, linewidth=1.4, zorder=3)
+        ax.plot([t_open, t_close], [s, s], color=RED, linewidth=1.2, linestyle='--', zorder=3)
+        ax.plot([t_open, t_close], [tp, tp], color=BLUE, linewidth=1.2, linestyle='--', zorder=3)
+
+        if args.show_zone:
+            if dirn >= 0:
+                ax.add_patch(Rectangle((t_open, e), t_close - t_open, max(tp - e, 0),
+                                       facecolor=GREEN, alpha=0.18, edgecolor=GREEN, linewidth=0.6, zorder=1))
+                ax.add_patch(Rectangle((t_open, s), t_close - t_open, max(e - s, 0),
+                                       facecolor=RED, alpha=0.18, edgecolor=RED, linewidth=0.6, zorder=1))
+            else:
+                ax.add_patch(Rectangle((t_open, tp), t_close - t_open, max(e - tp, 0),
+                                       facecolor=GREEN, alpha=0.18, edgecolor=GREEN, linewidth=0.6, zorder=1))
+                ax.add_patch(Rectangle((t_open, e), t_close - t_open, max(s - e, 0),
+                                       facecolor=RED, alpha=0.18, edgecolor=RED, linewidth=0.6, zorder=1))
+
+        for level, col, lab in ((e, GREEN, 'Entry'), (s, RED, 'SL'), (tp, BLUE, 'TP')):
+            ax.annotate(f"{lab} {level:.5f}", xy=(t_close, level), xycoords='data',
+                        xytext=(6, 0), textcoords='offset points',
+                        color=col, fontsize=8, va='center', ha='left', zorder=5)
+        if t_close > dnum(max_label_x):
+            max_label_x = mdates.num2date(t_close).date()
 
     ax.xaxis_date()
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%d'))
+    ax.set_xlim(dnum(start_dt) - 0.7, dnum(end_dt) + 0.7)
     plt.xticks(rotation=45, ha='right')
     ax.grid(True, alpha=0.2)
-    ax.set_title(f'{args.symbol} - paper trades with SL/TP')
-    plt.tight_layout()
-    out = f'/tmp/{args.symbol.lower()}_pro2_{start_dt}_{end_dt}.png'
-    plt.savefig(out, dpi=150)
+    ax.set_title(f'{args.symbol}  paper trades  ({start_dt} to {end_dt})')
+    ax.set_ylabel('price')
+    fig.subplots_adjust(right=0.85, bottom=0.18)
+    out = f'/tmp/{args.symbol.lower()}_pro2.png'
+    plt.savefig(out, dpi=150, bbox_inches='tight')
     plt.close()
     print(out)
 
