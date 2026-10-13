@@ -23,6 +23,7 @@ from matplotlib.patches import Rectangle
 GREEN = '#00e676'
 RED = '#ff1744'
 BLUE = '#40c4ff'
+HORIZON = 15
 
 
 def load_trades(tag, symbol):
@@ -102,17 +103,18 @@ def main():
         opened = datetime.fromisoformat(entry['date']).date()
         if opened < start_dt or opened > end_dt:
             continue
-        t_open = dnum(opened)
+        # locate entry bar index so the max-span (15 *bars*) is exact
+        e_idx = next((i for i, t in enumerate(ts) if t.date() == opened), None)
+        if e_idx is None:
+            continue
+        t_open = dnum(ts[e_idx].date())
+        span_idx = min(e_idx + HORIZON, len(ts) - 1)
+        maxspan_date = min(ts[span_idx].date(), end_dt)
         if exit_ev:
             closed = datetime.fromisoformat(exit_ev['date']).date()
-            t_close = dnum(closed)
+            t_close = dnum(min(closed, maxspan_date))
         else:
-            t_close = None
-        max_span = opened + timedelta(days=15)
-        # cap display at maxspan even if a trade ran longer
-        cap = min(max_span, end_dt)
-        if t_close is None or t_close > dnum(cap):
-            t_close = dnum(cap)
+            t_close = dnum(maxspan_date)
 
         e = entry['entry']
         s = entry['stop']
