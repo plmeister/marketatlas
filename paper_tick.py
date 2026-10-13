@@ -202,7 +202,9 @@ def main():
     if state_path.exists():
         with open(state_path) as f:
             state = json.load(f)
-        state.setdefault('last_bar_date', state.pop('last_processed', None))
+        if 'last_bar_date' not in state:
+            # legacy calendar-day state (incompatible): restart clean
+            state = new_state()
     else:
         state = new_state()
 
