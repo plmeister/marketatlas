@@ -83,7 +83,7 @@ def sim_base(d, lg, atr, wpos, thr=0.8):
         stop_px = entry - direction * sp
         tgt_px = entry + direction * tp
         ep = None
-        oc = "timeout"
+        oc = "cancel"
         xb = ci + HORIZON
         for j in range(1, HORIZON + 1):
             b = ci + j
@@ -100,7 +100,10 @@ def sim_base(d, lg, atr, wpos, thr=0.8):
         if ep is None:
             if ci + HORIZON >= len(c):
                 continue
-            ep, oc, xb = c[ci + HORIZON], "timeout", ci + HORIZON
+            # Max-hold expiry with neither stop nor target touched: the
+            # position is cancelled at no cost (R=0), matching TradeBook's
+            # _cancel_open. It is NOT a market close.
+            ep, oc, xb = entry, "cancel", ci + HORIZON
         trades.append({
             "r": direction * (ep - entry) / sp,
             "outcome": oc,
