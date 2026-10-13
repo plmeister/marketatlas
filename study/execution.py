@@ -83,7 +83,7 @@ def sim_base(d, lg, atr, wpos, thr=0.8):
         stop_px = entry - direction * sp
         tgt_px = entry + direction * tp
         ep = None
-        oc = "cancel"
+        oc = "timeout"
         xb = ci + HORIZON
         for j in range(1, HORIZON + 1):
             b = ci + j
@@ -101,9 +101,9 @@ def sim_base(d, lg, atr, wpos, thr=0.8):
             if ci + HORIZON >= len(c):
                 continue
             # Max-hold expiry with neither stop nor target touched: the
-            # position is cancelled at no cost (R=0), matching TradeBook's
-            # _cancel_open. It is NOT a market close.
-            ep, oc, xb = entry, "cancel", ci + HORIZON
+            # strategy closes the position at market, so the exit price is the
+            # bar's close. Max-hold is a strategy rule, not a broker feature.
+            ep, oc, xb = c[ci + HORIZON], "timeout", ci + HORIZON
         trades.append({
             "r": direction * (ep - entry) / sp,
             "outcome": oc,

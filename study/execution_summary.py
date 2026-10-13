@@ -1,10 +1,10 @@
 """Results summary for the four remaining items.
 
-NOTE (2026-10-13): numbers below predate the timeout-semantics fix. Max-hold
-expiry with neither stop nor target touched is now a CANCEL at R=0 (no cost),
-matching TradeBook._cancel_open — it is NOT a market close. Re-run
-`study/battery.py` for current figures (full causal: n=1595, cancel=371,
-win 81.2% of decided, E[R] +1.035 incl cancels / +1.349 excl).
+NOTE (2026-10-13): max-hold expiry with neither stop nor target touched is a
+MARKET CLOSE at the bar's price (realized +/- R), matching the restored
+TradeBook behaviour. Max-hold is a strategy rule, not a broker feature, so the
+position must be closed at the current price — it is NOT a free cancel.
+Re-run `study/battery.py` for current figures.
 
 Item 1 (bid/ask): MF=0.753% ATR (EURUSD-like). Cost in R = spread/(1.5*MF).
   10 pip (0.0010): costR=0.0886 -> E[R]=+1.240, win 83.2% (n=1402 full)

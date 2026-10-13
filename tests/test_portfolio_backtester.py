@@ -26,7 +26,7 @@ from marketatlas.facts.structural import SRFact, TrendDirection
 from marketatlas.frames.store import FrameStore
 from marketatlas.strategy.risk import RiskEngine
 from marketatlas.strategy.signals import TradeSignal
-from marketatlas.strategy.trade import TradeCandidate
+from marketatlas.strategy.trade import ExitReason, TradeCandidate
 from marketatlas.strategy.tradebook import TradeBook
 
 
@@ -89,7 +89,7 @@ def _fill_candles(n: int = 100, start: datetime | None = None) -> tuple[Candle, 
 
     The ramped close stays above entry while the low crosses it, so a bullish
     trigger-fill can fire at any index; a held trade resolves via max-hold
-    cancellation (neither stop nor target ever breached).
+    market close (neither stop nor target ever breached).
     """
     return _candles(n, start or datetime(2024, 1, 1, tzinfo=UTC), dip_to=100.0)
 
@@ -371,10 +371,14 @@ class TestTradeAttribution:
         a_entry = by_instrument["A"]
         b_entry = by_instrument["B"]
         assert isinstance(a_entry, dict) and isinstance(b_entry, dict)
-        assert a_entry["wins"] == 0 and b_entry["wins"] == 0
-        assert a_entry["losses"] == 0 and b_entry["losses"] == 0
         assert a_entry["trades"] == 1 and b_entry["trades"] == 1
-        assert a_entry["total_pnl"] == 0.0 and b_entry["total_pnl"] == 0.0
+        # Both held to max-hold and closed at market (ramped close above the
+        # 100 entry), so each is a win — proving each trade is attributed to
+        # its own instrument.
+        assert a_entry["wins"] == 1 and b_entry["wins"] == 1
+        assert a_entry["losses"] == 0 and b_entry["losses"] == 0
+        assert a_entry["total_pnl"] == pytest.approx(6.2)
+        assert b_entry["total_pnl"] == pytest.approx(7.2)
 
     def test_trade_outcome_instrument_populated(self) -> None:
         result = self._run_two_instrument(
@@ -488,10 +492,12 @@ class TestOwnInstrumentResolution:
         trades = result.tradebook.trades
         assert len(trades) == 1
         trade = trades[0]
-        # Cancelled by max-hold on A's own candle, not by B's violent candle
+        # Closed by max-hold on A's own candle at the market price (A ramps
+        # flat at 100, so flat P&L), not by B's violent candle.
         assert trade.exit_timestamp == a[8].timestamp
-        assert trade.pnl == 0.0
-        assert trade.result == "cancelled"
+        assert trade.pnl == pytest.approx(0.0)
+        assert trade.result == "breakeven"
+        assert trade.exit_reason is ExitReason.TIMEOUT
 
 
 class TestSharedBalance:

@@ -98,15 +98,15 @@ def resolve_exits(state, sym, d, idx, events_path):
             elif low <= pos['target']:
                 exit_px, reason = pos['target'], 'target'
         if exit_px is None and idx >= pos['entry_idx'] + HORIZON:
-            # Max-hold expiry, neither level touched: cancel at 0 cost (R=0),
-            # matching TradeBook._cancel_open. Not a market close.
-            exit_px, reason = pos['entry'], 'cancel'
+            # Max-hold expiry, neither level touched: the strategy closes at
+            # market, so the exit price is this bar's close (can be +/- R).
+            exit_px, reason = float(d['close'][idx]), 'timeout'
         if exit_px is None:
             remaining.append(pos)
             continue
         unit = pos['atr_stop_unit']
         r = dirn * (exit_px - pos['entry']) / unit if unit > 0 else 0.0
-        r_net = 0.0 if reason == 'cancel' else r - COST_R
+        r_net = r - COST_R
         state['capital'] *= (1.0 + RISK_PCT / 100.0 * r_net)
         state['trade_count'] += 1
         state['peak'] = max(state['peak'], state['capital'])

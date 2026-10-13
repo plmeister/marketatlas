@@ -592,13 +592,12 @@ class TradeBook:
 
         days_held = (candle.timestamp - open_trade.entry_timestamp).days
         if days_held >= max_hold_days:
-            if st is not None and st.scaled_out:
-                # Remainder is live and already profitable; a synthetic pnl-0
-                # cancel would throw away banked + open runner profit. Close at
-                # the candle's market price instead (real exit).
-                self.close_trade(candle.close, candle.timestamp, instrument, ExitReason.TIMEOUT)
-            else:
-                self._cancel_open(timestamp=candle.timestamp, instrument=instrument)
+            # Max-hold is a strategy rule, not a broker feature: the strategy
+            # closes the live position at market, so the exit realizes the
+            # candle's price. A synthetic pnl-0 cancel would discard both gains
+            # and losses and was never realistic (nor consistent with the
+            # scaled-out branch below, which always closed at market).
+            self.close_trade(candle.close, candle.timestamp, instrument, ExitReason.TIMEOUT)
 
     def _resolve_ratchet(
         self, candle: Candle, trade: TradeOutcome, st: _ExitState, plan: ExitPlan
@@ -766,36 +765,6 @@ class TradeBook:
         )
         self._trades.append(cancelled)
         del self._pending[instrument]
-
-    def _cancel_open(self, timestamp: datetime, instrument: str = "") -> None:
-        """Cancel a filled trade that never hit stop or target within max_hold_days.
-
-        The broker cancels the open position at no cost, so the trade is
-        recorded as cancelled with ``pnl=0`` and frees the book for later
-        signals — no market close (backlog: broker cancels, no partial fill).
-        """
-        trade = self._open_trades.get(instrument)
-        if trade is None:
-            return
-        st = self._exit_states.get(instrument)
-        cancelled = TradeOutcome(
-            submit_time=trade.submit_time,
-            entry_timestamp=trade.entry_timestamp,
-            exit_timestamp=timestamp,
-            candidate=trade.candidate,
-            signal=trade.signal,
-            source_strategy=trade.source_strategy,
-            instrument=trade.instrument,
-            pnl=0.0,
-            result="cancelled",
-            exit_reason=ExitReason.TIMEOUT,
-            mfe=st.mfe if st is not None else None,
-            mae=st.mae if st is not None else None,
-            context=trade.context,
-        )
-        self._trades.append(cancelled)
-        self._exit_states.pop(instrument, None)
-        del self._open_trades[instrument]
 
     def filtered_by_instrument(self, canonical: str) -> TradeBook:
         """A copy of the book holding only ``canonical``'s closed trades.

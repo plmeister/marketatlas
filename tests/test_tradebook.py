@@ -283,7 +283,7 @@ class TestTradeResolution:
         expected_pnl = (100.0 - 105.0) * 0.2
         assert tb.total_pnl == pytest.approx(expected_pnl)
 
-    def test_max_hold_days_cancels_open_trade(self) -> None:
+    def test_max_hold_days_closes_at_market(self) -> None:
         tb = TradeBook(initial_balance=1000.0)
         t0 = datetime(2024, 1, 1)
 
@@ -291,15 +291,17 @@ class TestTradeResolution:
         tb.submit_order(cand, _signal(), "s", t0)
         tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
 
-        # Candle at day 11 (10 days after entry), neither stop nor target hit
+        # Candle at day 11 (10 days after entry), neither stop nor target hit:
+        # max-hold is a strategy rule, so the position closes at the market
+        # price (c=108), realizing (108-100)*0.2 = 1.6.
         still_open = _candle(t0 + timedelta(days=11), h=110.0, lo=99.0, c=108.0)
         tb.resolve_at_cursor(still_open, max_hold_days=10)
 
         assert tb.has_no_open_trade is True
-        assert tb.trades[-1].result == "cancelled"
-        assert tb.trades[-1].pnl == 0.0
+        assert tb.trades[-1].result == "win"
+        assert tb.trades[-1].pnl == pytest.approx(1.6)
         assert tb.trades[-1].exit_reason is ExitReason.TIMEOUT
-        assert tb.total_pnl == 0.0
+        assert tb.total_pnl == pytest.approx(1.6)
 
     def test_boundary_candle_target_hit_closes_win_not_cancel(self) -> None:
         """Target touched on the max-hold boundary candle must close as a win
@@ -391,7 +393,7 @@ class TestBreakevenCount:
         assert tb.total_pnl == pytest.approx(0.0)
         assert tb.trades[-1].exit_reason is None
 
-    def test_max_hold_cancels_not_breakeven(self) -> None:
+    def test_max_hold_closes_at_market(self) -> None:
         tb = TradeBook(initial_balance=1000.0)
         t0 = datetime(2024, 1, 1)
 
@@ -399,12 +401,15 @@ class TestBreakevenCount:
         tb.submit_order(cand, _signal(), "s", t0)
         tb.fill_order(_candle(t0 + timedelta(days=1), h=110.0, lo=90.0))
 
+        # Max-hold close at the market price (c=100 == entry): flat P&L, so the
+        # pnl-derived result is "breakeven" — explicitly NOT a zero-cost cancel.
         still_open = _candle(t0 + timedelta(days=11), h=104.0, lo=96.0, c=100.0)
         tb.resolve_at_cursor(still_open, max_hold_days=10)
 
-        assert tb.trades[-1].result == "cancelled"
+        assert tb.trades[-1].result == "breakeven"
+        assert tb.trades[-1].pnl == pytest.approx(0.0)
         assert tb.trades[-1].exit_reason is ExitReason.TIMEOUT
-        assert tb.breakeven_count == 0
+        assert tb.breakeven_count == 1
 
 
 class TestFillCandleResolution:
@@ -956,13 +961,15 @@ class TestDeRiskExits:
         assert tb.trades[0].pnl == pytest.approx(-1.0)
         assert tb.trades[0].exit_reason is ExitReason.STOP
 
-    def test_unscaled_max_hold_still_cancels_at_zero(self) -> None:
+    def test_unscaled_max_hold_closes_at_market(self) -> None:
         tb, t0, _ = self._open(_plan(scale_rr=3.0))
         tb.resolve_at_cursor(_candle(t0 + timedelta(days=1), h=104.0, lo=97.0))
+        # Scale-out at 3R never triggers; max-hold closes the full position at
+        # the market price (default close 102), realizing (102-100)*0.2 = 0.4.
         tb.resolve_at_cursor(_candle(t0 + timedelta(days=10), h=104.0, lo=97.0), max_hold_days=10)
         closed = tb.trades[0]
-        assert closed.result == "cancelled"
-        assert closed.pnl == pytest.approx(0.0)
+        assert closed.result == "win"
+        assert closed.pnl == pytest.approx(0.4)
         assert closed.exit_reason is ExitReason.TIMEOUT
 
     def test_ratchet_arms_then_breakeven_instead_of_loss(self) -> None:
@@ -1147,17 +1154,18 @@ class TestExcursionTracking:
         assert closed.mfe_r == pytest.approx(3.0)  # risk_amount = 5*0.2 = 1.0
         assert closed.mae_r == pytest.approx(2.0)
 
-    def test_cancelled_open_trade_keeps_excursions(self) -> None:
+    def test_max_hold_market_close_keeps_excursions(self) -> None:
         tb = TradeBook(initial_balance=1000.0)
         t0 = datetime(2024, 1, 1)
         self._open_bullish(tb, t0)
-        # Never hits stop/target before max_hold_days -> broker timeout.
+        # Never hits stop/target before max_hold_days -> close at market.
         tb.resolve_at_cursor(
-            _candle(t0 + timedelta(days=11), h=102.0, lo=99.0, c=100.0),
+            _candle(t0 + timedelta(days=11), h=102.0, lo=99.0, c=103.0),
             max_hold_days=10,
         )
         closed = tb.trades[-1]
-        assert closed.result == "cancelled"
+        assert closed.result == "win"
+        assert closed.pnl == pytest.approx(0.6)
         assert closed.exit_reason is ExitReason.TIMEOUT
         assert closed.mfe == pytest.approx(2.0)
         assert closed.mae == pytest.approx(2.0)
