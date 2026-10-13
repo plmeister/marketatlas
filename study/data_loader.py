@@ -26,6 +26,21 @@ def load(symbol: str, timeframe: str = "1d", clean: bool = True) -> dict[str, An
         for i, ts in enumerate(col["timestamp"]):
             if ts.weekday() == 5:
                 keep[i] = False
+        # collapse same-date bars: the metals feed appends a tz-shifted
+        # (04:00/05:00) duplicate alongside the historical 00:00 bar.
+        seen: dict[Any, int] = {}
+        for i, ts in enumerate(col["timestamp"]):
+            if not keep[i]:
+                continue
+            j = seen.get(ts.date())
+            if j is None:
+                seen[ts.date()] = i
+                continue
+            if col["timestamp"][j].hour != 0 and ts.hour == 0:
+                seen[ts.date()] = i
+                keep[j] = False
+            else:
+                keep[i] = False
     out: dict[str, Any] = {}
     for name, values in col.items():
         if name == "volume":
