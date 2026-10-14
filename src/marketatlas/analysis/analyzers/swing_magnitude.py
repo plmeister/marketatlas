@@ -255,7 +255,10 @@ class MagnitudeSwingAnalyzer(Analyzer):
                 else:
                     rejected += 1
                 continue
-            atr = self._atr_at(atr_by_ts, candles, pivot.index)
+            # ATR at the bar the pivot is *confirmed* on (pivot + right_bars),
+            # not the pivot bar itself: the floor is only knowable once the
+            # pivot is actionable, and this is the causal study's convention.
+            atr = self._atr_at(atr_by_ts, candles, pivot.index + self._right_bars)
             if atr is None or atr <= 0:
                 kept.append(pivot)
                 continue

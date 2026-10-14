@@ -1,5 +1,6 @@
 from typing import Any
 
+from marketatlas.analysis.analyzers.atr_math import atr_series as _atr_series
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.result import AnalysisResult
@@ -10,18 +11,22 @@ from marketatlas.facts.primitive import ATRPoint, ATRSeriesFact
 
 
 class ATRSeriesAnalyzer(Analyzer):
-    """Per-candle ATR history using Wilder smoothing (backlog 062).
+    """Per-candle ATR history (backlog 062).
 
-    ``lookback`` limits how many recent candles feed the computation.
-    Wilder smoothing decays exponentially — after ~3×period candles old
-    data contributes <3 % to the current value, so a bounded window
-    gives accurate results at O(lookback) cost per call.
+    ``smoothing`` selects Wilder's recursive average (default) or a plain
+    rolling SMA of true range (``"sma"``, matching the reference study's
+    ``sma_atr``). ``lookback`` limits how many recent candles feed the
+    computation; Wilder decays exponentially, so a bounded window is safe,
+    while an SMA needs at least ``period`` trailing bars to be exact.
     """
 
-    def __init__(self, period: int = 14, lookback: int = 0, **kwargs: Any) -> None:
+    def __init__(
+        self, period: int = 14, lookback: int = 0, smoothing: str = "wilder", **kwargs: Any
+    ) -> None:
         super().__init__(**kwargs)
         self._period = period
         self._lookback = lookback
+        self._smoothing = smoothing
 
     @property
     def instance_key(self) -> str:
@@ -41,24 +46,15 @@ class ATRSeriesAnalyzer(Analyzer):
             candles = all_candles
 
         points: list[ATRPoint] = []
-        smoothed = 0.0
-        running_sum = 0.0
         if len(candles) >= 2:
+            highs = tuple(c.high for c in candles)
+            lows = tuple(c.low for c in candles)
+            closes = tuple(c.close for c in candles)
+            values = _atr_series(highs, lows, closes, self._period, self._smoothing)
             for i in range(1, len(candles)):
-                high_low = candles[i].high - candles[i].low
-                high_prev_close = abs(candles[i].high - candles[i - 1].close)
-                low_prev_close = abs(candles[i].low - candles[i - 1].close)
-                tr = max(high_low, high_prev_close, low_prev_close)
-                running_sum += tr
-                if i < self._period:
-                    value = running_sum / i
-                elif i == self._period:
-                    value = running_sum / self._period
-                    smoothed = value
-                else:
-                    smoothed = (smoothed * (self._period - 1) + tr) / self._period
-                    value = smoothed
-                points.append(ATRPoint(timestamp=candles[i].timestamp, value=value))
+                points.append(
+                    ATRPoint(timestamp=candles[i].timestamp, value=values[i])
+                )
 
         if points:
             last = points[-1].value

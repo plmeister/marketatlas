@@ -19,15 +19,27 @@ makes a run comparable, not this node alone.
 from __future__ import annotations
 
 import math
+from datetime import datetime
 
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceEntry, EvidenceLevel
 from marketatlas.facts.base import Fact
-from marketatlas.facts.primitive import ATRFact
-from marketatlas.facts.structural import TrendDirection
+from marketatlas.facts.primitive import ATRSeriesFact
+from marketatlas.facts.structural import SwingFact, TrendDirection
 from marketatlas.strategy.signals import TradeSignal, resolve_fact_key
 from marketatlas.strategy.trade import TradeCandidate
+
+
+def _value_at(series: ATRSeriesFact, timestamp: datetime) -> float | None:
+    """ATR series value at ``timestamp`` (latest at-or-before; points sorted)."""
+    latest: float | None = None
+    for point in series.points:
+        if point.timestamp <= timestamp:
+            latest = point.value
+        else:
+            break
+    return latest
 
 
 def _fmt_p(value: float) -> str:
@@ -68,7 +80,8 @@ class AtrBracketRisk:
         entry_buffer_atr: float = 0.0,
         slippage_pct: float = 0.0,
         max_hold_days: int = 15,
-        atr_key: str = "atr_14",
+        atr_key: str = "atr_14_series",
+        swing_key: str = "magnitude_swings",
         bindings: dict[str, str] | None = None,
     ) -> None:
         if stop_atr <= 0:
@@ -82,6 +95,7 @@ class AtrBracketRisk:
         self._slippage_pct = slippage_pct
         self._max_hold_days = max_hold_days
         self._atr_key = atr_key
+        self._swing_key = swing_key
         self._bindings = dict(bindings) if bindings else {}
 
     @property
@@ -89,7 +103,7 @@ class AtrBracketRisk:
         return self._max_hold_days
 
     def requires(self) -> tuple[FactKey, ...]:
-        return (FactKey("atr_14"),)
+        return (FactKey(self._atr_key), FactKey(self._swing_key))
 
     def produces(self) -> tuple[FactKey, ...]:
         return ()
@@ -101,18 +115,41 @@ class AtrBracketRisk:
         view: MarketView,
         balance: float = 1000.0,
     ) -> tuple[TradeCandidate | None, tuple[EvidenceEntry, ...]]:
-        atr_key = resolve_fact_key(facts, self._bindings.get("atr_14", self._atr_key))
-        atr = facts.get(atr_key) if atr_key is not None else None
-        if not isinstance(atr, ATRFact) or atr.value <= 0:
+        swing_key = resolve_fact_key(facts, self._swing_key)
+        swing = facts.get(swing_key) if swing_key is not None else None
+        if not isinstance(swing, SwingFact) or not swing.swings:
             return None, (
                 EvidenceEntry(
-                    text="Rejected: no valid ATR fact for the ATR bracket",
+                    text="Rejected: no swing fact for the ATR bracket",
                     level=EvidenceLevel.WARNING,
                     source="AtrBracketRisk",
                 ),
             )
 
-        atr_val = atr.value
+        series_key = resolve_fact_key(
+            facts, self._bindings.get("atr_14_series", self._atr_key)
+        )
+        series = facts.get(series_key) if series_key is not None else None
+        if not isinstance(series, ATRSeriesFact):
+            return None, (
+                EvidenceEntry(
+                    text="Rejected: no ATR series fact for the ATR bracket",
+                    level=EvidenceLevel.WARNING,
+                    source="AtrBracketRisk",
+                ),
+            )
+
+        pivot = swing.swings[-1]
+        atr_val = _value_at(series, pivot.timestamp)
+        if atr_val is None or atr_val <= 0:
+            return None, (
+                EvidenceEntry(
+                    text="Rejected: no valid ATR at the signal pivot bar",
+                    level=EvidenceLevel.WARNING,
+                    source="AtrBracketRisk",
+                ),
+            )
+
         close_price = view.current.close
         risk_multiplier = getattr(signal, "risk_multiplier", 1.0)
 

@@ -126,3 +126,67 @@ class TestATRSeriesAnalyzer:
         )
         assert len(result.evidence) > 0
         assert result.evidence == result.facts[0].evidence
+
+
+def _ref_sma_atr(
+    highs: list[float], lows: list[float], closes: list[float], period: int
+) -> list[float]:
+    trs = [0.0] * len(closes)
+    for i in range(1, len(closes)):
+        trs[i] = max(
+            highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])
+        )
+    atr = [0.0] * len(closes)
+    run = 0.0
+    for i in range(1, len(closes)):
+        run += trs[i]
+        if i > period:
+            run -= trs[i - period]
+        atr[i] = run / min(i, period)
+    return atr
+
+
+class TestSMASmoothing:
+    highs = [48.70, 48.72, 48.90, 48.87, 48.82, 48.75, 48.60, 48.90]
+    lows = [47.79, 48.14, 48.39, 48.37, 48.24, 48.10, 48.00, 48.30]
+    closes = [48.16, 48.61, 48.75, 48.63, 48.74, 48.70, 48.55, 48.80]
+
+    def test_series_matches_study_formula(self) -> None:
+        store = _make_store(self.highs, self.lows, self.closes)
+        period = 3
+        fact = ATRSeriesAnalyzer(period, smoothing="sma").analyze(
+            MarketView(store, cursor=7, window_size=7), {}
+        ).facts[0]
+        assert isinstance(fact, ATRSeriesFact)
+        ref = _ref_sma_atr(self.highs, self.lows, self.closes, period)
+        assert [p.value for p in fact.points] == pytest.approx(ref[1:])
+
+    def test_scalar_sma_matches_series_at_each_prefix(self) -> None:
+        store = _make_store(self.highs, self.lows, self.closes)
+        period = 3
+        series_fact = ATRSeriesAnalyzer(period, smoothing="sma").analyze(
+            MarketView(store, cursor=7, window_size=7), {}
+        ).facts[0]
+        assert isinstance(series_fact, ATRSeriesFact)
+        series = series_fact.points
+        for i, point in enumerate(series):
+            view = MarketView(store, cursor=i + 1, window_size=i + 1)
+            scalar = ATRAnalyzer(period, smoothing="sma").analyze(view, {}).facts[0]
+            assert isinstance(scalar, ATRFact)
+            assert point.value == pytest.approx(scalar.value, abs=1e-9)
+
+    def test_sma_differs_from_wilder(self) -> None:
+        store = _make_store(self.highs, self.lows, self.closes)
+        view = MarketView(store, cursor=7, window_size=7)
+        sma = ATRSeriesAnalyzer(3, smoothing="sma").analyze(view, {}).facts[0]
+        wilder = ATRSeriesAnalyzer(3).analyze(view, {}).facts[0]
+        assert isinstance(sma, ATRSeriesFact)
+        assert isinstance(wilder, ATRSeriesFact)
+        assert sma.points[-1].value != pytest.approx(wilder.points[-1].value)
+
+    def test_unknown_smoothing_raises(self) -> None:
+        store = _make_store(self.highs, self.lows, self.closes)
+        with pytest.raises(ValueError, match="smoothing"):
+            ATRSeriesAnalyzer(3, smoothing="bogus").analyze(
+                MarketView(store, cursor=7, window_size=7), {}
+            )

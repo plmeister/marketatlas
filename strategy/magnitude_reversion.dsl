@@ -8,15 +8,17 @@
 // not the structural RiskEngine.
 //
 // Fact-name convention: a reference field is named after the fact the consumer
-// requires, so the `atr_14` on `manage_risk`/`atr_risk` feeds the `atr_14` fact.
-// The magnitude producer and range filter pin stable (dot-free) `fact_name`s so
-// the signal's default fact keys resolve without any reference plumbing.
+// requires, so the `atr_14_series` on `atr_risk` feeds the `atr_14_series` fact.
+// The bracket reads the SMA ATR *at the signal's pivot bar* (the study's
+// convention), hence the series rather than a scalar. The magnitude producer and
+// range filter pin stable (dot-free) `fact_name`s so the signal's default fact
+// keys resolve without any reference plumbing.
 
 daily := timeframe { resolution: "1d" }
 weekly := timeframe { resolution: "1w" }
 
-// weekly ATR series: the detector measures pivot travel in ATRs of this series.
-atr_14_series := atr_series { period: 14, lookback: 150, timeframe: weekly }
+// daily SMA ATR series: the detector measures pivot travel in daily ATR units.
+atr_14_series := atr_series { period: 14, lookback: 150, smoothing: "sma" }
 
 // daily magnitude swings: 2/2 fractal, >=3.5 ATR travel.
 swing1d_mag := magnitudeswings {
@@ -37,9 +39,6 @@ rangepos := rangeposition {
   fact_name: "range_position"
 }
 
-// daily ATR for the fixed bracket
-atr_14 := atr { period: 14 }
-
 // fade the freshly-confirmed daily magnitude pivot, gating shorts at/above the
 // trailing range high (w_pos >= short_range_max)
 signal := magnitude_reversion {
@@ -49,9 +48,11 @@ signal := magnitude_reversion {
 }
 
 // study geometry: symmetrical ATR bracket off the signal close, stop 1.5 ATR,
-// target 3.0 ATR (RR 2.0), sized at risk_pct
+// target 3.0 ATR (RR 2.0), sized at risk_pct. ATR is read at the swing's pivot
+// bar from the SMA series (the study's `atr[ni]`, not the signal-bar ATR).
 risk := atr_risk {
-  atr_14: atr_14,
+  atr_14_series: atr_14_series,
+  swing_key: "magnitude_swings",
   stop_atr: 1.5,
   target_atr: 3.0,
   risk_pct: 1.0,

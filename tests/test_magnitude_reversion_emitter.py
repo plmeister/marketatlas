@@ -12,7 +12,7 @@ from marketatlas.data.types import Candle, MarketData, Symbol, Timeframe
 from marketatlas.data.view import MarketView
 from marketatlas.evidence.model import EvidenceLevel
 from marketatlas.facts.base import Fact
-from marketatlas.facts.primitive import ATRFact
+from marketatlas.facts.primitive import ATRPoint, ATRSeriesFact
 from marketatlas.facts.structural import (
     RangePositionFact,
     SwingFact,
@@ -47,8 +47,21 @@ def _view(n: int = 5, cursor: int | None = None, close: float = 100.0) -> Market
     return MarketView(MarketStore(data), cursor=n - 1 if cursor is None else cursor, window_size=n)
 
 
-def _atr(value: float = 2.0) -> ATRFact:
-    return ATRFact(timestamp=BASE, evidence=(), value=value, period=14)
+def _series(value: float, ts: datetime) -> ATRSeriesFact:
+    return ATRSeriesFact(
+        timestamp=ts,
+        evidence=(),
+        points=(ATRPoint(timestamp=ts, value=value),),
+        period=14,
+    )
+
+
+def _risk_facts(view: MarketView, atr: float) -> dict[FactKey, Fact]:
+    pivot_ts = view.timestamps[view.cursor - 2]
+    return {
+        FactKey("atr_14_series"): _series(atr, pivot_ts),
+        FactKey("magnitude_swings"): _swing(SwingType.LOW, pivot_ts, 90.0),
+    }
 
 
 def _swing(kind: SwingType, timestamp: datetime, price: float) -> SwingFact:
@@ -161,7 +174,7 @@ class TestMagnitudeReversionSignal:
 class TestAtrBracketRisk:
     def test_bullish_geometry_and_size(self) -> None:
         view = _view(close=100.0)
-        facts: dict[FactKey, Fact] = {FactKey("atr_14"): _atr(2.0)}
+        facts = _risk_facts(view, 2.0)
         candidate, evidence = AtrBracketRisk(risk_pct=1.0).evaluate(
             _signal(TrendDirection.BULLISH), facts, view, balance=1000.0
         )
@@ -175,7 +188,7 @@ class TestAtrBracketRisk:
 
     def test_bearish_is_symmetric(self) -> None:
         view = _view(close=100.0)
-        facts: dict[FactKey, Fact] = {FactKey("atr_14"): _atr(2.0)}
+        facts = _risk_facts(view, 2.0)
         candidate, _ = AtrBracketRisk().evaluate(
             _signal(TrendDirection.BEARISH), facts, view, balance=1000.0
         )
@@ -185,7 +198,7 @@ class TestAtrBracketRisk:
 
     def test_entry_buffer_and_slippage(self) -> None:
         view = _view(close=100.0)
-        facts: dict[FactKey, Fact] = {FactKey("atr_14"): _atr(2.0)}
+        facts = _risk_facts(view, 2.0)
         candidate, _ = AtrBracketRisk(entry_buffer_atr=1.0, slippage_pct=1.0).evaluate(
             _signal(TrendDirection.BULLISH), facts, view, balance=1000.0
         )
@@ -202,12 +215,52 @@ class TestAtrBracketRisk:
 
     def test_binding_overrides_atr_key(self) -> None:
         view = _view(close=100.0)
-        facts: dict[FactKey, Fact] = {FactKey("atr_weekly"): _atr(4.0)}
-        candidate, _ = AtrBracketRisk(bindings={"atr_14": "atr_weekly"}).evaluate(
+        pivot_ts = view.timestamps[view.cursor - 2]
+        facts: dict[FactKey, Fact] = {
+            FactKey("atr_weekly"): _series(4.0, pivot_ts),
+            FactKey("magnitude_swings"): _swing(SwingType.LOW, pivot_ts, 90.0),
+        }
+        candidate, _ = AtrBracketRisk(
+            bindings={"atr_14_series": "atr_weekly"}
+        ).evaluate(
             _signal(TrendDirection.BULLISH), facts, view, balance=1000.0
         )
         assert candidate is not None
         assert candidate.stop == pytest.approx(94.0)
+
+    def test_atr_read_at_pivot_bar_not_signal_bar(self) -> None:
+        view = _view(close=100.0)
+        pivot_ts = view.timestamps[view.cursor - 2]
+        signal_ts = view.timestamps[view.cursor]
+        series = ATRSeriesFact(
+            timestamp=signal_ts,
+            evidence=(),
+            points=(
+                ATRPoint(timestamp=pivot_ts, value=2.0),
+                ATRPoint(timestamp=signal_ts, value=99.0),
+            ),
+            period=14,
+        )
+        facts: dict[FactKey, Fact] = {
+            FactKey("atr_14_series"): series,
+            FactKey("magnitude_swings"): _swing(SwingType.LOW, pivot_ts, 90.0),
+        }
+        candidate, _ = AtrBracketRisk().evaluate(
+            _signal(TrendDirection.BULLISH), facts, view, balance=1000.0
+        )
+        assert candidate is not None
+        assert candidate.stop == pytest.approx(97.0)
+
+    def test_missing_swing_rejects(self) -> None:
+        view = _view(close=100.0)
+        facts: dict[FactKey, Fact] = {
+            FactKey("atr_14_series"): _series(2.0, view.timestamps[view.cursor - 2])
+        }
+        candidate, evidence = AtrBracketRisk().evaluate(
+            _signal(TrendDirection.BULLISH), facts, view
+        )
+        assert candidate is None
+        assert evidence and evidence[0].level == EvidenceLevel.WARNING
 
     @pytest.mark.parametrize("bad", [{"stop_atr": 0.0}, {"target_atr": -1.0}])
     def test_rejects_bad_geometry(self, bad: dict[str, Any]) -> None:

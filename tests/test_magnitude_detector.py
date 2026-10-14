@@ -324,6 +324,30 @@ class TestRangePosition:
             RangePositionAnalyzer(confirmation_lag=-1)
 
 
+class TestATRFloorBarConvention:
+    """The floor reads ATR at the pivot's confirmation bar, not the pivot bar."""
+
+    @staticmethod
+    def _keep(overrides: dict[int, float]) -> list[int]:
+        candles = _candles([(10.0, 10.0)] * 6)
+        raw = [
+            SwingPoint(price=10.0, index=0, type=SwingType.HIGH, timestamp=candles[0].timestamp),
+            SwingPoint(price=6.0, index=2, type=SwingType.LOW, timestamp=candles[2].timestamp),
+        ]
+        atr_by_ts = {
+            candles[i].timestamp: overrides.get(i, 1.0) for i in range(len(candles))
+        }
+        analyzer = MagnitudeSwingAnalyzer(left_bars=2, right_bars=2, min_travel_atr=3.5)
+        kept, _ = analyzer._apply_magnitude_floor(candles, raw, atr_by_ts)
+        return [s.index for s in kept]
+
+    def test_small_atr_at_confirmation_bar_keeps_pivot(self) -> None:
+        assert 2 in self._keep({2: 100.0})
+
+    def test_large_atr_at_confirmation_bar_drops_pivot(self) -> None:
+        assert 2 not in self._keep({4: 100.0})
+
+
 class TestRegistryWiring:
     def test_capabilities_registered(self) -> None:
         from marketatlas.analysis.ast.registry import create_default_registry

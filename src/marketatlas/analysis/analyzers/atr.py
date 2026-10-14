@@ -1,5 +1,6 @@
 from typing import Any
 
+from marketatlas.analysis.analyzers.atr_math import atr_series as _atr_series
 from marketatlas.analysis.base import Analyzer
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.analysis.result import AnalysisResult
@@ -10,9 +11,10 @@ from marketatlas.facts.primitive import ATRFact
 
 
 class ATRAnalyzer(Analyzer):
-    def __init__(self, period: int = 14, **kwargs: Any) -> None:
+    def __init__(self, period: int = 14, smoothing: str = "wilder", **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._period = period
+        self._smoothing = smoothing
         self._store_state: dict[int, tuple[int, float, float]] = {}
 
     @property
@@ -29,6 +31,9 @@ class ATRAnalyzer(Analyzer):
         self, highs: tuple[float, ...], lows: tuple[float, ...], closes: tuple[float, ...]
     ) -> tuple[float, float]:
         """Returns (atr_value, running_sum_of_true_ranges)."""
+        if self._smoothing == "sma":
+            values = _atr_series(highs, lows, closes, self._period, "sma")
+            return (values[-1] if values else 0.0, 0.0)
         if len(highs) < 2:
             return (highs[0] - lows[0] if highs else 0.0, 0.0)
         true_ranges: list[float] = []
@@ -58,7 +63,7 @@ class ATRAnalyzer(Analyzer):
         else:
             prev_cursor, prev_atr, prev_running_sum = -1, 0.0, 0.0
 
-        if cursor == prev_cursor + 1 and cursor >= 2:
+        if self._smoothing == "wilder" and cursor == prev_cursor + 1 and cursor >= 2:
             i = cursor - 1
             high_low = highs[i] - lows[i]
             high_prev_close = abs(highs[i] - closes[i - 1])
