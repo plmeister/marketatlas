@@ -37,7 +37,7 @@ class RangePositionAnalyzer(Analyzer):
 
     def __init__(
         self,
-        swing_key: str = "magnitude_swings_3.5",
+        swing_key: str = "magnitude_swings_3",
         higher_timeframe: str = "1w",
         range_bars: int = 12,
         confirmation_lag: int = 2,

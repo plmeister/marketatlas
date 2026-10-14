@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from typing import cast
+
 from marketatlas.analysis.graph import AnalysisGraph, FactKey
 from marketatlas.data.view import MarketView
 from marketatlas.facts.base import Fact
 from marketatlas.strategy.config import StrategyConfig
 from marketatlas.strategy.loader import build_analyzers
-from marketatlas.strategy.risk import RiskEngine
+from marketatlas.strategy.risk import RiskEngine, RiskNode
+from marketatlas.strategy.risk_registry import RISK_TYPES
 from marketatlas.strategy.signals import Signal, SignalEvaluation, TradeSignal
 
 
@@ -30,7 +33,7 @@ class Strategy:
         return self._graph
 
     @property
-    def risk_engine(self) -> RiskEngine:
+    def risk_engine(self) -> RiskNode:
         return self._risk_engine
 
     def evaluate(
@@ -68,6 +71,7 @@ class Strategy:
             signals.append(cls(**sc.rules))
         return signals
 
-    def _build_risk(self) -> RiskEngine:
+    def _build_risk(self) -> RiskNode:
         rc = self._config.risk
-        return RiskEngine(**rc.params)
+        cls = RISK_TYPES.get(rc.algorithm, RiskEngine)
+        return cast(RiskNode, cls(**rc.params))

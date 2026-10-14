@@ -3,7 +3,7 @@ from __future__ import annotations
 from marketatlas.analysis.graph import AnalysisGraph, FactKey
 from marketatlas.data.view import MarketView
 from marketatlas.facts.base import Fact
-from marketatlas.strategy.risk import RiskEngine
+from marketatlas.strategy.risk import RiskNode
 from marketatlas.strategy.signals import SignalEvaluation, TradeSignal
 from marketatlas.strategy.strategy import Strategy
 from marketatlas.strategy.tradebook import TradeBook
@@ -57,7 +57,7 @@ class StrategyBundle:
                 rejections.append((name, r))
         return signals, rejections
 
-    def get_risk_engine(self, strategy_name: str) -> RiskEngine:
+    def get_risk_engine(self, strategy_name: str) -> RiskNode:
         strategy = self._strategies[strategy_name]
         return strategy.risk_engine
 

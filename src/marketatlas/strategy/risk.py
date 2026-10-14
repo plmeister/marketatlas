@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from typing import Protocol
 
 from marketatlas.analysis.factkey import FactKey
 from marketatlas.data.view import MarketView
@@ -37,6 +38,30 @@ def _fmt_p(value: float) -> str:
     if len(frac) < 2:
         return f"{value:.{dp}f}"
     return trimmed
+
+
+class RiskNode(Protocol):
+    """Structural interface the pipeline requires of a strategy's risk node.
+
+    Both :class:`RiskEngine` and
+    :class:`~marketatlas.strategy.atr_risk.AtrBracketRisk` satisfy it. The
+    strategy, bundle and backtesters speak to this shape rather than a concrete
+    class so a strategy can swap its sizing/geometry node (backlog: standalone
+    risk nodes) without touching the rest of the pipeline.
+    """
+
+    @property
+    def max_hold_days(self) -> int:
+        ...
+
+    def evaluate(
+        self,
+        signal: TradeSignal,
+        facts: dict[FactKey, Fact],
+        view: MarketView,
+        balance: float = 1000.0,
+    ) -> tuple[TradeCandidate | None, tuple[EvidenceEntry, ...]]:
+        ...
 
 
 class RiskEngine:

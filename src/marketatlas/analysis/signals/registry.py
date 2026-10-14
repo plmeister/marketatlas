@@ -13,9 +13,13 @@ if TYPE_CHECKING:
     from marketatlas.strategy.signals import Signal
 
 from marketatlas.analysis.signals.breakout_signal import BreakoutSignal
+from marketatlas.analysis.signals.magnitude_reversion_signal import (
+    MagnitudeReversionSignal,
+)
 from marketatlas.analysis.signals.pullback_signal import PullbackSignal
 
 SIGNAL_TYPES: dict[str, type[Signal]] = {
     "PullbackSignal": PullbackSignal,
     "BreakoutSignal": BreakoutSignal,
+    "MagnitudeReversionSignal": MagnitudeReversionSignal,
 }

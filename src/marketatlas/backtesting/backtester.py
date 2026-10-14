@@ -13,7 +13,7 @@ from marketatlas.evidence.model import EvidenceEntry
 from marketatlas.frames.frame import AnalysisFrame
 from marketatlas.frames.store import FrameStore
 from marketatlas.strategy.context import extract_atr_value, trade_context
-from marketatlas.strategy.risk import RiskEngine
+from marketatlas.strategy.risk import RiskNode
 from marketatlas.strategy.trade import ExitReason
 from marketatlas.strategy.tradebook import TradeBook
 
@@ -49,7 +49,7 @@ class BundleProtocol(Protocol):
     ) -> tuple[
         list[tuple[str, TradeSignal]], list[tuple[str, SignalEvaluation]]
     ]: ...
-    def get_risk_engine(self, strategy_name: str) -> RiskEngine: ...
+    def get_risk_engine(self, strategy_name: str) -> RiskNode: ...
 
 
 class Backtester:

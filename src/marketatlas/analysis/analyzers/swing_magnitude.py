@@ -77,7 +77,11 @@ class MagnitudeSwingAnalyzer(Analyzer):
 
     @property
     def instance_key(self) -> str:
-        return self._name or f"magnitude_swings_{self._min_travel_atr:g}"
+        # Dot-free: a fact name is a DSL identifier, so the decimal point in a
+        # non-integer travel floor (e.g. 3.5) must not survive (lexer IDENT is
+        # ``[A-Za-z_][A-Za-z0-9_]*``). 3.5 -> ``magnitude_swings_3_5``.
+        suffix = f"{self._min_travel_atr:g}".replace(".", "_")
+        return self._name or f"magnitude_swings_{suffix}"
 
     def requires(self) -> tuple[FactKey, ...]:
         return (self._make_key(self._atr_key),)

@@ -235,6 +235,7 @@ def create_default_registry() -> ProviderRegistry:
     from marketatlas.analysis.patterns import PullbackPatternAnalyzer
     from marketatlas.analysis.signals.registry import SIGNAL_TYPES
     from marketatlas.strategy.risk import RiskEngine
+    from marketatlas.strategy.risk_registry import RISK_TYPES
 
     registry = ProviderRegistry()
     _register_timeframe(registry)
@@ -256,7 +257,7 @@ def create_default_registry() -> ProviderRegistry:
         "rangeposition",
         RangePositionAnalyzer,
         default_params={
-            "swing_key": "magnitude_swings_3.5",
+            "swing_key": "magnitude_swings_3",
             "higher_timeframe": "1w",
             "range_bars": 12,
             "confirmation_lag": 2,
@@ -270,5 +271,11 @@ def create_default_registry() -> ProviderRegistry:
     _breakout_signal = SIGNAL_TYPES.get("BreakoutSignal")
     if _breakout_signal is not None:
         registry.register("breakout", _breakout_signal, category="signal")
+    _magnitude_signal = SIGNAL_TYPES.get("MagnitudeReversionSignal")
+    if _magnitude_signal is not None:
+        registry.register("magnitude_reversion", _magnitude_signal, category="signal")
     registry.register("manage_risk", RiskEngine, category="risk")
+    _atr_risk = RISK_TYPES.get("AtrBracketRisk")
+    if _atr_risk is not None:
+        registry.register("atr_risk", _atr_risk, category="risk")
     return registry
