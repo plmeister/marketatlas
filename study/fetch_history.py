@@ -1,10 +1,14 @@
 """Refetch the full Dukascopy history used by the mean-reversion study.
 
 Replaces the lost /tmp/opencode/study/00_fetch_dukascopy.py. Pulls 1d + 1w
-for the 23 Dukascopy-resolvable portfolio symbols, 2003-05-04 -> 2026-09-04,
-into data/study/ with page-level provider caching.
+for the 23 Dukascopy-resolvable portfolio symbols, 2003-05-04 -> now, into
+data/study/ with page-level provider caching. The end date is evaluated per
+run so the scheduled paper tick always refreshes to the latest available bar.
 
-Run: poetry run python study/fetch_history.py
+Existing parquet files are skipped unless ``--force`` is passed (the paper
+tick runner passes ``--force`` so the shared snapshot never goes stale).
+
+Run: poetry run python study/fetch_history.py [--force]
 """
 
 from __future__ import annotations
@@ -34,7 +38,11 @@ SYMBOLS = [
 ]
 
 START = datetime(2003, 5, 4, tzinfo=UTC)
-END = datetime(2026, 9, 4, tzinfo=UTC)
+
+
+def _end() -> datetime:
+    """Latest fetchable timestamp — evaluated per run so data never freezes."""
+    return datetime.now(UTC)
 
 
 def _filename(symbol: str, timeframe: Timeframe) -> str:
@@ -42,18 +50,23 @@ def _filename(symbol: str, timeframe: Timeframe) -> str:
 
 
 def main() -> int:
+    force = "--force" in sys.argv[1:]
     OUT.mkdir(parents=True, exist_ok=True)
-    provider = DukascopyProvider(cache_dir=CACHE)
+    # The page cache is keyed by the page's *start* cursor, and each symbol's
+    # 1d/1w history fits in a single page — so a cached page is replayed
+    # verbatim forever and pins the data at its fetch date. ``--force`` must
+    # therefore fetch live (no cache) or it cannot advance past the snapshot.
+    provider = DukascopyProvider(cache_dir=None if force else CACHE)
     failures = 0
     for symbol in SYMBOLS:
         for tf in (Timeframe.D1, Timeframe.W1):
             dest = OUT / _filename(symbol, tf)
-            if dest.exists():
+            if dest.exists() and not force:
                 print(f"skip  {symbol:7} {tf.value} (exists)")
                 continue
             try:
                 t0 = time.time()
-                data: MarketData = provider.fetch(Symbol(symbol), tf, START, END)
+                data: MarketData = provider.fetch(Symbol(symbol), tf, START, _end())
             except SymbolNotFoundError:
                 print(f"MISS  {symbol:7} {tf.value}")
                 failures += 1
