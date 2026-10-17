@@ -10,3 +10,7 @@ output/
 .venv/
 /strategy/
 node_modules/
+
+# local notify config (never commit)
+notify.env
+/notify.env

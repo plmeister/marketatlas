@@ -16,7 +16,16 @@ cd /home/scott/src/marketatlas
   /home/scott/.local/bin/poetry run python study/fetch_history.py --force
 } >> "${LOG_DIR}/fetch.log" 2>&1
 
-# 2. Check out the pinned tag into an isolated run dir and tick.
+# 2. On first run, baseline the Matrix cursor to the current end of the events
+#    file so only events appended from here on are notified (idempotent: a
+#    cursor that already exists is left untouched, so a failed notify re-sends).
+if [ ! -f "${LOG_DIR}/.notified_offset" ]; then
+  PAPER_TAG="${TAG}" /home/scott/.local/bin/poetry run python \
+    /home/scott/src/marketatlas/notify_new_events.py --init \
+    >> "${LOG_DIR}/notify.log" 2>&1
+fi
+
+# 3. Check out the pinned tag into an isolated run dir and tick.
 if [ ! -d "${REPO_DIR}/.git" ]; then
   git clone git@github.com:plmeister/marketatlas.git "${REPO_DIR}"
 fi
@@ -27,3 +36,11 @@ mkdir -p data study
 ln -sfn "${SHARED_DATA}" data/study
 cd /home/scott/src/marketatlas
 PAPER_TAG="${TAG}" /home/scott/.local/bin/poetry run python "${REPO_DIR}/paper_tick.py"
+
+# 4. Push any new trade events to Matrix (entry/exit alerts with charts).
+#    Cursor-based, so re-runs never re-notify. Non-fatal if Matrix is down.
+{
+  echo "=== $(date -Is) notify_new_events ==="
+  PAPER_TAG="${TAG}" /home/scott/.local/bin/poetry run python \
+    /home/scott/src/marketatlas/notify_new_events.py
+} >> "${LOG_DIR}/notify.log" 2>&1
